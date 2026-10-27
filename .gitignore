@@ -1,0 +1,18 @@
+# Files Git must never upload: secrets, local data, and generated clutter.
+
+# Secrets (API keys, tokens, phone) — keep on this PC only
+.env
+
+# Python virtual environment — rebuilt from requirements.txt
+.venv/
+
+# Local data: Telegram login sessions, database, logs, Love's price sheets
+data/
+*.session
+*.db
+*.log
+
+# Python and pytest caches
+__pycache__/
+*.pyc
+.pytest_cache/
