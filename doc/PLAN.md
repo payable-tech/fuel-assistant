@@ -270,6 +270,22 @@ default.
   ("top-offs"), share of gallons at Love's, billed $/gal, and how much more per gallon they pay outside Love's.
   First look (12 trucks, 270 stops, 2026-10-20): stop at ~20%, fill to ~95%; 1 stop in 4 began below 10%.
 
+### 5.6 Fleet status (`core/fleet_status.py`, top of the Drivers tab)
+- **One row per Datatruck truck** (`db.fleet_status`, read when the page asks; no table of its own). It starts from
+  `dt_trucks`, not from the `fleet` view, so the trucks with no Samsara link are in: they are the ones to look at.
+- **On duty:** in transit or available, with an active driver. The page draws these apart from the rest.
+- **Type:** the (first) driver's Datatruck type: lease → LO, company_driver → C, company_owner → OO, anything else →
+  Other; no active driver → No driver. The tags typed into driver names (LP, CPM, TEAM) are not read.
+- **Samsara**, the first check that fails: no Samsara vehicle with the truck's VIN (No device; VIN mismatch when a
+  Samsara vehicle is named for the unit), no GPS for `ACTIVE_HOURS`, gauge never reported, gauge silent for
+  `ACTIVE_HOURS`, else Working. Each has its "what to do" line on the page (`web/js/labels.js`).
+- **Fuel card:** assigned when an active card sits on a driver who is active on this truck, or on the truck itself
+  (a card's unit alone doesn't count: many active cards still sit on drivers who left). Without one, a truck that
+  bought fuel in the last `FLEET_FUELED_DAYS` is shown apart from one that didn't.
+- **Page** (`web/js/fleet.js`, `/api/fleet`, refreshed every 5 minutes): three bars (a question each, with its groups
+  and their counts, all trucks and on duty), one square per truck in clusters by status, colored by the picked bar;
+  a group clicked lists its trucks.
+
 ### 5.2 Commands (`.venv\Scripts\python.exe src\main.py <command>`)
 
 | Command | Does |
@@ -556,6 +572,7 @@ drawn so the scope of each figure shows without asking (the user, 2026-11-03):
 | `HABIT_DAYS` | 30 | driver habits: stops of the last this many days |
 | `RAN_LOW_PCT` | 10 | driver habits: a stop that began below this gauge level "ran low" |
 | `TOP_OFF_GAL` | 50 | driver habits: a stop buying less than this is a top-off |
+| `FLEET_FUELED_DAYS` | 14 | fleet status: a truck with no card assigned that bought fuel within this many days is shown apart |
 | `TANK_DAYS` | 30 | tank helper: fill-ups of the last this many days |
 | `TANK_WINDOW_MIN` | 120 | tank helper: gauge readings this long before/after a purchase; purchases closer are one stop |
 | `TANK_MIN_RISE_PCT` | 25 | tank helper: smaller gauge rises are skipped |

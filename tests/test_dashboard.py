@@ -97,3 +97,28 @@ def test_truck_list_has_positions():
         db.replace_samsara_live(conn, [SamsaraLive("1", 30.2, -97.1, "Austin, TX", AT, 40.0, AT)])
     row = dashboard.recommend_payload()["trucks"][0]
     assert (row["where"], row["place"], row["fuel_pct"]) == ([30.2, -97.1], "Austin, TX", 40.0)
+
+
+# The fleet status has every Datatruck truck, linked to Samsara or not: a driven truck that reports, one whose only
+# card sits on a driver who left but that bought fuel yesterday, and one in the shop that Samsara names under another VIN.
+def test_fleet_status():
+    from core.fuel import CENTRAL
+    from models import DatatruckDriver, DatatruckTruck, FuelCard, SamsaraLive, SamsaraVehicle
+    now = datetime.now(timezone.utc)
+    bought = FuelLine(1, f"{now.astimezone(CENTRAL) - timedelta(days=1):%Y-%m-%d %H:%M}", "fuel", "ULSD", 100, 600, 550, 0.0, False,
+                      "LOVES #7 TRAVEL STOP", "Near", "TX", "TTL", "900", "company", 8, "Gone", "lease", 2)
+    with db.connect() as conn:
+        db.replace_dt_trucks(conn, [DatatruckTruck(1, "340", "V", "in_transit", "company"), DatatruckTruck(2, "900", "W", "available", "company"),
+                                    DatatruckTruck(3, "901", "X", "shop", None)])
+        db.replace_dt_drivers(conn, [DatatruckDriver(7, "ALI (LO)", "lease", "active", "TTL", "340"),
+                                     DatatruckDriver(8, "GONE", "lease", "inactive", "TTL", "900")])
+        db.replace_fuel_cards(conn, [FuelCard(1, "TTL", "driver", 7, "340", True, "retail_plus_fee", True),
+                                     FuelCard(2, "TTL", "driver", 8, "900", True, "retail_plus_fee", True)])
+        db.replace_samsara_vehicles(conn, [SamsaraVehicle("9", "TTL Unit 901", "Z", None, None)])
+        db.replace_samsara_live(conn, [SamsaraLive("1", 30.2, -97.1, "Austin, TX", now, 40.0, now)])
+        db.replace_fuel_lines(conn, [bought])
+    d = dashboard.fleet_payload()
+    rows = {t["unit"]: (t["on_duty"], t["type"], t["samsara"], t["card"]) for t in d["trucks"]}
+    assert rows == {"340": (True, "LO", "working", "card"), "900": (False, "none", "none", "fueled"),
+                    "901": (False, "none", "mismatch", "nocard")}
+    assert d["samsara_at"] == now.isoformat(timespec="seconds") and d["synced_at"] and d["trucks"][0]["driver"] == "ALI (LO)"

@@ -8,9 +8,9 @@ from datetime import date, datetime, timedelta, timezone
 
 import config
 import db
-from core import accounting, evidence, fill_checks, fuel, geo, habits, message, nearby, outcomes, recommend
-from models import (FuelLine, FuelStop, Order, Picture, Recommendation, Store, StoreOnRoute, TrackPoint, Trip, Truck, TruckNow,
-                    TruckWatch, Zone)
+from core import accounting, evidence, fill_checks, fleet_status, fuel, geo, habits, message, nearby, outcomes, recommend
+from models import (FleetTruck, FuelLine, FuelStop, Order, Picture, Recommendation, Store, StoreOnRoute, TrackPoint, Trip, Truck,
+                    TruckNow, TruckWatch, Zone)
 from rules import RULES, truck_now
 from sources import samsara
 
@@ -115,6 +115,31 @@ def drivers_payload() -> dict:
     return {"days": config.HABIT_DAYS, "low_pct": config.RAN_LOW_PCT, "top_off_gal": config.TOP_OFF_GAL,
             "habits": [asdict(h) | {"pilot": h.unit in pilot_units} for h in found],
             "stops": [[s.gauge_before, s.gauge_after, s.loves] for s in stops if s.gauge_before is not None]}
+
+
+# The fleet status on top of the Drivers view: every Datatruck truck with its type, whether Samsara works for it and
+# whether it has a fuel card (core/fleet_status), and how fresh each part is. The page does the counting.
+def fleet_payload() -> dict:
+    now = datetime.now(timezone.utc)
+    with db.connect() as conn:
+        trucks = db.fleet_status(conn)
+        named = fleet_status.named_units([v.name for v in db.samsara_vehicles(conn)])
+        samsara_at = db.newest_data(conn)[0]
+        refreshed = {table: at for table, _, at in db.status(conn)}
+    stale = timedelta(hours=config.ACTIVE_HOURS)
+    fueled_since = f"{now.astimezone(fuel.CENTRAL) - timedelta(days=config.FLEET_FUELED_DAYS):%Y-%m-%d %H:%M}"
+    copies = [refreshed[t] for t in ("dt_trucks", "dt_drivers", "fuel_cards") if refreshed[t]]
+    return {"samsara_at": samsara_at.isoformat() if samsara_at else None, "synced_at": min(copies, default=None),
+            "trucks": [_fleet_row(t, named, now, stale, fueled_since) for t in trucks]}
+
+
+# One truck of the fleet status: what Datatruck and Samsara say of it, and the keys of its three groups.
+def _fleet_row(t: FleetTruck, named: set[str], now: datetime, stale: timedelta, fueled_since: str) -> dict:
+    return {"unit": t.unit, "status": t.status, "driver": t.driver, "on_duty": fleet_status.on_duty(t),
+            "type": fleet_status.truck_type(t), "samsara": fleet_status.samsara_state(t, named, now, stale),
+            "card": fleet_status.card_state(t, fueled_since), "live": t.unit in config.LIVE_UNITS,
+            "gps_at": t.gps_at.isoformat() if t.gps_at else None, "fuel_pct": t.fuel_pct,
+            "fuel_at": t.fuel_at.isoformat() if t.fuel_at else None}
 
 
 # The Recommend view's list: each pilot truck's latest look with the stop told, if any, and how the silent test stands.

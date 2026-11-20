@@ -281,6 +281,61 @@ button.msg:hover, button.msg:focus-visible { outline: 2px solid var(--text); out
 .table .off { color: var(--bad); }
 .badge { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 11px;
   background: rgba(91, 156, 245, 0.16); color: var(--s1); }
+/* fleet status: three bars (a question each: its name, a segment per group, the groups with their counts), then one
+   square per truck (the Live view's .msg square) in clusters by status, and the picked group's trucks as a table */
+.fleet-bars { display: grid; gap: 6px; }
+.fleet-bar { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 6px 14px; align-items: start; padding: 10px 12px;
+  border-radius: 10px; border: 1px solid transparent; }
+.fleet-bar.on { background: var(--panel-2); border-color: var(--line); }  /* the question that colors the squares */
+.fleet-name { font: inherit; font-weight: 600; text-align: left; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; }
+.fleet-name small { display: block; font-weight: 400; font-size: 11px; color: var(--faint); }
+.fleet-bar.on .fleet-name, .fleet-name:hover { color: var(--text); }
+.fleet-bar-body { display: grid; gap: 8px; min-width: 0; }
+.fleet-segs { display: flex; gap: 2px; height: 14px; border-radius: 5px; overflow: hidden; }
+.fleet-segs i { display: block; height: 100%; min-width: 3px; border-radius: 3px; }
+.fleet-groups { display: flex; flex-wrap: wrap; gap: 6px 8px; }
+.fleet-group { font: inherit; font-size: 13px; display: inline-flex; align-items: baseline; gap: 7px; padding: 3px 9px; border-radius: 999px;
+  border: 1px solid transparent; background: none; color: var(--muted); cursor: pointer; }
+.fleet-group:hover { border-color: var(--line); color: var(--text); }
+.fleet-group[aria-pressed="true"] { border-color: var(--text); color: var(--text); }  /* the group listed below */
+.fleet-group i { flex: none; align-self: center; width: 11px; height: 11px; border-radius: 3px; }
+.fleet-group b { color: var(--text); font-weight: 600; }
+.fleet-group small { color: var(--faint); font-size: 12px; }
+.fleet-group.zero { opacity: 0.5; }
+.fleet-name:focus-visible, .fleet-group:focus-visible, .fleet-clear:focus-visible { outline: 2px solid var(--s1); outline-offset: 1px; }
+/* each group's color, the same on a segment, a group's mark and a square; the two gauge groups share blue, the
+   silent one hollow */
+.f-type-LO { background: var(--s1); }
+.f-type-C { background: var(--s2); }
+.f-type-OO { background: var(--s3); }
+.f-type-Other { background: var(--s4); }
+.f-type-none { background: var(--line); }
+.f-samsara-working, .f-card-card { background: var(--good); }
+.f-samsara-none, .f-card-nocard { background: var(--bad); }
+.f-samsara-mismatch { background: var(--s4); }
+.f-samsara-nogps, .f-card-fueled { background: var(--warn); }
+.f-samsara-never { background: var(--s1); }
+.f-samsara-silent { box-shadow: inset 0 0 0 2px var(--s1); }
+.msg.f-samsara-silent { box-shadow: none; border-color: var(--s1); }  /* a square has its own border to color */
+.msg.dim { opacity: 0.16; }  /* not in the picked group */
+.fleet-board { display: flex; flex-wrap: wrap; gap: 20px 36px; align-items: start; }
+.fleet-duty { display: grid; gap: 10px; min-width: 0; }
+.fleet-duty-head { padding-bottom: 6px; border-bottom: 1px solid var(--line); font-size: 12px; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--faint); }
+.fleet-duty-head b { color: var(--text); font-weight: 600; }
+.fleet-clusters { display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: start; }
+.fleet-cluster { display: grid; gap: 8px; }
+.fleet-cluster-head { font-size: 13px; color: var(--muted); }
+.fleet-cluster-head b { margin-left: 5px; color: var(--text); font-weight: 600; }
+.fleet-squares { display: flex; flex-wrap: wrap; gap: 3px; width: calc(var(--cols) * 16px - 3px); max-width: 100%; }  /* 13px square + 3px gap */
+.fleet-list { display: grid; gap: 10px; }
+.fleet-list-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.fleet-clear { font: inherit; font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); background: none;
+  color: var(--muted); cursor: pointer; }
+.fleet-clear:hover { color: var(--text); border-color: var(--text); }
+.fleet-table { font-size: 13px; }
+.fleet-table td { padding: 7px 12px; }
+.fleet-table .fleet-todo { white-space: normal; min-width: 240px; color: var(--muted); }
 
 /* ---------- Recommend view: the screen's full width; the truck list on the left stays in sight while the page
    scrolls; the truck's figures, map, messages, Love's ahead and gauge stacked on the right ---------- */
@@ -538,6 +593,7 @@ button.cube:focus-visible { outline: 2px solid var(--s1); outline-offset: 3px; }
 }
 @media (max-width: 700px) {
   .grid, .kpis, .pair { grid-template-columns: 1fr; }
+  .fleet-bar { grid-template-columns: minmax(0, 1fr); }
   .map { height: 460px; }
   .topbar { grid-template-columns: 1fr; }
   .glossary dl { grid-template-columns: 1fr; }

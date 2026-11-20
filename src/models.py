@@ -268,6 +268,22 @@ class Truck:
     pilot: bool                     # one of the trucks you picked for the pilot
 
 
+# One Datatruck truck with what the fleet status is told from: who drives it, its Samsara link and newest readings,
+# its fuel card and its newest purchase. A row of db.fleet_status; unlike `fleet`, trucks with no Samsara link are in.
+@dataclass(frozen=True)
+class FleetTruck:
+    unit: str
+    status: str                     # Datatruck's: "in_transit", "available", "shop", "yard"
+    driver: str | None              # active Datatruck driver(s) of this unit, "A & B" for a team; None when nobody is
+    driver_type: str | None         # the first driver's Datatruck type: "lease", "company_driver", "company_owner", "other"
+    samsara_name: str | None        # the Samsara vehicle linked by VIN; None when no Samsara vehicle has this VIN
+    gps_at: datetime | None         # latest Samsara GPS point
+    fuel_pct: float | None          # latest Samsara gauge reading
+    fuel_at: datetime | None
+    has_card: bool                  # an active fuel card on a driver active on this truck, or on the truck itself
+    fueled_at: str | None           # newest fuel purchase, local Central time "YYYY-MM-DD HH:MM"
+
+
 # One diesel stop of a driver (purchases at one place grouped), with the truck's gauge around it. A row of `fuel_stops`.
 @dataclass(frozen=True)
 class FuelStop:

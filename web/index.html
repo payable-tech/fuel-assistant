@@ -256,8 +256,21 @@
     </div>
   </section>
 
-  <!-- ===== Drivers: how each driver usually fuels, from their stops and the gauge around them ===== -->
+  <!-- ===== Drivers: the whole fleet's status (type, Samsara, fuel card), then how each driver usually fuels, from
+       their stops and the gauge around them ===== -->
   <section class="view" id="view-drivers" hidden>
+    <div class="view-head">
+      <h2 class="view-title">Fleet status</h2>
+      <p class="meta" id="fleet-meta"></p>
+    </div>
+    <div class="grid">
+      <article class="panel span-3">
+        <div class="fleet-bars" id="fleet-bars"></div>
+        <div class="msg-pick" id="fleet-pick" aria-live="polite"></div>
+        <div class="fleet-board" id="fleet-board"></div>
+        <div class="fleet-list" id="fleet-list" hidden></div>
+      </article>
+    </div>
     <div class="view-head">
       <h2 class="view-title">Driver habits</h2>
       <p class="meta" id="drivers-meta"></p>

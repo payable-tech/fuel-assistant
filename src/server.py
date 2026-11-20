@@ -20,6 +20,7 @@ ROUTES = {
     "/api/baseline": lambda query: dashboard.baseline_payload(dashboard.today()),
     "/api/live": lambda query: dashboard.live_payload(dashboard.today()),
     "/api/drivers": lambda query: dashboard.drivers_payload(),
+    "/api/fleet": lambda query: dashboard.fleet_payload(),
     "/api/recommend": lambda query: dashboard.recommend_payload(),
     "/api/recommend/truck": lambda query: dashboard.recommend_truck(query["unit"][0]),
     "/api/recommend/trip": lambda query: dashboard.recommend_driven(query["unit"][0]),

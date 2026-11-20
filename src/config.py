@@ -119,6 +119,9 @@ HABIT_MAX_FAILED = 0.2     # more than this share of trucks without gauge readin
 RAN_LOW_PCT = 10           # a stop that began below this gauge level "ran low"
 TOP_OFF_GAL = 50           # a stop buying less than this is a top-off
 
+# Fleet status (the top of the Drivers tab)
+FLEET_FUELED_DAYS = 14     # a truck with no card assigned that bought fuel within this many days is shown apart
+
 MPG_RANGE = (4.0, 12.0)
 
 # Tank helper: tank = gallons bought ÷ how far the Samsara fuel gauge rose (middle value over recent fill-ups),

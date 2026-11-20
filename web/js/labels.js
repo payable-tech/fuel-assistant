@@ -14,6 +14,32 @@ export const BECAME = [
   { key: 'off', label: 'Called off by us', tip: 'The road was remade without this stop, or the load ended before it.' },
 ];
 
+// The fleet status on top of the Drivers view: the three questions asked of every truck, each with its groups in the
+// order they are drawn. `key` is the truck's field holding its group; a group's `todo` is what to do about it, its
+// `tip` what it means. The colors are in the styles, by `f-<key>-<group>`. The 24 h and the 14 days in the words are
+// copies of the server's ACTIVE_HOURS and FLEET_FUELED_DAYS: change both together.
+const SENDER = 'Check the fuel sender connection to the Samsara device';
+export const FLEET = [
+  { key: 'type', name: 'Type', note: 'driver type', parts: [
+    { k: 'LO', label: 'LO', tip: 'Lease operator' }, { k: 'C', label: 'C', tip: 'Company driver' },
+    { k: 'OO', label: 'OO', tip: 'Company owner' }, { k: 'Other', label: 'Other', tip: "Datatruck's type 'other' (mostly LP)" },
+    { k: 'none', label: 'No driver', tip: 'No active driver assigned in Datatruck' }] },
+  { key: 'samsara', name: 'Samsara', note: 'working or not', parts: [
+    { k: 'working', label: 'Working', tip: 'GPS and fuel gauge both reported in the last 24 h' },
+    { k: 'none', label: 'No device', todo: 'Install a Samsara device, or add the truck to Samsara' },
+    { k: 'mismatch', label: 'VIN mismatch', todo: 'Correct the VIN in Datatruck, or move the device to the truck the driver is in' },
+    { k: 'nogps', label: 'No GPS 24 h+', todo: 'Check the device: unplugged, or the truck is powered off (home time?)' },
+    { k: 'never', label: 'Gauge never reports', todo: SENDER },
+    { k: 'silent', label: 'Gauge silent 24 h+', todo: SENDER }] },
+  { key: 'card', name: 'Fuel card', note: 'active card', parts: [
+    { k: 'card', label: 'Card assigned', tip: 'An active card on a driver who is active on this truck, or on the truck itself' },
+    { k: 'fueled', label: 'No card assigned, fueled lately', tip: 'No card is assigned in Datatruck, yet the truck bought fuel in the last 14 days' },
+    { k: 'nocard', label: 'No card, no fuel lately', tip: 'No card assigned and no purchase in the last 14 days' }] },
+];
+
+// Datatruck's truck statuses in words.
+export const TRUCK_STATUS = { in_transit: 'In transit', available: 'Available', shop: 'In shop', yard: 'In yard' };
+
 // Fuel levels the Recommend view colors by, % of the tank: red at or under the reserve the plans keep (a copy of the
 // engine's RESERVE_PCT, which the page's numbers don't carry: change both together), amber at or under a quarter tank.
 export const FUEL_RED_PCT = 10;

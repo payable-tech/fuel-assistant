@@ -1,11 +1,12 @@
 // Dashboard entry: switches between the sections (Fuel, Accounting) and their views (Fuel: Live, Trends, Recommend,
 // Drivers, Data; Accounting: the EFS statements as a tree), loads their numbers and hands
 // them to each view to draw, and keeps them current: the live numbers and the recommendations every minute, the weekly
-// ones every 5 minutes, habits every 30. The bell in the top bar tells when a message goes to a driver.
+// ones and the fleet status every 5 minutes, habits every 30. The bell in the top bar tells when a message goes to a driver.
 import { accountingPath, initAccounting, renderAccounting, showAccountingError } from './accounting.js';
 import { load } from './api.js';
 import { renderData } from './data.js';
 import { renderDrivers, showDriversError } from './drivers.js';
+import { initFleet, renderFleet, showFleetError } from './fleet.js';
 import { ago, timeOf } from './format.js';
 import { initLive, renderLive } from './live.js';
 import { initNotes, renderNotes } from './notes.js';
@@ -23,6 +24,7 @@ const VIEWS = Object.values(SECTIONS).flat();
 const LIVE_EVERY_MS = 60 * 1000;
 const TRENDS_EVERY_MS = 5 * 60 * 1000;
 const DRIVERS_EVERY_MS = 30 * 60 * 1000;  // habits are worked out once a day
+const FLEET_EVERY_MS = 5 * 60 * 1000;  // Samsara's readings are refreshed every 5 minutes
 const ACCOUNTING_EVERY_MS = 30 * 60 * 1000;  // a new statement comes once a week; this picks it up the same half hour
 const VERSION_EVERY_MS = 60 * 1000;
 // live, baseline: the numbers last loaded; checkedAt: when; failing: the last load failed; version: the page's files
@@ -109,6 +111,16 @@ async function refreshDrivers() {
   }
 }
 
+// Loads every truck's status and redraws the fleet status on top of the Drivers view.
+async function refreshFleet() {
+  try {
+    renderFleet(await load('/api/fleet'));
+  } catch (error) {
+    showFleetError(error);
+    console.error(error);
+  }
+}
+
 // Loads the picked EFS statement's tree and redraws the Accounting view.
 async function refreshAccounting() {
   try {
@@ -148,14 +160,16 @@ registerTheme();
 initLive();
 initTrends();
 initRecommend();
+initFleet();
 initNotes();
 initAccounting(refreshAccounting);
 checkVersion();
 setInterval(checkVersion, VERSION_EVERY_MS);
-await Promise.all([refreshLive(), refreshTrends(), refreshRecommend(), refreshDrivers(), refreshAccounting()]);
+await Promise.all([refreshLive(), refreshTrends(), refreshRecommend(), refreshDrivers(), refreshFleet(), refreshAccounting()]);
 setInterval(refreshAccounting, ACCOUNTING_EVERY_MS);
 setInterval(refreshLive, LIVE_EVERY_MS);
 setInterval(refreshRecommend, LIVE_EVERY_MS);
 setInterval(refreshTrends, TRENDS_EVERY_MS);
 setInterval(refreshDrivers, DRIVERS_EVERY_MS);
+setInterval(refreshFleet, FLEET_EVERY_MS);
 setInterval(showLive, 30 * 1000);  // keeps "checked … ago" current

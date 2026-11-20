@@ -9,8 +9,8 @@ from dataclasses import asdict, fields
 from datetime import datetime, timezone
 
 import config
-from models import (BurnFactor, DatatruckDriver, DatatruckTruck, EfsLine, EfsStatement, FillEvidence, FillLookup, FuelCard,
-                    FuelLine, FuelStop, MarketPrice, Order, Problem, Recommendation, Region, SamsaraLive, SamsaraVehicle,
+from models import (BurnFactor, DatatruckDriver, DatatruckTruck, EfsLine, EfsStatement, FillEvidence, FillLookup, FleetTruck,
+                    FuelCard, FuelLine, FuelStop, MarketPrice, Order, Problem, Recommendation, Region, SamsaraLive, SamsaraVehicle,
                     SourceHealth, Stop, Store, SyncedTruck, TankEstimate, TelegramGroup, Truck, TruckBurn, Trip, TruckWatch,
                     UsualLevel)
 
@@ -998,6 +998,32 @@ def pilot_truck(conn: sqlite3.Connection, unit: str) -> Truck | None:
 # Turns a `fleet` row into a Truck: stored times become datetimes, the pilot flag a real true/false.
 def _truck(row: sqlite3.Row) -> Truck:
     return Truck(**{**row, "fuel_at": _dt(row["fuel_at"]), "gps_at": _dt(row["gps_at"]), "pilot": bool(row["pilot"])})
+
+
+# Returns every Datatruck truck for the fleet status, one row each, linked to Samsara or not: its active drivers (a
+# team's type is its first driver's), its Samsara readings, whether it has an active fuel card, its newest purchase.
+# A card counts when its driver is active on this truck, or when it has no driver and is assigned to this unit: a
+# card's unit alone doesn't count, because many active cards still sit on drivers who left.
+def fleet_status(conn: sqlite3.Connection) -> list[FleetTruck]:
+    rows = conn.execute("""
+        WITH active AS (SELECT unit, driver_id, full_name, driver_type FROM dt_drivers
+                        WHERE employee_status = 'active' AND unit IS NOT NULL),
+             -- the units with a card, worked out once (asking the cards again for every truck takes seconds)
+             carded AS (SELECT a.unit FROM fuel_cards c JOIN active a ON a.driver_id = c.driver_id WHERE c.active
+                        UNION SELECT unit FROM fuel_cards WHERE active AND driver_id IS NULL AND unit IS NOT NULL),
+             fueled AS (SELECT unit, MAX(fueled_at) AS fueled_at FROM fuel_lines GROUP BY unit)
+        SELECT d.unit, d.status,
+               (SELECT group_concat(full_name, ' & ') FROM active WHERE unit = d.unit) AS driver,
+               (SELECT driver_type FROM active WHERE unit = d.unit ORDER BY driver_id LIMIT 1) AS driver_type,
+               t.name AS samsara_name, l.gps_at, l.fuel_pct, l.fuel_at,
+               d.unit IN (SELECT unit FROM carded) AS has_card, f.fueled_at
+        FROM dt_trucks d
+        LEFT JOIN trucks t ON t.unit = d.unit
+        LEFT JOIN samsara_live l ON l.samsara_id = t.samsara_id
+        LEFT JOIN fueled f ON f.unit = d.unit
+        ORDER BY d.unit""")
+    return [FleetTruck(**{**row, "gps_at": _dt(row["gps_at"]), "fuel_at": _dt(row["fuel_at"]), "has_card": bool(row["has_card"])})
+            for row in rows]
 
 
 # Returns the active orders copy, each with its stops in route order.
