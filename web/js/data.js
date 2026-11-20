@@ -47,14 +47,17 @@ function renderJobs(jobs) {
 }
 
 // The heartbeat's findings: each part down now (with since when and whether Telegram was told), else that everything
-// works; then each source's last refresh, a failing one first (`refreshes`: how each source's last try went).
+// works; then each other source's last refresh, a failing one first (`refreshes`: how each source's last try went).
+// A source already listed as down isn't listed again.
 function renderHealth(problems, refreshes) {
   const down = (problems || []).map((p) => {
     const li = item(p.component, `down${p.since ? ` since ${ago(stored(p.since))}` : ''}${p.told ? '' : ' · alert not sent yet'}`, true);
     li.title = p.text;
     return li;
   });
-  const sources = [...(refreshes || [])].sort((a, b) => Boolean(b.error) - Boolean(a.error)).map((s) => {
+  const listed = new Set((problems || []).map((p) => p.component));
+  const others = (refreshes || []).filter((s) => !listed.has(s.name));
+  const sources = others.sort((a, b) => Boolean(b.error) - Boolean(a.error)).map((s) => {
     const li = item(s.name, s.error ? `failing · last good ${s.last_ok_at ? ago(stored(s.last_ok_at)) : 'never'}`
       : `ok ${ago(stored(s.last_try_at))}`, Boolean(s.error));
     if (s.error) li.title = s.error;
