@@ -13,6 +13,57 @@ class SamsaraVehicle:
     last_gps_at: datetime | None    # last GPS point: tells active trucks from parked or retired ones
 
 
+# One EFS weekly statement for one EFS account: page 1's figures. A row of `efs_statements`.
+@dataclass(frozen=True)
+class EfsStatement:
+    statement_no: str
+    account: str                    # the EFS customer, e.g. "ALIF UZ CORP" (its cards may belong to several companies)
+    statement_day: str              # "YYYY-MM-DD", the statement date: the last day it covers
+    charges: float                  # Current Charges: everything the account's cards cost in the period
+    summary: tuple[tuple[str, float], ...]  # page 1's Transaction Summary as (EFS's name, dollars); adds up to charges
+
+
+# One line of an EFS statement: a card purchase, a money code, a credit or an account fee. A row of `efs_lines`.
+@dataclass(frozen=True)
+class EfsLine:
+    statement_no: str
+    seq: int                        # its place on the statement
+    tn: str                         # EFS transaction number, shared by the items bought in one swipe
+    day: str                        # "YYYY-MM-DD"
+    unit: str                       # unit or truck number keyed at the pump; "" when none
+    city: str
+    state: str
+    description: str                # first line of EFS's text: "ULTRA LOW", "DIESEL EXHAUST", "MONEY CODE", ...
+    quantity: float                 # gallons for fuel; 1 for a money code or a scale
+    amount: float                   # what EFS charged for it; below zero for a credit
+    fee: float                      # EFS's transaction fee on it
+
+
+# What Samsara shows around one diesel fill (a Datatruck line): the gauge's biggest rise near it and where the truck
+# was when the rise ended. A row of `fill_evidence`, looked up once and kept.
+@dataclass(frozen=True)
+class FillEvidence:
+    line_id: int
+    gauge_from: float | None        # the gauge (%) at the bottom of its biggest rise near the fill; None: no readings
+    gauge_to: float | None          # and at its top
+    risen_at: datetime | None       # when it reached the top: the real end of the fill (Datatruck's time can be hours late)
+    lat: float | None               # where the truck was then (at Datatruck's time when the gauge didn't rise)
+    lng: float | None
+    place: str | None               # Samsara's address there, "Street, City, ST, ZIP"
+
+
+# One Samsara vehicle over one statement's days: the fuel its engine used, the miles it drove, and its gauge (%) when
+# the days began and ended. A row of `statement_burn`, looked up once per statement and kept.
+@dataclass(frozen=True)
+class TruckBurn:
+    statement_no: str
+    samsara_id: str
+    burned_gal: float
+    miles: float
+    gauge_start: float | None       # None: no reading in the days before (a parked or dead gauge)
+    gauge_end: float | None
+
+
 # A vehicle's latest GPS point and fuel gauge reading in Samsara. A row of `samsara_live`.
 @dataclass(frozen=True)
 class SamsaraLive:
@@ -31,6 +82,7 @@ class TrackPoint:
     at: datetime
     lat: float
     lng: float
+    place: str | None = None        # Samsara's address for the point, "Street, City, ST, ZIP", when it was asked for
 
 
 # One reading of a vehicle's fuel gauge, from Samsara's history.
@@ -150,6 +202,8 @@ class Store:
     price_date: str                 # "YYYY-MM-DD", from the sheet
     name: str = ""                  # a station that isn't a Love's (Google Places id as store_no): its name, e.g.
                                     # "Cenex Zip Trip"; its price is the pump price, or none known when price_date is ""
+    way: str | None = None          # a Love's highway and exit as its own page says them, "I-70 (Exit 208)"; None when
+                                    # not read yet or the page names none. Kept in `store_exits`
 
 
 # A Love's store next to a route: how far along the route it is, and how far off it.
@@ -160,53 +214,14 @@ class StoreOnRoute:
     off_mi: float                   # straight-line miles from that point to the store
 
 
-# The planner's rules, taken from config.
-@dataclass(frozen=True)
-class PlanRules:
-    reserve_pct: float              # never plan the tank below this
-    min_buy_gal: float              # a stop buys at least this much
-    stop_cost: float                # dollars one more stop costs
-    step_gal: float                 # fill-up amounts are planned in these steps
-    default_mpg: float              # used when the truck's MPG is missing or odd
-    mpg_range: tuple[float, float]  # MPG outside this is treated as odd
-    end_min_gal: float = 0.0        # aim to reach the last stop with at least this (else at least the reserve)
-    detour_factor: float = 0.0      # road miles to a store and back per straight-line mile off the route; 0: not counted
-    switch_cost: float = 0.0        # on a re-plan, dollars a Love's costs more when the driver wasn't told about it
-
-
-# One planned fuel stop.
-@dataclass(frozen=True)
-class PlanStop:
-    store: Store
-    miles: float                    # miles from the start of the route
-    arrive_gal: float               # fuel in the tank when the truck gets there
-    gallons: float                  # gallons to buy
-    cost: float                     # gallons × the store's discounted price
-
-
-# A point a planned load drives through: one of its planned fuel stops, pickups or deliveries.
-@dataclass(frozen=True)
-class Waypoint:
-    kind: str                       # "fuel", "pickup" or "delivery"
-    label: str                      # "Love's #614 Westfield, MA" or "Ayer, MA"
-    lat: float
-    lng: float
-    miles: float                    # miles from the plan's start along its road
-
-
-# Where to buy fuel on one trip and what it costs. No stops means the fuel on board is enough.
-@dataclass(frozen=True)
-class FuelPlan:
-    stops: tuple[PlanStop, ...]
-    end_gal: float                  # fuel left when the truck reaches the last stop of its load
-    fuel_cost: float                # dollars for the gallons bought
+US = "U.S."  # the region of a MarketPrice for the whole country
 
 
 # The average retail diesel price of one region in one week, from the U.S. EIA. A row of `market_prices`.
 @dataclass(frozen=True)
 class MarketPrice:
     day: str                        # "YYYY-MM-DD", the Monday the price was taken
-    region: str                     # an EIA region such as "Midwest" or "California"; "U.S." for the whole country
+    region: str                     # an EIA region such as "Midwest" or "California"; US for the whole country
     price: float                    # dollars per gallon at the pump, taxes included
 
 
@@ -268,6 +283,15 @@ class FuelStop:
     gauge_after: float | None       # Samsara gauge just after, %
 
 
+# What Samsara showed around one diesel fill outside Love's: where the truck was and the gauge before.
+@dataclass(frozen=True)
+class FillLookup:
+    line_id: int
+    lat: float | None               # the truck's Samsara GPS at the fill; None when Samsara had no position then (and in
+    lng: float | None               # older rows of Love's fills: those are placed at their store)
+    gauge_before: float | None      # Samsara gauge just before, %; None when the truck had no readings then
+
+
 # How one driver usually fuels, worked out from their recent stops.
 @dataclass(frozen=True)
 class DriverHabit:
@@ -287,82 +311,213 @@ class DriverHabit:
     outside_premium: float | None   # $/gal more paid outside Love's than at Love's; None when they only used one
 
 
-# One way of fueling a trip in figures that compare: the plan, the driver's habit, or what really happened.
+# One reading of an engine signal or the odometer, from Samsara's history.
 @dataclass(frozen=True)
-class Outcome:
+class Sample:
+    at: datetime
+    value: float
+
+
+# A vehicle's engine load %, RPM and odometer miles over a time, each oldest first.
+@dataclass(frozen=True)
+class EngineHistory:
+    load: tuple[Sample, ...]
+    rpm: tuple[Sample, ...]
+    miles: tuple[Sample, ...]
+
+
+# How many gallons one unit of a truck's engine meter burns (core/burn). A row of `burn_factors`.
+@dataclass(frozen=True)
+class BurnFactor:
+    unit: str
+    gal_per_unit: float
+    stretches: int                  # stretches of road it is based on
+
+
+# Where a driver usually fuels: gauge levels, from their past stops.
+@dataclass(frozen=True)
+class UsualLevel:
+    usual_pct: float                # middle level when stopping
+    low_pct: float                  # the middle half of their stops lies between these two
+    high_pct: float
+    fill_pct: float                 # middle level after filling
     stops: int
-    gallons: float                  # bought
-    bought: float                   # dollars bought: what the company is billed, after Love's discount
-    end_gal: float | None           # fuel left at the end of the trip; None while it isn't over
-    pump: float = 0.0               # the same gallons at the pump price
-    driver_paid: float | None = None  # what the drivers' cards charged them (real purchases only)
 
 
-# One fill-up the truck really made after its plan. Fuel lines carry no position, so it is placed where the
-# truck's GPS was when it paid (None when the track has a gap there).
+# The recommendation's rules, taken from config.
 @dataclass(frozen=True)
-class Fill:
-    at: datetime                    # time of the last purchase at this stop (UTC)
-    lat: float | None
-    lng: float | None
-    gallons: float
-    billed: float                   # what EFS billed the company
-    station: str                    # e.g. "LOVES #614 TRAVEL STOP"
-    city: str
-    state: str
-    plan_stop: int | None           # number of the planned stop it was made at (1, 2, ...); None when elsewhere
-    first_at: datetime | None = None  # time of the first purchase at this stop (lines minutes apart are one stop)
-    pump: float = 0.0               # the gallons at the pump price
-    fee: float = 0.0                # card fees
-    driver_paid: float = 0.0        # what the driver's card charged them (core/fuel.driver_paid)
+class FuelRules:
+    reserve_pct: float              # never plan to arrive under this, at the cautious MPG
+    worse: float                    # the cautious MPG is the lower of average and live, times this
+    above_usual: float              # a stop reached more than this many points above the usual level is too early
+    look_mi: float                  # the driver is told when the stop is this close
+    part_gap: float                 # a Love's ahead this much cheaper ($/gal, and cheaper at the pump) is marked on the regions
+    part_reach_mi: float            # ...when it is at most this far past the stop
+    part_min_gal: float             # at a truck stop before a Love's: buy at least this
+    part_margin_gal: float          # ...and at least this less than a fill-up, or it isn't worth asking
+    low_penalty: float              # dollars a stop loses per point it is reached below the driver's range
+    urgent_pct: float               # with no Love's in reach, the backup starts at this gauge level
+    hold_min: float                 # no fuel stop is told this many minutes after a fill was seen (it may still be going on)
+    near_mi: float                  # ...nor one closer than this: the driver is already there
+    max_passed: int                 # ...nor after this many stops told and driven past on one tank
+    last_pct: float                 # a Love's reached with less than this, at the cautious MPG, is out of reach: what the
+                                    # gauge's own error can hide. Between this and the reserve: not planned on, no emergency
 
 
-# What the truck really did after its plan was made, up to the load's last stop (or now).
+# A truck as the rules see it now.
+@dataclass(frozen=True)
+class TruckNow:
+    fuel_gal: float
+    mile: float                     # how far along its road
+    tank_gal: float
+    forecast_mpg: float
+    cautious_mpg: float
+    usual: UsualLevel
+
+
+# A stretch of the road ahead where the truck will need fuel.
+@dataclass(frozen=True)
+class Region:
+    from_mi: float
+    to_mi: float
+    stops: int                      # Love's in it
+    cheapest: str
+    cheaper_ahead: bool             # a Love's past it is much cheaper: a part fill may come up here
+    fill_mi: float = 0.0            # where in it the forecast assumes the fill-up
+    fill_pct: float | None = None   # ...and the gauge after it; None: the driver's fill level
+
+
+# What the rules say now. kind: "enough", "watch", "stop" or "urgent" (core/recommend.decide).
+@dataclass(frozen=True)
+class Decision:
+    kind: str
+    stop: StoreOnRoute | None = None
+    arrive_pct: float | None = None
+    worst_pct: float | None = None
+    gallons: float | None = None    # to buy there
+    then: StoreOnRoute | None = None  # a part fill: where to fill up after it
+    reason: str | None = None       # "range", "hard_stop", "tight" (under the reserve, Love's left), "last" (the last one in
+                                    # reach: skipping it means low fuel), "detour" (none on the road in reach, one off it is)
+                                    # or "low" (none in reach)
+
+
+NO_LOAD_ORDER = 0  # the order id a message to a truck with no load is kept under (Datatruck's ids start at 1)
+
+
+# One thing the driver would have been told, and what became of it. A row of `recommendations`.
+@dataclass(frozen=True)
+class Recommendation:
+    rec_id: int | None
+    unit: str
+    driver: str | None
+    order_id: int
+    load_id: str
+    made_at: datetime
+    kind: str
+    store_no: str | None
+    station: str | None
+    miles_ahead: float | None
+    gauge_pct: float
+    arrive_pct: float | None
+    worst_pct: float | None
+    gallons: float | None
+    then_station: str | None
+    reason: str | None
+    net: float | None
+    retail: float | None
+    price_date: str | None
+    forecast_mpg: float
+    cautious_mpg: float
+    usual_pct: float
+    text: str
+    status: str                     # "open", "fueled", "passed", "replaced", "load ended", or "repeat": sent again by
+                                    # mistake (an engine bug, set by hand), counted nowhere
+    settled_at: datetime | None
+    sent_at: datetime | None = None # when it went to the driver's own group; None: the test group only
+    lat: float | None = None        # where the stop is: an urgent message's truck stop is found on the road by it
+    lng: float | None = None
+
+
+# One load of a pilot truck as the engine saw it, kept after the load ends so past trips can be walked through on the
+# Recommend tab. A row of `trips`.
 @dataclass(frozen=True)
 class Trip:
-    track: tuple[tuple[float, float], ...]  # the road it drove, (lat, lng) points
-    fills: tuple[Fill, ...]
-    finished_at: datetime | None    # when it reached the load's last stop; None while it hasn't
+    unit: str
+    order_id: int
+    load_id: str | None
+    stops: tuple                    # the load's stops: (kind, city, state, lat, lng)
+    started_at: datetime            # the engine's first look at this load
+    ended_at: datetime              # its last look at it
+    line: tuple | list | None = None  # the latest road planned (points MAP_STEP_MI apart); None when none was kept
 
 
-# Everything about one planned load, kept so the plan can be redrawn exactly as it was made: the truck as it was,
-# its load, the road, the Love's along it, and the plan (None when no plan keeps the reserve).
+# One pilot truck's latest look: its state, its road and where it is on it. A row of `truck_watch`.
 @dataclass(frozen=True)
-class LoadPlan:
-    made_at: datetime
-    truck: Truck
-    order: Order
-    stops_ahead: tuple[Stop, ...]   # the load's stops the truck still had to drive to
-    line: tuple[tuple[float, float], ...]  # the road from the truck through those stops, (lat, lng) points
-    route_mi: float
-    candidates: tuple[StoreOnRoute, ...]   # the Love's along the road it could choose from
-    mpg: float                      # the MPG the plan used
-    price_date: str                 # date of the Love's price sheet
-    end_price: float                # what a gallon left at the end is worth: the Love's price nearest the destination
-    plan: FuelPlan | None
-    end_pump: float | None = None   # that Love's pump price (plans before 2026-10-22 lack it)
-    via: tuple[tuple[float, float], ...] = ()  # (lat, lng) the road goes through: the driver's own route, where it
-                                    # isn't Google's (e.g. I-84 through Ontario, OR); re-plans keep those still ahead
-
-
-# One thing that happened on a followed plan, as its messages tell it.
-@dataclass(frozen=True)
-class Event:
-    kind: str                       # "pickup", "delivery", "bought", "missed", "dropped" or "replanned"
-    label: str                      # the place: "Fort Worth, TX", "Love's #227 Sweetwater, TX", "Pilot #452 Abilene, TX"
+class TruckWatch:
+    unit: str
     at: datetime
-    stop_no: int | None = None      # the planned stop's number ("bought" there, "missed", "dropped"); None elsewhere
-    gallons: float | None = None    # "bought": the gallons, what EFS billed, and the same at the pump price
-    billed: float | None = None
-    pump: float | None = None
+    state: str                      # "enough", "watch", "stop", "urgent", "told", or why it can't be looked at
+    order_id: int | None = None
+    load_id: str | None = None
+    road_made_at: datetime | None = None
+    line: tuple | list | None = None
+    route_mi: float | None = None
+    mile: float | None = None
+    fuel_pct: float | None = None
+    forecast_mpg: float | None = None
+    cautious_mpg: float | None = None
+    live_mpg: float | None = None
+    live_used: bool = False         # False while it ran empty, or without a figure
+    usual_known: bool = False
+    usual: UsualLevel | None = None
+    regions: tuple[Region, ...] = ()
+    road_stops: tuple = ()          # the load's stops (lat, lng) the road was made through: when they change, a new road
+    fueled_at: datetime | None = None  # when the gauge last rose like a fill: no new message for FUEL_HOLD_MIN after it
 
 
-# How far a sent plan has got: the road in force (the plan, or its latest re-plan from where the truck was), how many
-# of that road's waypoints the truck has passed, every Love's planned for the load so far (planned stop n is
-# planned[n - 1]), and everything told so far, in order.
+# A Love's on the road as the rules see it now. verdict: "passed", "early" (well above the driver's level), "range",
+# "late" (under the reserve in the worst case) or "out" (out of reach in the worst case).
 @dataclass(frozen=True)
-class Progress:
-    road: LoadPlan
-    passed: int
-    planned: tuple[Waypoint, ...]
-    events: tuple[Event, ...]
+class StopView:
+    stop: StoreOnRoute
+    arrive_pct: float
+    worst_pct: float
+    verdict: str
+
+
+# A stretch of road where a tank of fuel runs down: from where the gauge reaches the driver's level, past where it
+# crosses the reserve, to where the truck runs out. A Love's before `reserve_mi` is safe, one after it isn't.
+@dataclass(frozen=True)
+class Zone:
+    start_mi: float
+    reserve_mi: float
+    end_mi: float
+
+
+# Everything the rules see for a truck now, to draw: the decision, every Love's, the regions and the fuel zones.
+@dataclass(frozen=True)
+class Picture:
+    decision: Decision
+    views: tuple[StopView, ...]
+    regions: tuple[Region, ...]
+    zones: tuple[Zone, ...] = ()
+
+
+# How a source copy's last refresh went (one row per source of `source_health`): when it was last tried, when it last
+# worked, and the error of the last try when that failed (None when it worked).
+@dataclass(frozen=True)
+class SourceHealth:
+    name: str
+    last_try_at: datetime
+    last_ok_at: datetime | None
+    error: str | None
+
+
+# Something not working, found by the heartbeat (core/health): which part, what is wrong, since when (None when that
+# isn't known), and whether the alert about it went out (a row of `health_alerts` keeps it till it is fixed).
+@dataclass(frozen=True)
+class Problem:
+    component: str
+    text: str
+    since: datetime | None = None
+    told: bool = False

@@ -1,6 +1,7 @@
-# Telegram through user accounts (Telethon): the assistant's account (TG_PHONE) logs in once and sends the messages;
-# the list of driver groups is read from the account in TG_GROUPS_SESSION_PATH (Bob's, while it is in more groups).
+# Telegram through user accounts (Telethon): Bob's account lists the driver groups; the assistant's account sends, only
+# from jobs/recommend: to the test group, and to the driver groups of the trucks in LIVE_UNITS.
 import asyncio
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -8,6 +9,8 @@ from telethon.sync import TelegramClient
 
 import config
 from models import TelegramGroup
+
+_send_lock = threading.Lock()  # see send
 
 
 # Logs the assistant's account (TG_PHONE) in once, interactively: Telegram sends a code to that account's app and
@@ -26,24 +29,11 @@ def groups() -> list[TelegramGroup]:
         return [TelegramGroup(chat_id=d.id, title=d.title) for d in client.iter_dialogs() if d.is_group]
 
 
-# Sends a message (Telegram HTML: bold, links, crossed-out text) to a chat from the assistant's account, without
-# link previews. Returns the message's id, to edit it later.
+# Sends a message (Telegram HTML: links) to a chat from the assistant's account, without link previews. Returns its id.
+# One send at a time: the engine and the heartbeat send from two threads, and one login file can't be opened twice.
 def send(chat_id: int, text: str) -> int:
-    with _session(config.TG_SESSION_PATH) as client:
+    with _send_lock, _session(config.TG_SESSION_PATH) as client:
         return client.send_message(_chat(client, chat_id), text, parse_mode="html", link_preview=False).id
-
-
-# Replaces the text of a message the assistant's account sent earlier; the chat isn't notified.
-def edit(chat_id: int, message_id: int, text: str) -> None:
-    with _session(config.TG_SESSION_PATH) as client:
-        client.edit_message(_chat(client, chat_id), message_id, text, parse_mode="html", link_preview=False)
-
-
-# The assistant's account: its name, and which of `chat_ids` it is a member of (so it can write there).
-def member_of(chat_ids: list[int]) -> tuple[str, set[int]]:
-    with _session(config.TG_SESSION_PATH) as client:
-        mine = {d.id for d in client.iter_dialogs() if d.is_group}
-        return client.get_me().first_name, mine & set(chat_ids)
 
 
 # The chat to write to, as Telegram needs it.

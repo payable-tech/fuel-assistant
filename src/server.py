@@ -4,14 +4,14 @@ import ctypes
 import json
 import logging
 import socket
-import threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from ipaddress import ip_address, ip_network
 from urllib.parse import parse_qs
 
 import config
-from jobs import dashboard, scheduler
+import dashboard
+from jobs import scheduler
 
 log = logging.getLogger(__name__)
 
@@ -19,13 +19,17 @@ log = logging.getLogger(__name__)
 ROUTES = {
     "/api/baseline": lambda query: dashboard.baseline_payload(dashboard.today()),
     "/api/live": lambda query: dashboard.live_payload(dashboard.today()),
-    "/api/plans": lambda query: dashboard.plans_payload(),
-    "/api/plan": lambda query: dashboard.plan_payload(int(query["id"][0])),
     "/api/drivers": lambda query: dashboard.drivers_payload(),
+    "/api/recommend": lambda query: dashboard.recommend_payload(),
+    "/api/recommend/truck": lambda query: dashboard.recommend_truck(query["unit"][0]),
+    "/api/recommend/trip": lambda query: dashboard.recommend_driven(query["unit"][0]),
+    "/api/recommend/past": lambda query: dashboard.recommend_past(query["unit"][0], int(query["order"][0])),
+    "/api/accounting": lambda query: dashboard.accounting_payload(query.get("statement", [None])[0]),
+    "/api/version": lambda query: {"version": web_version()},
 }
 
 
-# Serves files from web/, plus the one JSON route the page reads its numbers from.
+# Serves files from web/, plus the JSON routes (ROUTES) the page reads its numbers from.
 class Handler(SimpleHTTPRequestHandler):
     # Windows can map .js to text/plain from the registry; browsers need the real types.
     extensions_map = {**SimpleHTTPRequestHandler.extensions_map, ".js": "text/javascript", ".css": "text/css",
@@ -50,7 +54,7 @@ class Handler(SimpleHTTPRequestHandler):
             return
         try:
             self._send_json(200, build(parse_qs(query)))
-        except LookupError as missing:  # e.g. a plan that doesn't exist
+        except LookupError as missing:  # e.g. a truck that isn't a test truck
             self._send_json(404, {"error": str(missing)})
         except ConnectionError:  # the browser left before the answer was sent (tab closed, page reloaded): nothing to do
             log.debug("Browser left before %s was answered", path)
@@ -78,12 +82,11 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 # Runs the dashboard at http://127.0.0.1:<port> (and at this PC's office address from other office PCs, when
-# DASHBOARD_HOST allows) until stopped with Ctrl+C; with `refresh`, data refreshes itself too. The pilot trucks'
-# newest plans are kept built in the background either way, so the Plans view opens them at once.
+# DASHBOARD_HOST allows) until stopped with Ctrl+C; with `refresh`, data refreshes itself too.
 def serve(port: int, refresh: bool) -> None:
     server = ThreadingHTTPServer((config.DASHBOARD_HOST, port), partial(Handler, directory=str(config.WEB_DIR)))
     _stay_awake()
-    threading.Thread(target=dashboard.keep_fresh, name="plan trips", daemon=True).start()
+    _no_click_pause()
     if refresh:
         scheduler.start()
         log.info("Automatic refreshes are on (see the Data tab for their last runs)")
@@ -99,14 +102,35 @@ def serve(port: int, refresh: bool) -> None:
         server.server_close()
 
 
+# The page's version: when its newest file in web/ (the vendored libraries aside) last changed. An open page asks
+# for it every minute and reloads itself when it differs, so it never runs old code against new numbers.
+def web_version() -> str:
+    web = config.WEB_DIR
+    files = [p for p in web.rglob("*") if p.is_file() and "vendor" not in p.relative_to(web).parts]
+    return str(max((p.stat().st_mtime_ns for p in files), default=0))
+
+
 # True when a visitor's address is this PC or on one of the office networks (DASHBOARD_NETWORKS).
 def allowed(address: str) -> bool:
     return any(ip_address(address) in ip_network(net) for net in config.DASHBOARD_NETWORKS)
 
 
-# Asks Windows not to put the PC to sleep while this program runs, so plans keep being made overnight. The screen
+# Asks Windows not to put the PC to sleep while this program runs, so the data keeps refreshing overnight. The screen
 # may still turn off; the request ends by itself when the program stops.
 def _stay_awake() -> None:
     es_continuous, es_system_required = 0x80000000, 0x00000001  # "until I say otherwise" + "keep the system on"
     if not ctypes.windll.kernel32.SetThreadExecutionState(es_continuous | es_system_required):
         log.warning("Windows refused to keep the PC awake: it may sleep and pause the refreshes")
+
+
+# Turns off click-to-select (QuickEdit) in this program's window: a click there starts a selection, and Windows
+# pauses every write to the window until it ends, which froze the refreshes for hours on 2026-10-28.
+def _no_click_pause() -> None:
+    kernel32 = ctypes.windll.kernel32
+    window_input = kernel32.GetStdHandle(-10)  # the window's keyboard and mouse input
+    mode = ctypes.c_uint32()
+    if not kernel32.GetConsoleMode(window_input, ctypes.byref(mode)):
+        return  # no window (started hidden or from a test): nothing to click
+    quick_edit, extended_flags = 0x0040, 0x0080  # Windows only reads the quick_edit bit when extended_flags is set
+    if not kernel32.SetConsoleMode(window_input, (mode.value & ~quick_edit) | extended_flags):
+        log.warning("Could not turn off click-to-select: a click in this window can still pause the program")

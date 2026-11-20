@@ -1,6 +1,7 @@
 # Tests which of a truck's active orders counts as its current load, and which of its stops are still ahead.
 from datetime import datetime, timedelta, timezone
 
+from core import loads
 from core.loads import current_order, next_load, stops_ahead
 from models import Order, Stop, TrackPoint
 
@@ -39,6 +40,14 @@ def test_stops_ahead():
     assert [s.stop_id for s in stops_ahead(order, [(32.75, -96.8)], 1.0)] == [1, 3]           # 3.5 mi off: not there
 
 
+# A load in transit was picked up: its pickup isn't ahead even when the GPS was never there; while only dispatched, it is.
+def test_in_transit_picked_up():
+    stops = (Stop(1, 1, 1, "pickup", 44.55, -70.54, "Rumford", "ME"), Stop(2, 1, 2, "delivery", 40.18, -111.63, "Springville", "UT"))
+    wyoming = (41.3, -110.9)
+    assert [s.stop_id for s in stops_ahead(Order(1, "L-1", "in_transit", "5502", None, stops), [wyoming], 1.0)] == [2]
+    assert [s.stop_id for s in stops_ahead(Order(1, "L-1", "dispatched", "5502", None, stops), [wyoming], 1.0)] == [1, 2]
+
+
 DALLAS, ATLANTA, HOUSTON = (32.7, -96.8), (33.7, -84.4), (29.8, -95.4)
 
 
@@ -74,3 +83,34 @@ def test_next_load_none():
     done = load(1, "in_transit", 17, DALLAS, ATLANTA)
     assert next_load([done], [seen(DALLAS, 17), seen(ATLANTA, 18)], 1.0, timedelta(hours=24),
                      datetime(2026, 10, 18, 13, tzinfo=timezone.utc)) is None
+
+
+# Live MPG doesn't count while the truck runs empty: a pickup still ahead, or at its pickup less than `settle` ago.
+def test_empty_lately():
+    now = datetime(2026, 11, 2, 12, 0, tzinfo=timezone.utc)
+    pickup = Stop(1, 1, 1, "pickup", 30.0, -97.0, "A", "TX")
+    delivery = Stop(2, 1, 2, "delivery", 31.0, -97.0, "B", "TX")
+    order = Order(1, "L", "in_transit", "340", now, (pickup, delivery))
+    settle = timedelta(hours=3)
+    assert loads.empty_lately(order, [pickup, delivery], [], 1.0, settle, now)
+    an_hour_ago = [TrackPoint(at=now - timedelta(hours=1), lat=30.0, lng=-97.0)]
+    assert loads.empty_lately(order, [delivery], an_hour_ago, 1.0, settle, now)
+    long_ago = [TrackPoint(at=now - timedelta(hours=5), lat=30.0, lng=-97.0)]
+    assert not loads.empty_lately(order, [delivery], long_ago, 1.0, settle, now)
+
+
+# Stops reached drop off the front and the road still fits; a stop added, moved or dropped means a new road.
+def test_same_stops():
+    road = [(40.0, -82.0), (38.0, -85.0), (29.8, -95.4)]
+    assert loads.same_stops(road[1:], road) and loads.same_stops(road, road)
+    assert loads.same_stops([(38.00004, -85.00004), road[2]], road)  # the same place, a few metres off
+    assert not loads.same_stops(road + [(30.0, -97.0)], road)          # a stop added
+    assert not loads.same_stops([road[0], (38.5, -85.0), road[2]], road)  # a stop moved
+    assert not loads.same_stops([road[0], road[2]], road)               # a stop dropped
+
+
+# A load picked up more than the limit ago is over whatever Datatruck shows; one without a pickup time is kept.
+def test_under_way():
+    now = datetime(2026, 11, 5, tzinfo=timezone.utc)
+    old, recent, unknown = order(1, "in_transit", 6), order(2, "in_transit", 30), order(3, "assigned", None)
+    assert [o.order_id for o in loads.under_way([old, recent, unknown], timedelta(days=10), now)] == [2, 3]

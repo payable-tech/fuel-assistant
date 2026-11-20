@@ -15,9 +15,11 @@ RENEW_EARLY_SEC = 300   # renew the token this long before it expires
 _session = {"token": "", "expires": 0.0}  # the current 1-hour token, shared by every job in this process
 
 
-# Returns every fuel-card purchase line Datatruck has, newest first.
+# Returns every fuel-card purchase line Datatruck has, newest first, each once. Reading all pages takes minutes; a line
+# pushed onto the next page by new ones arriving meanwhile comes twice (the copy failed on it, 2026-11-05).
 def fuel_lines() -> list[FuelLine]:
-    return [_fuel_line(r) for r in _all("/v1/fuel/transactions/", {"ordering": "-date"})]
+    lines = map(_fuel_line, _all("/v1/fuel/transactions/", {"ordering": "-date"}))
+    return list({l.line_id: l for l in lines}.values())
 
 
 # Returns the fuel lines fueled on or after a local day ("YYYY-MM-DD"), reading newest-first pages only until it

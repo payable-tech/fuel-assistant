@@ -1,12 +1,14 @@
-// The Data view: how fresh each source is, when each automatic refresh last ran, and what doesn't link up.
+// The Data view: what the heartbeat finds down, how fresh each source is, when each automatic refresh last ran, and
+// what doesn't link up.
 import { el } from './dom.js';
 import { ago, fmt } from './format.js';
 
+// Each stored table's name in words.
 const SOURCE_NAME = {
   fuel_lines: 'Fuel purchases', fuel_cards: 'Fuel cards', dt_trucks: 'Datatruck trucks', dt_drivers: 'Datatruck drivers',
   dt_orders: 'Active loads', dt_stops: 'Load stops', samsara_vehicles: 'Samsara vehicles', trucks: 'Linked trucks',
   tg_groups: 'Telegram groups', stores: "Love's prices", market_prices: 'Market prices (EIA)',
-  samsara_live: 'Truck positions and fuel', tank_estimates: 'Tank estimates', fuel_stops: 'Driver fuel stops',
+  samsara_live: 'Truck positions and fuel', tank_estimates: 'Tank estimates', burn_factors: 'Engine fuel factors', fuel_stops: 'Driver fuel stops',
   price_history: "Love's price history", price_files: "Love's price sheets read",
 };
 
@@ -15,9 +17,7 @@ const stored = (text) => (text ? new Date(text.replace(' ', 'T')) : null);
 
 // A list item with a label on the left and a figure on the right (marked bad when `bad`).
 function item(label, value, bad = false) {
-  const li = el('li');
-  li.append(el('span', {}, label), el('b', bad ? { class: 'bad' } : {}, value));
-  return li;
+  return el('li', {}, el('span', {}, label), el('b', bad ? { class: 'bad' } : {}, value));
 }
 
 // Source cards, colored by how long ago each was refreshed.
@@ -26,9 +26,8 @@ function renderSources(sources) {
   document.getElementById('sources').replaceChildren(...sources.map((s) => {
     const when = stored(s.refreshed);
     const hours = when ? (now - when) / 3.6e6 : Infinity;
-    const card = el('div', { class: `source ${hours < 12 ? 'fresh' : hours < 48 ? 'stale' : 'old'}` });
-    card.append(el('b', {}, SOURCE_NAME[s.table] || s.table), el('span', {}, `${fmt.count(s.rows)} rows · ${when ? ago(when) : 'never refreshed'}`));
-    return card;
+    return el('div', { class: `source ${hours < 12 ? 'fresh' : hours < 48 ? 'stale' : 'old'}` },
+      el('b', {}, SOURCE_NAME[s.table] || s.table), el('span', {}, `${fmt.count(s.rows)} rows · ${when ? ago(when) : 'never refreshed'}`));
   }));
 }
 
@@ -45,6 +44,24 @@ function renderJobs(jobs) {
     if (j.error) li.title = j.error;
     return li;
   }));
+}
+
+// The heartbeat's findings: each part down now (with since when and whether Telegram was told), else that everything
+// works; then each source's last refresh, a failing one first (`refreshes`: how each source's last try went).
+function renderHealth(problems, refreshes) {
+  const down = (problems || []).map((p) => {
+    const li = item(p.component, `down${p.since ? ` since ${ago(stored(p.since))}` : ''}${p.told ? '' : ' · alert not sent yet'}`, true);
+    li.title = p.text;
+    return li;
+  });
+  const sources = [...(refreshes || [])].sort((a, b) => Boolean(b.error) - Boolean(a.error)).map((s) => {
+    const li = item(s.name, s.error ? `failing · last good ${s.last_ok_at ? ago(stored(s.last_ok_at)) : 'never'}`
+      : `ok ${ago(stored(s.last_try_at))}`, Boolean(s.error));
+    if (s.error) li.title = s.error;
+    return li;
+  });
+  document.getElementById('health').replaceChildren(
+    ...(down.length ? down : [item('Everything is working', 'checked every 5 min')]), ...sources);
 }
 
 // Gaps in the fuel lines plus the holes list from the linking.
@@ -64,5 +81,6 @@ export function renderData(live, baseline) {
   const any = live || baseline;
   if (any) renderSources(any.sources);
   if (live) renderJobs(live.jobs);
+  if (live) renderHealth(live.health, live.source_health);
   if (baseline && baseline.weeks.length) renderGaps(baseline);
 }

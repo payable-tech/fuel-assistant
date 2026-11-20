@@ -1,5 +1,7 @@
 <!doctype html>
-<!-- Fuel operations dashboard: four views (Live, Trends, Plans, Data). js/app.js fills them and keeps them live. -->
+<!-- Fuel operations dashboard: two sections picked above the tabs. Fuel has five views (Live, Trends, Recommend,
+     Drivers, Data); Accounting has one view, the EFS statements as a tree. A bell for the messages sent to drivers.
+     js/app.js fills them and keeps them live. -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -25,44 +27,107 @@
       <p class="brand-sub">Diesel on fuel cards · all companies</p>
     </div>
   </div>
-  <nav class="views" role="tablist" aria-label="Views">
-    <button type="button" role="tab" data-view="live">Live</button>
-    <button type="button" role="tab" data-view="trends">Trends</button>
-    <button type="button" role="tab" data-view="plans">Plans</button>
-    <button type="button" role="tab" data-view="drivers">Drivers</button>
-    <button type="button" role="tab" data-view="data">Data</button>
-  </nav>
-  <div class="live" id="live"><span class="live-dot"></span><span id="live-text">Connecting…</span></div>
+  <div class="nav">
+    <nav class="sections" aria-label="Sections">
+      <button type="button" data-section="fuel">Fuel</button>
+      <button type="button" data-section="accounting">Accounting</button>
+    </nav>
+    <nav class="views" data-section="fuel" role="tablist" aria-label="Fuel views">
+      <button type="button" role="tab" data-view="live">Live</button>
+      <button type="button" role="tab" data-view="trends">Trends</button>
+      <button type="button" role="tab" data-view="recommend">Recommend</button>
+      <button type="button" role="tab" data-view="drivers">Drivers</button>
+      <button type="button" role="tab" data-view="data">Data</button>
+    </nav>
+  </div>
+  <div class="topbar-end">
+    <div class="notes">
+      <button type="button" class="bell" id="bell" aria-label="Messages sent to drivers" aria-expanded="false" title="Messages sent to drivers">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+        </svg>
+        <span class="bell-count" id="bell-count" hidden></span>
+      </button>
+      <div class="notes-panel" id="notes-panel" hidden>
+        <div class="notes-head"><span>Messages sent to drivers</span><button type="button" class="mark-checked" id="check-all">Check all</button></div>
+        <ol class="notes-list" id="notes-list"></ol>
+      </div>
+    </div>
+    <div class="live" id="live"><span class="live-dot"></span><span id="live-text">Connecting…</span></div>
+  </div>
 </header>
+<div class="toasts" id="toasts" aria-live="polite"></div>
 
 <main class="page">
-  <!-- ===== Live: what is happening this week ===== -->
+  <!-- ===== Live: the fuel plans since the first message to a driver, then what is happening this week ===== -->
   <section class="view" id="view-live">
+    <div class="view-head">
+      <h2 class="view-title">Fuel plans</h2>
+      <p class="meta" id="plans-meta"></p>
+    </div>
+    <div class="grid">
+      <article class="panel span-3">
+        <header class="panel-head panel-head-row">
+          <div class="panel-head"><h2>Messages sent to drivers</h2><p class="meta" id="plans-scope"></p></div>
+          <div class="seg" role="group" aria-label="Arrange the messages" id="plans-by">
+            <button type="button" data-by="day" aria-pressed="true">By day</button>
+            <button type="button" data-by="why" aria-pressed="false">By why we sent it</button>
+          </div>
+        </header>
+        <div class="msg-key" id="plans-key"></div>
+        <div class="msg-pick" id="plans-pick" aria-live="polite"></div>
+        <div class="msg-board by-day" id="plans-msgs"></div>
+      </article>
+      <div class="span-3 pair">
+        <article class="panel">
+          <header class="panel-head"><h2>Bought at Love's</h2><p class="meta" id="plans-goal"></p></header>
+          <div class="meters" id="plans-loves"></div>
+          <ul class="legend"><li><i class="key-bar" style="background: var(--s2)"></i>At Love's</li><li><i class="key-bar" style="background: var(--s5)"></i>Elsewhere</li></ul>
+        </article>
+        <article class="panel">
+          <header class="panel-head"><h2>Price and discount per gallon</h2><p class="meta">What the company paid per gallon, and the discount (pump price minus paid)</p></header>
+          <div class="meters" id="plans-discount"></div>
+        </article>
+      </div>
+      <article class="panel span-3">
+        <header class="panel-head panel-head-row">
+          <div class="panel-head"><h2>Discount kept and missed</h2><p class="insight">Pump price minus what the company paid. Stacked, finished periods only: the fleet on its own, the part at stops we sent, and on top the discount missed on diesel bought outside Love's (estimated: its gallons at that day's average Love's discount, less what it got). The top line is what each period could have kept at Love's. The period in progress is in the figures above.</p></div>
+          <div class="seg" role="group" aria-label="Period" id="discount-period">
+            <button type="button" data-p="day" aria-pressed="false">Day</button>
+            <button type="button" data-p="week" aria-pressed="true">Week</button>
+            <button type="button" data-p="month" aria-pressed="false">Month</button>
+          </div>
+        </header>
+        <p class="meta" id="discount-meta"></p>
+        <div class="plan-figs" id="discount-figs"></div>
+        <div class="chart" id="chart-discount"></div>
+      </article>
+    </div>
     <div class="view-head">
       <h2 class="view-title">This week so far</h2>
       <p class="meta" id="live-meta"></p>
     </div>
     <div class="kpis" id="pace"></div>
     <div class="grid">
-      <article class="panel span-2" id="feed">
+      <article class="panel span-2">
         <header class="panel-head panel-head-row">
           <h2>Latest fuel purchases</h2>
           <p class="meta" id="feed-meta"></p>
         </header>
         <div class="table-wrap feed-wrap"><table class="table feed" id="feed-table"></table></div>
       </article>
-      <article class="panel" id="outside-now">
+      <article class="panel">
         <header class="panel-head">
           <h2>Outside Love's this week</h2>
-          <p class="insight">Drivers by discount missed: their gallons × how much less discount they got than Love's average this week.</p>
+          <p class="insight" id="outside-meta"></p>
         </header>
         <ol class="who" id="outside-list"></ol>
       </article>
-      <article class="panel span-2" id="days">
+      <article class="panel span-2">
         <header class="panel-head"><h2>Day by day</h2><p class="insight">Gallons per day, at Love's and elsewhere. The last day is still in progress.</p></header>
         <div class="chart" id="chart-days"></div>
       </article>
-      <article class="panel" id="today">
+      <article class="panel">
         <header class="panel-head"><h2>Today so far</h2><p class="meta" id="today-meta"></p></header>
         <div class="stats" id="today-stats"></div>
       </article>
@@ -77,45 +142,45 @@
     </div>
     <div class="kpis" id="kpis"></div>
     <div class="grid">
-      <article class="panel span-3" id="vs-market">
+      <article class="panel span-3">
         <header class="panel-head">
-          <h2>What we paid vs the market</h2>
-          <p class="insight">Per full week. Market price: the U.S. government's (EIA) average retail diesel price in the region and week each gallon was bought.</p>
+          <h2>Love's price and discount</h2>
+          <p class="insight">Per full week. Line: the average per gallon (all dollars ÷ all gallons). Shaded: where the middle 80% of the gallons were.</p>
         </header>
-        <div class="chart chart-tall" id="chart-vs-market"></div>
+        <div class="chart chart-rows" id="chart-loves"></div>
       </article>
-      <article class="panel" id="spend-drivers">
+      <article class="panel">
         <header class="panel-head"><h2>Spend and what moves it</h2><p class="insight">Per week, stacked over the same weeks.</p></header>
         <div class="chart chart-rows" id="chart-spend-drivers"></div>
       </article>
-      <article class="panel" id="discount-drivers">
-        <header class="panel-head"><h2>Discount per gallon and what moves it</h2><p class="insight">Per week, stacked over the same weeks.</p></header>
-        <div class="chart chart-rows" id="chart-discount-drivers"></div>
+      <article class="panel">
+        <header class="panel-head"><h2>Buying outside Love's</h2><p class="insight">Per week, stacked over the same weeks.</p></header>
+        <div class="chart chart-rows" id="chart-outside"></div>
       </article>
-      <article class="panel" id="drivers">
+      <article class="panel">
         <header class="panel-head"><h2>Drivers fueling, by type</h2><p class="insight">Different drivers who bought diesel each week.</p></header>
         <div class="chart chart-rows" id="chart-drivers"></div>
       </article>
 
-      <article class="panel span-2" id="discount">
+      <article class="panel span-2">
         <header class="panel-head"><h2>Discount kept each week</h2><p class="insight">Pump price minus what the company paid, split by who paid for the fuel.</p></header>
-        <div class="chart" id="chart-discount"></div>
+        <div class="chart" id="chart-discount-weekly"></div>
       </article>
-      <article class="panel" id="stations">
+      <article class="panel">
         <header class="panel-head"><h2>Where drivers buy diesel</h2><p class="meta" data-recent></p></header>
         <div class="chart" id="chart-stations"></div>
       </article>
 
-      <article class="panel" id="companies">
+      <article class="panel">
         <header class="panel-head"><h2>Love's share by company</h2><p class="meta" data-recent></p></header>
         <div class="chart chart-short" id="chart-companies"></div>
       </article>
-      <article class="panel span-2" id="states">
+      <article class="panel span-2">
         <header class="panel-head"><h2>Where the diesel is bought, top 10 states</h2><p class="meta" data-recent></p></header>
         <div class="chart chart-short" id="chart-states"></div>
       </article>
 
-      <article class="panel span-3" id="breakdown">
+      <article class="panel span-3">
         <header class="panel-head panel-head-row">
           <div><h2>Recent weeks, broken down</h2><p class="meta" data-recent></p></div>
           <div class="tabs" role="tablist" id="tabs"></div>
@@ -125,66 +190,73 @@
     </div>
   </section>
 
-  <!-- ===== Plans: each pilot truck's fuel plan on a map, against what the truck really did ===== -->
-  <section class="view" id="view-plans" hidden>
+  <!-- ===== Recommend: each test truck's fuel plan on a map; live trucks' drivers get the messages ===== -->
+  <section class="view" id="view-recommend" hidden>
     <div class="view-head">
-      <h2 class="view-title">Fuel plans</h2>
-      <p class="meta" id="plans-meta"></p>
+      <h2 class="view-title">Fuel recommendations</h2>
+      <p class="meta" id="recommend-meta"></p>
     </div>
-    <div class="plans">
-      <aside class="panel plans-list">
+    <div class="rec-layout">
+      <aside class="panel rec-list">
         <header class="panel-head">
-          <div class="list-title"><h2>Pilot trucks</h2><span class="count" id="units-count"></span></div>
-          <p class="meta">Fuel now, and each load's plan of the last 14 days, active first.</p>
+          <div class="list-title"><h2>Test trucks</h2><span class="count" id="units-count"></span></div>
+          <p class="meta">Fuel now, and where each driver would be told to go.</p>
+          <input type="search" class="search" id="units-search" placeholder="Search unit or driver" aria-label="Search trucks by unit or driver" autocomplete="off">
         </header>
-        <label class="search">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-          <input type="search" id="unit-search" placeholder="Search unit, driver, city or load" autocomplete="off" spellcheck="false" aria-label="Search the pilot trucks">
-          <kbd title="Press / to search">/</kbd>
-        </label>
-        <ol class="units" id="plan-units"></ol>
-        <p class="units-empty" id="units-empty" hidden>No truck matches the search.</p>
+        <ol class="units" id="rec-units"></ol>
       </aside>
-      <div class="plans-main">
-      <article class="panel">
-        <header class="panel-head panel-head-row">
-          <div class="plan-head"><h2 id="plan-title">Pick a plan</h2><p class="meta" id="plan-facts"></p></div>
-          <ul class="legend">
-            <li><i class="key-line planned"></i>Planned road</li>
-            <li><i class="key-line driven"></i>Driven since the plan</li>
-            <li><i class="key-scale"></i>Love's on the road by price <span id="price-range"></span></li>
-            <li><i class="key-pin">1</i>Planned stop</li>
-            <li><i class="key-habit">H</i>Driver's habit (simulated)</li>
-            <li><i class="key-fill on-plan"></i>Bought at a planned stop</li>
-            <li><i class="key-fill off-plan"></i>Bought elsewhere</li>
-            <li><i class="key-load">P</i>Pickup / delivery</li>
-          </ul>
-        </header>
-        <div class="map-wrap"><div class="map" id="plan-map"></div><div class="map-note" id="map-note" role="status" aria-live="polite"></div></div>
-      </article>
-      <article class="panel">
-        <header class="panel-head"><h2>Planned stops</h2><p class="meta">Love's chosen on the planned road, in driving order. Discounted: the price the company is billed (what the plan is chosen by); pump: the price at the pump that day.</p></header>
-        <div class="table-wrap"><table class="table" id="plan-stops"></table></div>
-      </article>
-      <article class="panel">
-        <header class="panel-head"><h2>Fill-ups since the plan</h2><p class="meta">Diesel bought on this load, from Datatruck: per gallon at the pump and as billed to the company after the discount; place from Samsara GPS at that time.</p></header>
-        <div class="table-wrap"><table class="table" id="plan-fills"></table></div>
-      </article>
-      <article class="panel">
-        <header class="panel-head"><h2>Fuel gauge since the plan</h2><p class="meta">Samsara readings, % of the tank. Dashed: the reserve. Vertical lines: fill-ups (green at a planned stop, red elsewhere).</p></header>
-        <div class="chart" id="chart-gauge"></div>
-      </article>
-      <article class="panel">
-        <header class="panel-head"><h2>Money on this load: plan, the driver's habit, what happened</h2><p class="meta" id="money-meta"></p></header>
-        <div class="money-stats" id="money-stats"></div>
-        <div class="table-wrap"><table class="table" id="plan-compare"></table></div>
-        <p class="meta money-habit" id="habit-line"></p>
-      </article>
+      <div class="rec-main">
+        <article class="panel">
+          <header class="panel-head panel-head-row">
+            <div class="rec-head"><h2 id="rec-title">Pick a truck</h2><p class="meta" id="rec-facts"></p>
+              <select class="trip-pick" id="rec-trip" aria-label="Trip to show" hidden></select></div>
+            <ul class="legend" id="rec-fleet-key" hidden>
+              <li><i class="key-truck"></i>Fuel above 25%</li>
+              <li><i class="key-truck mid"></i>25% or less</li>
+              <li><i class="key-truck low"></i>10% or less</li>
+              <li><i class="key-truck stale"></i>Gauge silent</li>
+            </ul>
+            <ul class="legend" id="rec-plan-key">
+              <li><i class="key-line planned"></i>Road planned</li>
+              <li><i class="key-zone safe"></i>Fuel zone</li>
+              <li><i class="key-zone risky"></i>Under reserve, to empty</li>
+              <li><i class="key-load">P</i>Pickup / delivery</li>
+              <li><i class="key-now"></i>Truck now</li>
+              <li><i class="key-loves"></i>Love's, with its price</li>
+              <li><i class="key-off"></i>Off the road</li>
+              <li><i class="key-pin">⛽</i>Stop (or fill-up after a part fill)</li>
+              <li><i class="key-line driven"></i>Driven</li>
+              <li><i class="key-fill on-plan"></i>Fueled where told</li>
+              <li><i class="key-fill own"></i>Fueled elsewhere</li>
+            </ul>
+          </header>
+          <div class="rec-stats" id="rec-stats"></div>
+          <div class="map-tools">
+            <div class="seg" role="group" aria-label="Price on the map">
+              <button type="button" id="price-net" aria-pressed="true">Company price</button>
+              <button type="button" id="price-retail" aria-pressed="false">Pump price</button>
+            </div>
+            <label class="switch"><input type="checkbox" id="show-nearby"><span>Love's close to the road, off it</span></label>
+          </div>
+          <div class="map-wrap"><div class="map" id="rec-map"></div><div class="map-note" id="rec-note" role="status" aria-live="polite"></div></div>
+        </article>
+        <article class="panel">
+          <header class="panel-head"><h2>What we told the driver, and what they did</h2><p class="meta">Newest first. "Sent to the driver" went to their Telegram group; "told (not sent)" is what they would have been told.</p></header>
+          <ol class="plays" id="rec-plays"></ol>
+        </article>
+        <article class="panel" id="rec-loves-panel">
+          <header class="panel-head"><h2>The Love's ahead, and why</h2><p class="meta">Arrive: the gauge there, expected. Worst case: if MPG drops 15%. Before the zone: well above the driver's level. Under reserve: reachable, but under 10% in the worst case: not planned on, not an emergency. Out of reach: the truck may not make it.</p></header>
+          <div class="table-wrap"><table class="table" id="rec-loves"></table></div>
+        </article>
+        <article class="panel">
+          <header class="panel-head"><h2 id="rec-gauge-title">Fuel gauge since this road</h2><p class="meta">Samsara readings, % of the tank. Vertical lines: fill-ups.</p></header>
+          <div class="chart" id="chart-rec-gauge"></div>
+        </article>
       </div>
     </div>
   </section>
 
-  <!-- ===== Drivers: how each driver usually fuels ===== -->
+  <!-- ===== Drivers: how each driver usually fuels, from their stops and the gauge around them ===== -->
   <section class="view" id="view-drivers" hidden>
     <div class="view-head">
       <h2 class="view-title">Driver habits</h2>
@@ -222,6 +294,7 @@
       <p class="meta">How fresh each source is, when the automatic refreshes last ran, and what doesn't link up yet.</p>
     </div>
     <div class="grid">
+      <article class="panel span-3"><header class="panel-head"><h2>Health</h2></header><ul class="list" id="health"></ul></article>
       <article class="panel span-2"><header class="panel-head"><h2>Sources</h2></header><div class="sources" id="sources"></div></article>
       <article class="panel"><header class="panel-head"><h2>Automatic refreshes</h2></header><ul class="list" id="jobs"></ul></article>
       <article class="panel span-3"><header class="panel-head"><h2>What doesn't link up</h2></header><ul class="list" id="gaps"></ul></article>
@@ -234,14 +307,64 @@
         <dt>Price per gallon</dt><dd>Fuel spend divided by gallons. "Pump price" is what the same gallons cost at the posted price.</dd>
         <dt>Discount kept</dt><dd>Pump price minus what the company paid. Mostly the Love's discount; other chains give a few cents.</dd>
         <dt>Kept from drivers</dt><dd>Discount on fuel billed to drivers. They are charged the pump price (most cards add a fee), so the discount stays with the company.</dd>
-        <dt>Market price</dt><dd>The U.S. Energy Information Administration's (EIA) average retail diesel price, published every Monday for each region of the country. Each gallon is priced at its region's price, between the Mondays before and after the purchase. Where our drivers fuel can't move it, so it is the fair yardstick for what we pay.</dd>
-        <dt>Saved per gallon</dt><dd>Market price minus what we paid, per gallon. Market ups and downs move both sides, so changes in this number come from our fuel decisions: where, when and how much drivers buy. Higher is better.</dd>
-        <dt>Discount missed</dt><dd>For fuel bought outside Love's: the gallons times how much smaller their discount was than this week's Love's average.</dd>
+        <dt>Middle 80% of gallons</dt><dd>On the Love's chart, the shaded range: 1 gallon in 10 was bought below it and 1 in 10 above it, counted in gallons so a big fill weighs more than a small one. The single lowest and highest fills are in the tooltip; they are one odd station (California, a fill with no discount) and jump from week to week.</dd>
+        <dt>Love's network average</dt><dd>The Love's discount averaged over all its ~600 stores, from Love's daily price sheets, not just the stores we bought at. Shown from Oct 14, 2026 (the sheets before it have a gap).</dd>
+        <dt>Paid extra outside Love's</dt><dd>What the gallons bought outside Love's cost above the same gallons at that week's Love's price per gallon. Below zero: outside was cheaper that week.</dd>
+        <dt>Paid above the cheapest Love's nearby</dt><dd>Live (outside Love's): for each fill, what we paid minus the lowest price at any Love's within 25 miles (straight line) that day, from Love's price sheets. A Love's fill is at its store; any other at the truck's Samsara GPS then. The road ahead isn't known, so a Love's behind the truck counts too: it is the most that could have been saved. Below zero: the fill was cheaper than any Love's nearby.</dd>
         <dt>Bought at Love's</dt><dd>Share of diesel gallons bought at a station whose name starts with "LOVES".</dd>
         <dt>This week so far</dt><dd>Monday up to the newest purchase, compared with last week up to the same weekday and time.</dd>
         <dt>Week</dt><dd>Monday to Sunday, the company's week in Datatruck. Every time on the dashboard is US Central time, whatever this computer's time zone.</dd>
       </dl>
     </details>
+  </section>
+
+  <!-- ===== Accounting: one EFS statement as a tree of boxes; a click on a box opens what it is made of ===== -->
+  <section class="view" id="view-accounting" hidden>
+    <div class="view-head">
+      <h2 class="view-title">Fuel expense</h2>
+      <p class="meta" id="acct-meta"></p>
+    </div>
+    <article class="panel">
+      <header class="panel-head panel-head-row">
+        <div class="panel-head"><h2>EFS statement</h2><p class="meta">Click a box to open what it is made of. Top two rows: EFS's own figures from page 1. Below them: the statement's lines, each joined to its Datatruck line.</p></div>
+        <select class="trip-pick" id="acct-statement" aria-label="EFS statement to show"></select>
+      </header>
+      <div class="tree-wrap"><div class="tree" id="acct-tree"></div></div>
+    </article>
+    <div class="view-head">
+      <h2 class="view-title">Checks on its fills</h2>
+      <p class="meta">The same statement's card purchases, joined to Datatruck.</p>
+    </div>
+    <article class="panel">
+      <div class="plan-figs acct-figs" id="acct-headline"></div>
+    </article>
+    <article class="panel">
+      <header class="panel-head">
+        <h2>Love's: promised vs charged</h2>
+        <p class="meta">Every diesel fill at Love's: what EFS charged per gallon against that store's net price on that day's Love's price sheet. Within a cent counts as promised. "No deal": the store isn't on the sheet and gave no discount; its dollars are the discount missed at that day's average Love's discount (estimated). "No sheet that day": no Love's sheet was saved for that day, so it can't be checked.</p>
+      </header>
+      <div class="table-wrap"><table class="table" id="acct-loves"></table></div>
+      <h3 class="acct-sub" id="acct-odd-title">Fills not as promised</h3>
+      <div class="table-wrap"><table class="table" id="acct-odd"></table></div>
+    </article>
+    <article class="panel">
+      <header class="panel-head">
+        <h2>Bought vs burned, per truck</h2>
+        <p class="meta">Diesel bought on this statement against the fuel each truck's engine used over the same days (Samsara). Into the tank: the gauge's change from the first day to the last, times the truck's tank (gallons ÷ gauge rise of its own fills). Unexplained = bought − burned − into the tank: diesel the truck doesn't account for. Biggest first.</p>
+      </header>
+      <p class="meta" id="acct-burn-meta"></p>
+      <div class="table-wrap"><table class="table" id="acct-burn"></table></div>
+    </article>
+    <article class="panel">
+      <header class="panel-head">
+        <h2>Each fill's evidence</h2>
+        <p class="meta">Every diesel fill against Samsara: the gauge's biggest rise from 4 h before Datatruck's time to 1 h after (that time can be hours late), and where the truck was when the gauge topped out. At the station: within 5 miles of the Love's store (the price sheet's store points can be a mile or two off); at other stations, in the statement's state. Rose less than the gallons: they would need a tank over 300 gal for that rise (tanks here work out at 127-199 gal). Didn't rise: 20 gal or more bought, the gauge moved under 3 points.</p>
+      </header>
+      <div class="table-wrap"><table class="table" id="acct-fills"></table></div>
+      <p class="meta" id="acct-fills-meta"></p>
+      <h3 class="acct-sub" id="acct-doubt-title">Doubtful fills</h3>
+      <div class="table-wrap"><table class="table" id="acct-doubt"></table></div>
+    </article>
   </section>
 </main>
 </body>

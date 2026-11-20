@@ -1,11 +1,10 @@
-# Tests driver habits: stops lined up with the gauge, each driver's habit, and that habit simulated on a road.
+# Tests driver habits: stops lined up with the gauge, and each driver's habit.
 from datetime import datetime, timedelta, timezone
 
 from core import habits
-from models import DriverHabit, FuelLine, FuelReading, FuelStop, Store, StoreOnRoute
+from models import FuelLine, FuelReading, FuelStop
 
 WINDOW = timedelta(hours=2)
-TANK, MPG = 200, 5  # 100 miles = 20 gal = 10% of the tank
 
 
 # A diesel purchase by driver 7 in truck 340 at a Central clock time.
@@ -38,35 +37,16 @@ def test_habit_figures():
     assert round(h.loves_share, 3) == round(320 / 420, 3) and round(h.outside_premium, 2) == 0.5
 
 
-# A driver without gauge readings has no levels, and their habit can't be simulated.
+# A driver without gauge readings has no levels.
 def test_habit_without_gauge():
     h = habits.habits([stop(100, None, None)], 10, 50)[0]
-    assert h.stop_at_pct is None and habits.simulate(h, 50, TANK, MPG, 1000, []) is None
+    assert h.stop_at_pct is None
 
 
-# A habit for the simulations: stops at 20%, fills to 90%, all at Love's.
-def habit(stop_at=20, fill_to=90, loves_share=1.0, premium=None) -> DriverHabit:
-    return DriverHabit(7, "Ali", "340", 10, 1000, 10, stop_at, 0, fill_to, 100, 0, loves_share, 5.5, premium)
-
-
-# A Love's `miles` along the road at `net` a gallon.
-def at(miles: float, net: float = 5.0) -> StoreOnRoute:
-    return StoreOnRoute(Store(str(int(miles)), "Town", "TX", 0, 0, net + 0.5, net, "2026-10-20"), miles, 0.2)
-
-
-# From 50% the gauge reaches 20% after 300 miles: the driver fuels at the Love's nearest that point and fills to 90%.
-def test_simulate_stops_near_their_level():
-    result = habits.simulate(habit(), 50, TANK, MPG, 600, [at(100), at(280), at(450)])
-    assert [(s.store.store_no, s.arrive_gal, s.gallons) for s in result.stops] == [("280", 44, 136)]
-    assert result.end_gal == 180 - 320 / MPG
-
-
-# Gallons they usually buy outside Love's cost their usual premium on top of the Love's price.
-def test_simulate_outside_premium():
-    result = habits.simulate(habit(loves_share=0.5, premium=0.8), 50, TANK, MPG, 600, [at(280)])
-    assert result.stops[0].cost == result.stops[0].gallons * (5.0 + 0.4)
-
-
-# No Love's within reach when the habit needs one: no simulation.
-def test_simulate_no_store_in_reach():
-    assert habits.simulate(habit(), 20, TANK, MPG, 1000, [at(900)]) is None
+# A driver's usual level: the middle gauge when stopping and after filling, the middle half around it; not enough stops, none.
+def test_usual_level():
+    stops = [stop(100, level, 95) for level in (10, 12, 14, 16, 18, 40)]
+    u = habits.usual_level(stops, 5)
+    assert (u.usual_pct, u.fill_pct, u.stops) == (15, 95, 6) and u.low_pct < 15 < u.high_pct
+    assert habits.usual_level(stops[:4], 5) is None
+    assert habits.usual_level([stop(100, None, None)] * 9, 5) is None

@@ -3,9 +3,8 @@
 from datetime import datetime, timedelta
 
 from core.fuel import shift_days, week_of
-from models import FuelLine, MarketPrice
+from models import FuelLine, MarketPrice, US
 
-US = "U.S."
 REGIONS = {  # EIA region -> its states (the petroleum regions, "PADDs", EIA reports diesel prices for)
     "New England": "CT ME MA NH RI VT",
     "Central Atlantic": "DE DC MD NJ NY PA",
@@ -24,10 +23,8 @@ def region_of(state: str) -> str:
     return REGION_OF_STATE.get(state.strip().upper(), US)
 
 
-# Returns a function giving a fuel line's market price per gallon in its region (the national price where EIA has
-# no regional one). EIA takes prices on Mondays; a purchase between two Mondays gets the price in between, in
-# proportion to the time, so a fast-moving week isn't judged by Monday's price alone. Past the newest Monday the
-# newest price holds; before any price there is none (None).
+# Returns a function giving a fuel line's market price per gallon in its region (else the national one): between two
+# Mondays' prices in proportion to the time, so a fast week isn't judged by Monday alone (core/market).
 def pricer(prices: list[MarketPrice]):
     table = {(week_of(p.day), p.region): p.price for p in prices}
 
@@ -40,7 +37,7 @@ def pricer(prices: list[MarketPrice]):
         monday = week_of(line.fueled_at)
         region = region_of(line.state)
         start, end = on(monday, region), on(shift_days(monday, 7), region)
-        if start is None or end is None:
+        if start is None or end is None:  # past the newest Monday its price holds; before any price, none
             return start
         into_week = (datetime.fromisoformat(line.fueled_at) - datetime.fromisoformat(monday)) / timedelta(days=7)
         return start + into_week * (end - start)

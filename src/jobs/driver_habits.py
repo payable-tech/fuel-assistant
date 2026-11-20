@@ -28,13 +28,18 @@ def _stops() -> list[FuelStop]:
         samsara_ids = {t.unit: t.samsara_id for t in db.fleet(conn)}
     units = sorted({l.unit for l in lines if fuel.is_diesel(l) and l.unit in samsara_ids})
     readings = {unit: _gauge(samsara_ids[unit], start - window, now) for unit in units}
+    failed = sum(r is None for r in readings.values())
+    if failed > len(units) * config.HABIT_MAX_FAILED:  # Samsara down: stops without gauges must not replace good ones
+        raise RuntimeError(f"No gauge readings for {failed} of {len(units)} trucks")
+    readings = {unit: r or [] for unit, r in readings.items()}
     return habits.fuel_stops(lines, readings, window)
 
 
-# One truck's gauge readings; a failed call gives none (its stops get no gauge) instead of stopping every truck.
-def _gauge(samsara_id: str, start: datetime, end: datetime) -> list[FuelReading]:
+# One truck's gauge readings; None when the call failed, which leaves that truck's stops without a gauge instead of
+# stopping every truck.
+def _gauge(samsara_id: str, start: datetime, end: datetime) -> list[FuelReading] | None:
     try:
         return samsara.fuel_history(samsara_id, start, end)
     except Exception as error:
         log.warning("No gauge readings for Samsara vehicle %s: %r", samsara_id, error)
-        return []
+        return None

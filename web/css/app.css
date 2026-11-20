@@ -1,5 +1,6 @@
-/* Fuel operations dashboard styles. Always dark. Layout: sticky top bar with view tabs; each view is a header,
-   a row of figure cards, then a 3-column grid of panels. */
+/* Fuel operations dashboard styles. Always dark. Layout: a sticky top bar with the sections over the view tabs, the bell and the live
+   state; each view is a header, a row of figure cards, then a 3-column grid of panels. Below: the parts every view
+   shares, then one section per view (Live, Trends, Drivers, Recommend, Data, Accounting), then narrower screens. */
 :root {
   color-scheme: dark;
   --bg: #0c1118;
@@ -23,7 +24,7 @@
   --font: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --radius: 14px;
   --gap: 16px;
-  --topbar-h: 68px;           /* the sticky top bar's height, so things that stick sit below it */
+  --topbar-h: 100px;          /* the sticky top bar's height, so things that stick sit below it */
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
@@ -33,10 +34,11 @@ body { font: 14px/1.5 var(--font); font-variant-numeric: tabular-nums; -webkit-f
 h1, h2, p { margin: 0; }
 [hidden] { display: none !important; }
 
-/* ---------- top bar ---------- */
+/* ---------- top bar: the name, the view tabs, the bell and the live state ---------- */
 .topbar {
   position: sticky; top: 0; z-index: 20;
   display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px;
+  min-height: var(--topbar-h);  /* same height in a section without tabs, so nothing under it moves */
   padding: 12px max(16px, 3vw);
   background: rgba(12, 17, 24, 0.88); backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line);
@@ -45,20 +47,64 @@ h1, h2, p { margin: 0; }
 .brand-icon { width: 34px; height: 34px; padding: 6px; border-radius: 10px; color: var(--brand); background: rgba(242, 163, 58, 0.12); }
 .brand h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.01em; }
 .brand-sub { font-size: 12px; color: var(--muted); }
+/* the sections (Fuel, Accounting) as underlined words, the picked section's tabs under them */
+.nav { align-self: start; display: grid; justify-items: center; gap: 6px; }
+.sections { display: inline-flex; gap: 20px; }
+.sections button { font: inherit; font-size: 13px; font-weight: 600; padding: 2px 2px 4px; border: 0;
+  border-bottom: 2px solid transparent; background: none; color: var(--muted); cursor: pointer; }
+.sections button:hover { color: var(--text); }
+.sections button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--brand); }
 .views { display: inline-flex; gap: 2px; padding: 3px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); }
 .views button { font: inherit; font-size: 13px; font-weight: 500; padding: 7px 16px; border: 0; border-radius: 9px;
   background: transparent; color: var(--muted); cursor: pointer; }
 .views button:hover { color: var(--text); }
 .views button[aria-selected="true"] { background: var(--line); color: var(--text); }
-.views button:focus-visible, .tabs button:focus-visible { outline: 2px solid var(--s1); outline-offset: 1px; }
+.topbar-end { justify-self: end; display: flex; align-items: center; gap: 10px; }
 .live { justify-self: end; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
   border: 1px solid var(--line); background: var(--panel); font-size: 12px; color: var(--muted); white-space: nowrap; }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
 .live.is-error .live-dot { background: var(--bad); }
+.live.is-warn .live-dot { background: var(--warn); }  /* a part is down (the heartbeat), the numbers still load */
 @media (prefers-reduced-motion: no-preference) {
   .live:not(.is-error) .live-dot { animation: pulse 2.4s ease-out infinite; }
   @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(60, 195, 138, 0.55); } 70%, 100% { box-shadow: 0 0 0 8px rgba(60, 195, 138, 0); } }
 }
+
+/* notifications of messages sent to drivers: the bell with its count, the list under it, and popups at the top right */
+.notes { position: relative; }
+.bell { position: relative; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; }
+.bell:hover, .bell[aria-expanded="true"] { color: var(--text); }
+.bell svg { width: 17px; height: 17px; }
+.bell-count { position: absolute; top: -5px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+  background: var(--bad); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+.notes-panel { position: fixed; top: calc(var(--topbar-h) + 6px); right: max(16px, 3vw); z-index: 40;  /* under the bell, at the
+  screen's right edge */ width: min(400px, calc(100vw - 32px)); max-height: 70vh; overflow: auto; padding: 8px;
+  border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5); }
+.notes-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 4px 8px 6px;
+  font-size: 12px; color: var(--muted); }
+.notes-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.notes-empty { padding: 12px 6px; font-size: 13px; color: var(--muted); }
+.note-card, .toast { position: relative; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px;
+  background: var(--panel); }
+.note-card.is-new { box-shadow: inset 3px 0 0 var(--brand); }
+.note-text { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.note-text b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-text span { font-size: 12px; color: var(--text); }
+.note-text small { font-size: 12px; color: var(--faint); }
+.note-buttons { flex: none; display: grid; gap: 4px; justify-items: stretch; text-align: center; }
+.open-plan, .mark-checked { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2);
+  color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.open-plan:hover { border-color: var(--s1); }
+.mark-checked { color: var(--good); }
+.mark-checked:hover { border-color: var(--good); }
+.checked { padding: 5px 0; font-size: 12px; color: var(--faint); white-space: nowrap; }
+.toasts { position: fixed; top: calc(var(--topbar-h) + 10px); right: max(16px, 3vw); z-index: 50; display: grid; gap: 8px;
+  width: min(400px, calc(100vw - 32px)); }
+.toast { padding-right: 34px; border: 1px solid var(--line); border-left: 3px solid var(--brand); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5); }
+.toast-close { position: absolute; top: 4px; right: 6px; padding: 0 4px; border: 0; background: none; color: var(--muted);
+  font-size: 18px; line-height: 1; cursor: pointer; }
+.toast-close:hover { color: var(--text); }
 
 /* ---------- page and views ---------- */
 .page { max-width: 1640px; margin: 0 auto; padding: 24px max(16px, 3vw) 56px; }
@@ -66,6 +112,17 @@ h1, h2, p { margin: 0; }
 .view-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
 .view-title { font-size: 20px; font-weight: 600; }
 .meta { font-size: 12px; color: var(--muted); }
+
+/* ---------- controls shared by the views: a row of buttons (one pressed), tabs, and the focus ring ---------- */
+.seg { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); }
+.seg button { padding: 4px 12px; border: 0; border-radius: 6px; background: transparent; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--line); color: var(--text); }
+.tabs { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.tabs button { font: inherit; font-size: 13px; padding: 6px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+.tabs button:hover { color: var(--text); }
+.tabs button[aria-selected="true"] { background: var(--line); color: var(--text); }
+.sections button:focus-visible, .views button:focus-visible, .tabs button:focus-visible, .bell:focus-visible, .search:focus, .trip-pick:focus {
+  outline: 2px solid var(--s1); outline-offset: 1px; }
 
 /* ---------- figure cards ---------- */
 .kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--gap); }
@@ -78,6 +135,7 @@ h1, h2, p { margin: 0; }
 .delta { font-weight: 600; padding: 1px 7px; border-radius: 999px; background: rgba(142, 154, 174, 0.12); color: var(--muted); }
 .delta.good { color: var(--good); background: rgba(60, 195, 138, 0.12); }
 .delta.bad { color: var(--bad); background: rgba(242, 103, 107, 0.12); }
+.delta:empty { display: none; }  /* a card with nothing to compare shows no chip */
 .spark { height: 46px; margin: 4px -16px 0; }
 
 /* info "i" with an explanation on hover or focus */
@@ -91,7 +149,7 @@ h1, h2, p { margin: 0; }
 .info:hover::after, .info:focus::after { opacity: 1; transform: none; }
 .kpi:nth-last-child(-n+2) .info::after { left: auto; right: -8px; }
 
-/* ---------- panels ---------- */
+/* ---------- panels and charts ---------- */
 .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gap); }
 .span-2 { grid-column: span 2; }
 .span-3 { grid-column: 1 / -1; }
@@ -104,16 +162,85 @@ h1, h2, p { margin: 0; }
 .chart { height: 280px; min-width: 0; }
 .chart-short { height: 260px; }
 .chart-rows { height: 520px; }  /* several small charts stacked over the same weeks */
-.chart-tall { height: 480px; }  /* two lines over the weeks, with the space between them per gallon underneath */
+.chart-tall { height: 480px; }
 
-/* tooltips inside charts (ECharts puts our HTML in its own box) */
+/* tooltips inside charts (ECharts puts our HTML in its own box) and on the map */
 .tt-title { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
 .tt-row { display: flex; align-items: center; gap: 8px; font-size: 12px; line-height: 1.7; }
 .tt-row span { flex: 1; color: var(--muted); }
 .tt-row b { font-weight: 600; color: var(--text); }
 .tt-total { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; }
+.tt-head { color: var(--text); font-size: 12px; font-weight: 600; margin-top: 6px; }  /* a heading over the lines below it */
 
-/* small figure list */
+/* ---------- tables: numbers on the right, text columns on the left, the header stays in sight ---------- */
+.table-wrap { overflow: auto; max-height: 560px; }
+.units, .table-wrap { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { padding: 10px 12px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
+.table th { position: sticky; top: 0; z-index: 1; background: var(--panel); font-size: 12px; font-weight: 500; color: var(--faint); }
+.table th:first-child, .table td:first-child, .table .left { text-align: left; }
+.table tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
+.table tfoot td { font-weight: 600; border-bottom: 0; color: var(--text); }
+.below { color: var(--warn); }  /* a figure worse than the fleet's */
+
+/* ---------- Live view ---------- */
+/* figure boxes (the discount chart's three figures) */
+.plan-figs { display: flex; gap: 32px; }
+.plan-fig { display: grid; }
+.plan-fig span { color: var(--muted); font-size: 13px; }
+.plan-fig b { font-size: 28px; font-weight: 600; line-height: 1.2; }
+.plan-fig small { color: var(--faint); font-size: 12px; }
+/* messages sent: one square per message, colored by what became of it (filled: ended, counted; hollow or dim: not yet),
+   stacked by day or in rows by why it was sent; the key with counts, and the line showing the message pointed at */
+.msg { display: block; flex: none; width: 13px; height: 13px; padding: 0; border-radius: 3px; border: 2px solid transparent; }
+button.msg { cursor: pointer; }
+button.msg:hover, button.msg:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+.msg.there { background: var(--good); }
+.msg.loves { background: var(--s1); }
+.msg.outside { background: var(--warn); }
+.msg.passed { background: var(--bad); }
+.msg.waiting { border-color: var(--good); }
+.msg.open { border: 2px dashed var(--faint); }
+.msg.off { background: var(--line); }
+.msg-key { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; font-size: 13px; color: var(--muted); }
+.msg-kind { display: inline-flex; align-items: center; gap: 7px; cursor: help; }
+.msg-kind b { color: var(--text); font-weight: 600; }
+.msg-kind.zero { opacity: 0.55; }
+.msg-rate { margin-left: auto; display: inline-flex; align-items: baseline; gap: 6px; color: var(--text); cursor: help; }
+.msg-rate b { font-size: 20px; font-weight: 600; }
+.msg-rate small { color: var(--faint); font-size: 12px; }
+.msg-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; min-height: 44px; padding: 10px 14px;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); font-size: 13px; }
+.msg-board.by-day { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(64px, 1fr); gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+.msg-day { display: grid; justify-items: center; gap: 6px; }
+.msg-added { height: 16px; font-size: 12px; font-weight: 600; color: var(--s1); cursor: help; }
+.msg-stack { width: 64px; display: flex; flex-wrap: wrap-reverse; align-content: flex-start; gap: 3px; }  /* fills from the bottom */
+.msg-day-foot { width: 100%; display: grid; justify-items: center; padding-top: 6px; border-top: 1px solid var(--line); }
+.msg-day-foot span { font-size: 12px; color: var(--muted); }
+.msg-day-foot b { font-size: 13px; font-weight: 600; }
+.msg-day-foot strong { font-size: 17px; }
+.msg-day-foot small { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.msg-why { display: grid; grid-template-columns: minmax(180px, 280px) minmax(0, 1fr) 48px 96px; gap: 16px; align-items: start;
+  padding: 12px 0; border-bottom: 1px solid var(--grid); }
+.msg-why-name { display: grid; gap: 2px; }
+.msg-why-name small { color: var(--muted); font-size: 12px; }
+.msg-row { display: flex; flex-wrap: wrap; gap: 3px; }
+.msg-why strong { font-size: 17px; text-align: right; }
+.msg-why-rate { font-size: 13px; color: var(--muted); text-align: right; }
+/* two panels side by side, each as tall as its own content */
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gap); align-items: start; }
+.meters { display: grid; gap: 18px; }
+.meter { display: grid; gap: 6px; cursor: help; }
+.meter-head { display: flex; align-items: baseline; gap: 8px; }
+.meter-head span:first-child { color: var(--muted); font-size: 13px; }
+.meter-head b { margin-left: auto; font-size: 20px; font-weight: 600; }
+.meter-head .delta { flex: none; white-space: nowrap; }  /* the chip stays on one line; a long name wraps instead */
+.meter-bar { display: flex; gap: 2px; height: 10px; border-radius: 5px; background: var(--grid); overflow: hidden; }
+.meter-bar i { display: block; height: 100%; border-radius: 4px; }
+.meter-note { font-size: 12px; color: var(--faint); }
+.key-bar { display: inline-block; width: 14px; height: 8px; border-radius: 3px; }
+
+/* today so far: a small figure list */
 .stats { display: grid; gap: 8px; }
 .stat { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 11px 14px;
   border-radius: 10px; background: var(--panel-2); }
@@ -121,7 +248,7 @@ h1, h2, p { margin: 0; }
 .stat b { font-size: 19px; font-weight: 600; }
 .stat b.bad { color: var(--bad); }
 
-/* ---------- live feed ---------- */
+/* the newest purchases; rows outside Love's are marked on the left, new rows light up */
 .feed-wrap { max-height: 520px; }
 .feed td { padding-top: 8px; padding-bottom: 8px; }
 .feed tr td:first-child { border-left: 3px solid transparent; }
@@ -136,7 +263,7 @@ h1, h2, p { margin: 0; }
 @keyframes arrive { from { background: rgba(91, 156, 245, 0.18); } to { background: transparent; } }
 @media (prefers-reduced-motion: reduce) { .feed tr.is-new td { animation: none; } }
 
-/* drivers outside Love's */
+/* drivers outside Love's this week */
 .who { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 520px; overflow: auto; }
 .who li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 10px; background: var(--panel-2); }
 .who .name { font-weight: 600; }
@@ -145,140 +272,70 @@ h1, h2, p { margin: 0; }
 .who .missed b { color: var(--s5); font-size: 15px; }
 .who .empty { color: var(--muted); background: transparent; }
 
-/* ---------- breakdown table ---------- */
-.tabs { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
-.tabs button { font: inherit; font-size: 13px; padding: 6px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
-.tabs button:hover { color: var(--text); }
-.tabs button[aria-selected="true"] { background: var(--line); color: var(--text); }
-.table-wrap { overflow: auto; max-height: 560px; }
-.table { width: 100%; border-collapse: collapse; }
-.table th, .table td { padding: 10px 12px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
-.table th { position: sticky; top: 0; z-index: 1; background: var(--panel); font-size: 12px; font-weight: 500; color: var(--faint); }
-.table th:first-child, .table td:first-child, .table th.left { text-align: left; }
-.table tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
-.table tfoot td { font-weight: 600; border-bottom: 0; color: var(--text); }
+/* ---------- Trends view: the breakdown table's gallons with a small bar of each row's share ---------- */
 .bar-cell { display: inline-flex; align-items: center; gap: 10px; justify-content: flex-end; }
 .bar-track { width: 90px; height: 6px; border-radius: 3px; background: var(--grid); overflow: hidden; }
 .bar-fill { display: block; height: 100%; border-radius: 3px; background: var(--s1); }
-.below { color: var(--warn); }
 
-/* ---------- data view ---------- */
-.sources { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; align-content: start; }
-.source { display: grid; gap: 2px; padding: 12px 14px; border-radius: 10px; background: var(--panel-2); border-left: 3px solid var(--faint); }
-.source.fresh { border-left-color: var(--good); }
-.source.stale { border-left-color: var(--warn); }
-.source.old { border-left-color: var(--bad); }
-.source b { font-weight: 600; font-size: 13px; }
-.source span { font-size: 12px; color: var(--muted); }
-.list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; align-content: start; }
-.list li { display: flex; justify-content: space-between; gap: 16px; padding: 8px 12px; border-radius: 8px; font-size: 13px; color: var(--muted); }
-.list li:nth-child(odd) { background: var(--panel-2); }
-.list b { color: var(--text); font-weight: 600; white-space: nowrap; }
-.list b.bad { color: var(--bad); }
+/* ---------- Drivers view: figures past the line in red, pilot drivers marked ---------- */
+.table .off { color: var(--bad); }
+.badge { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 11px;
+  background: rgba(91, 156, 245, 0.16); color: var(--s1); }
 
-.glossary { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 16px 20px; }
-.glossary summary { cursor: pointer; font-weight: 600; color: var(--muted); }
-.glossary summary:hover { color: var(--text); }
-.glossary dl { margin: 16px 0 0; display: grid; grid-template-columns: minmax(150px, 220px) 1fr; gap: 10px 24px; max-width: 980px; }
-.glossary dt { font-weight: 600; }
-.glossary dd { margin: 0; color: var(--muted); }
-
-/* ---------- plans view: the screen's full width; the truck list on the left stays in sight while the page scrolls;
-   the plan's map, stops, fill-ups, gauge and money stacked on the right ---------- */
-body[data-view="plans"] .page { max-width: 1920px; }
-.plans { display: grid; grid-template-columns: clamp(300px, 21vw, 380px) minmax(0, 1fr); gap: var(--gap); align-items: start; }
-.plans-list { position: sticky; top: calc(var(--topbar-h) + var(--gap)); display: flex; flex-direction: column;
+/* ---------- Recommend view: the screen's full width; the truck list on the left stays in sight while the page
+   scrolls; the truck's figures, map, messages, Love's ahead and gauge stacked on the right ---------- */
+body[data-view="recommend"] .page { max-width: 1920px; }
+.rec-layout { display: grid; grid-template-columns: clamp(300px, 21vw, 380px) minmax(0, 1fr); gap: var(--gap); align-items: start; }
+.rec-list { position: sticky; top: calc(var(--topbar-h) + var(--gap)); display: flex; flex-direction: column;
   max-height: calc(100vh - var(--topbar-h) - 2 * var(--gap)); }
-.plans-main { display: grid; gap: var(--gap); align-content: start; min-width: 0; }
-.plan-head { display: grid; gap: 4px; min-width: 0; }
-.map-wrap { position: relative; }
-.map { height: 620px; border-radius: 10px; overflow: hidden; position: relative; z-index: 0; isolation: isolate; }
-
-/* while another plan loads, the one on screen dims and a note on the map says what is coming */
-.plans-main :is(.map, .table-wrap, .chart, .money-stats, .money-habit) { transition: opacity 0.2s; }
-.plans-main.is-loading :is(.map, .table-wrap, .chart, .money-stats, .money-habit) { opacity: 0.35; }
-.map-note { position: absolute; top: 14px; left: 50%; z-index: 1; display: inline-flex; align-items: center; gap: 10px;
-  max-width: calc(100% - 120px); padding: 8px 16px; border-radius: 999px; border: 1px solid var(--line);
-  background: rgba(19, 26, 36, 0.95); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); font-size: 13px; color: var(--text);
-  opacity: 0; pointer-events: none; transform: translate(-50%, -6px); transition: opacity 0.2s, transform 0.2s var(--ease); }
-.map-note span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.map-note.loading { opacity: 1; transform: translate(-50%, 0); transition-delay: 0.15s; }
-.map-note.failed { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; border-color: rgba(242, 103, 107, 0.5); }
-.map-note button { flex: none; padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--s1); cursor: pointer; }
-.spin { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.14);
-  border-top-color: var(--brand); animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.rec-main { display: grid; gap: var(--gap); align-content: start; min-width: 0; }
+.rec-head { display: grid; gap: 4px; min-width: 0; }
 
 /* truck list: title with how many trucks are shown, the search box, then one card per truck */
 .list-title { display: flex; align-items: center; gap: 8px; }
 .count { padding: 0 8px; border-radius: 999px; background: var(--panel-2); color: var(--muted); font-size: 12px; line-height: 20px; }
-.search { display: flex; flex: none; align-items: center; gap: 8px; height: 38px; padding: 0 8px 0 11px;
-  border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--faint); cursor: text;
-  transition: border-color 0.15s, box-shadow 0.15s; }
-.search:focus-within { border-color: var(--s1); box-shadow: 0 0 0 3px rgba(91, 156, 245, 0.18); color: var(--muted); }
-.search svg { flex: none; width: 16px; height: 16px; }
-.search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; font-size: 13px; color: var(--text); }
-.search input::placeholder { color: var(--faint); }
-.search kbd { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 5px;
-  border: 1px solid var(--line); font: 600 11px var(--font); color: var(--faint); }
-.search:focus-within kbd { display: none; }
 .units-empty { padding: 20px 8px; text-align: center; font-size: 13px; color: var(--muted); }
+.search { width: 100%; margin-top: 6px; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2);
+  color: var(--text); font: inherit; font-size: 13px; }
+.search::placeholder { color: var(--faint); }
 .units { position: relative; flex: 1; min-height: 0; list-style: none; margin: 0 -8px; padding: 0 8px 2px; display: grid;
   gap: 8px; align-content: start; overflow: auto; overscroll-behavior: contain; }
-.units, .table-wrap { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
-
 .unit { border-radius: 10px; background: var(--panel-2); border: 1px solid transparent; transition: border-color 0.15s; }
-.unit:has(.unit-head:not(:disabled):hover) { border-color: var(--line); }
+.unit:has(.unit-head:hover) { border-color: var(--line); }
 .unit.picked { border-color: rgba(242, 163, 58, 0.45); }
-.unit-head { display: grid; grid-template-columns: minmax(0, 1fr) auto 12px; align-items: center; gap: 3px 10px; width: 100%;
+.unit-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 3px 10px; width: 100%;
   padding: 10px 12px; border: 0; border-radius: 10px; background: transparent; font: inherit; text-align: left;
   color: var(--text); cursor: pointer; }
-.unit-head:disabled { cursor: default; }
-.unit-head:focus-visible { outline: 2px solid var(--s1); outline-offset: -2px; }
+.unit-head:focus-visible { outline: 2px solid var(--s1); outline-offset: -2px; }  /* inside the card, which clips */
 .unit-head b { font-size: 14px; font-weight: 600; white-space: nowrap; transition: color 0.15s; }
-.unit-head:not(:disabled):hover b, .unit.picked .unit-head b { color: var(--brand); }
-.unit-head .driver, .unit-fold { grid-column: 1 / -1; min-width: 0; }
+.unit-head:hover b, .unit.picked .unit-head b { color: var(--brand); }
+.unit-head .driver, .unit-next { grid-column: 1 / -1; min-width: 0; }
 .unit-head .driver { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chev { grid-row: 1; grid-column: 3; justify-self: center; width: 7px; height: 7px; margin-top: -4px;
-  border-right: 1.5px solid var(--faint); border-bottom: 1.5px solid var(--faint); transform: rotate(45deg);
-  transition: transform 0.25s var(--ease), margin 0.25s var(--ease), border-color 0.15s; }
-.unit-head:hover .chev { border-color: var(--text); }
-.unit.open .chev { transform: rotate(-135deg); margin-top: 4px; }
+.unit-next { font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unit-next.told { color: var(--brand); }
 
-/* folding: the card's one-line summary and its plan list swap with a quick slide (grid rows 0fr <-> 1fr). What
-   folds to nothing has no padding of its own (padding can't shrink), so its spacing sits on the items inside. */
-.unit-fold { display: grid; grid-template-rows: 1fr; overflow: hidden; transition: grid-template-rows 0.25s var(--ease), opacity 0.2s; }
-.unit-fold > span { display: flex; align-items: center; gap: 6px; min-height: 0; font-size: 12px; color: var(--faint); }
-.unit-fold .to { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.unit.open .unit-fold { grid-template-rows: 0fr; opacity: 0; }
-.unit-body { display: grid; grid-template-rows: 0fr; overflow: hidden; transition: grid-template-rows 0.25s var(--ease); }
-.unit.open .unit-body { grid-template-rows: 1fr; }
-.unit-plans { min-height: 0; list-style: none; margin: 0; padding: 0 6px; display: grid; gap: 2px; }
-.unit-plans li:last-child { padding-bottom: 8px; }
-.unit-plans button { position: relative; display: grid; gap: 1px; width: 100%; padding: 7px 30px 7px 10px; border: 0; border-radius: 8px;
-  background: transparent; font: inherit; font-size: 12px; text-align: left; color: var(--muted); cursor: pointer;
-  box-shadow: inset 3px 0 0 transparent; transition: background 0.15s, color 0.15s; }
-.unit-plans button.active { box-shadow: inset 3px 0 0 var(--brand); }
-.unit-plans button:hover { background: rgba(255, 255, 255, 0.04); color: var(--text); }
-.unit-plans button[aria-pressed="true"] { background: var(--line); color: var(--text); }
-.unit-plans button:focus-visible { outline: 2px solid var(--s1); outline-offset: -2px; }
-.unit-plans button[aria-busy="true"]::after { content: ""; position: absolute; top: 50%; right: 10px; width: 12px; height: 12px;
-  margin-top: -6px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.14); border-top-color: var(--brand);
-  animation: spin 0.8s linear infinite; }
-.unit-plans .to { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text); font-weight: 500;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.badge.active { margin-left: 0; background: rgba(242, 163, 58, 0.16); color: var(--brand); font-weight: 600; }
-
-/* fuel now: a small gauge bar, red at or below the plans' reserve */
+/* fuel now: a small gauge bar, red at or below the reserve */
 .level-box { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .level { width: 64px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
 .level i { display: block; height: 100%; border-radius: 3px; background: var(--brand); }
 .level.low i { background: var(--bad); }
 .level-box em { min-width: 30px; font-style: normal; text-align: right; color: var(--muted); font-size: 12px; }
 .level-box em.low { color: var(--bad); font-weight: 600; }
-@media (prefers-reduced-motion: reduce) {
-  .unit-fold, .unit-body, .chev, .map-note { transition-duration: 0.01s; }  /* not none: the list still hears when they end */
-}
+
+/* the truck picked: the trip picker under its title, and its figures above the map */
+.trip-pick { margin-top: 6px; max-width: 100%; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--panel-2); color: var(--text); font: inherit; font-size: 13px; }
+.rec-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.rec-stat { display: grid; gap: 2px; align-content: start; min-width: 0; padding: 12px 14px; border-radius: 10px; background: var(--panel-2); }
+.rec-stat span { color: var(--muted); font-size: 12px; }
+.rec-stat b { font-size: 20px; font-weight: 600; line-height: 1.3; }
+.rec-stat small { color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-stat.safe b { color: var(--good); }
+.rec-stat.risky b { color: var(--bad); }
+.rec-stat.stop { grid-column: span 2; }
+.rec-stat.stop b { font-size: 16px; line-height: 1.75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; }
+.switch { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); cursor: pointer; }
 
 /* legend: one key per kind of mark on the map */
 .legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; max-width: 720px;
@@ -287,18 +344,23 @@ body[data-view="plans"] .page { max-width: 1920px; }
 .key-line { width: 18px; height: 3px; border-radius: 2px; }
 .key-line.planned { background: var(--s1); }
 .key-line.driven { background: var(--brand); }
-.key-scale { width: 34px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--good), var(--bad)); }
+.key-zone { width: 22px; height: 8px; border-radius: 2px; opacity: 0.55; }
+.key-zone.safe { background: var(--good); }
+.key-zone.risky { background: var(--bad); }
 .key-pin, .key-load { display: grid; place-items: center; width: 16px; height: 16px; font-size: 10px; font-style: normal;
   font-weight: 700; color: var(--bg); }
 .key-pin { border-radius: 50%; background: var(--s1); }
-.key-habit { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; font-size: 9px;
-  font-style: normal; font-weight: 700; color: var(--text); background: var(--bg); border: 2px solid var(--muted); }
 .key-load { border-radius: 4px; background: var(--s4); }
+.key-now { width: 10px; height: 10px; border-radius: 50%; background: var(--brand); }   /* the truck now, as on the map */
+.key-loves { width: 10px; height: 10px; border-radius: 50%; background: var(--text); }  /* a Love's dot, as on the map */
+.key-off { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--warn); }
 .key-fill { width: 10px; height: 10px; transform: rotate(45deg); }
 .key-fill.on-plan, .pin-fill.on-plan i { background: var(--good); }
-.key-fill.off-plan, .pin-fill.off-plan i { background: var(--bad); }
+.key-fill.own, .pin-fill.own i { background: var(--warn); }
 
 /* the map in the dashboard's dark: street tiles inverted, controls and tooltips in panel colors */
+.map-wrap { position: relative; }
+.map { height: 620px; border-radius: 10px; overflow: hidden; position: relative; z-index: 0; isolation: isolate; }
 .map .leaflet-container, .map.leaflet-container { background: var(--bg); font: 12px/1.45 var(--font); }
 .map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.45); }
 .map .leaflet-bar a { background: var(--panel-2); color: var(--text); border-color: var(--line); }
@@ -312,61 +374,170 @@ body[data-view="plans"] .page { max-width: 1920px; }
 .leaflet-tooltip-left::before { border-left-color: var(--line); }
 .leaflet-tooltip-right::before { border-right-color: var(--line); }
 
+/* a note over the top of the map, shown when a truck or a trip can't be loaded */
+.map-note { position: absolute; top: 14px; left: 50%; z-index: 1; display: inline-flex; align-items: center; gap: 10px;
+  max-width: calc(100% - 120px); padding: 8px 16px; border-radius: 999px; border: 1px solid var(--line);
+  background: rgba(19, 26, 36, 0.95); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); font-size: 13px; color: var(--text);
+  opacity: 0; pointer-events: none; transform: translate(-50%, -6px); transition: opacity 0.2s, transform 0.2s var(--ease); }
+.map-note span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-note.failed { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; border-color: rgba(242, 103, 107, 0.5); }
+@media (prefers-reduced-motion: reduce) { .map-note { transition-duration: 0.01s; } }
+
 /* map marks (Leaflet moves the outer element, so shapes are drawn on the inner one) */
 .pin { display: grid; place-items: center; }
 .pin b { display: grid; place-items: center; font-weight: 700; color: var(--bg); border: 2px solid var(--bg); }
-.pin-plan b { width: 26px; height: 26px; border-radius: 50%; background: var(--s1); font-size: 12px; }
-.pin-habit b { width: 24px; height: 24px; border-radius: 50%; background: var(--bg); color: var(--text); font-size: 10px;
-  border-color: var(--muted); }
+.pin-plan b, .pin-then b { width: 26px; height: 26px; border-radius: 50%; background: var(--s1); font-size: 12px; }
 .pin-load b { width: 22px; height: 22px; border-radius: 6px; background: var(--s4); font-size: 11px; }
 .pin-fill i { display: block; width: 14px; height: 14px; transform: rotate(45deg); border: 2px solid var(--bg); }
 .pin-now i { display: block; width: 14px; height: 14px; border-radius: 50%; background: var(--brand); border: 2px solid var(--bg); }
-/* a Love's on the road: a dot in its price color, its price in a small bubble above (hidden where bubbles would overlap);
-   Leaflet already places the outer element absolutely, so the bubble is placed against it */
-.loves i { display: block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--bg); box-sizing: border-box; }
-.loves b { position: absolute; bottom: 19px; left: 50%; transform: translateX(-50%); padding: 0 5px; border-radius: 6px;
-  border: 1px solid var(--line); background: rgba(19, 26, 36, 0.92); font-size: 11px; font-weight: 600; line-height: 15px;
-  white-space: nowrap; pointer-events: none; }
-.loves.no-bubble b, .map.is-zooming .loves b { display: none; }
 @media (prefers-reduced-motion: no-preference) {
   .pin-now i { animation: pulse-now 2.4s ease-out infinite; }
   @keyframes pulse-now { 0% { box-shadow: 0 0 0 0 rgba(242, 163, 58, 0.6); } 70%, 100% { box-shadow: 0 0 0 12px rgba(242, 163, 58, 0); } }
 }
+/* a Love's on the road: a dot, its price in a small bubble above (hidden where bubbles would overlap); dim once passed,
+   amber-ringed when off the road. Leaflet already places the outer element absolutely, so the bubble is placed against it */
+.loves i { display: block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--bg); box-sizing: border-box;
+  background: var(--text); }
+.loves b, .truck-fuel b { position: absolute; bottom: 19px; left: 50%; transform: translateX(-50%); padding: 0 5px; border-radius: 6px;
+  border: 1px solid var(--line); background: rgba(19, 26, 36, 0.92); color: var(--text); font-size: 11px; font-weight: 600;
+  line-height: 15px; white-space: nowrap; pointer-events: none; }
+.loves.no-bubble b, .map.is-zooming .loves b, .truck-fuel.no-bubble b, .map.is-zooming .truck-fuel b { display: none; }
+/* a truck on the map of all trucks: a dot, its fuel in a bubble above; red at the reserve or under, amber at a quarter
+   tank or under, grey while its gauge is silent (the key above the map shows the same) */
+.truck-fuel { cursor: pointer; }
+.truck-fuel i, .key-truck { display: block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--bg);
+  box-sizing: border-box; background: var(--s1); }
+.truck-fuel.mid i, .key-truck.mid { background: var(--warn); }
+.truck-fuel.mid b { color: var(--warn); }
+.truck-fuel.low i, .key-truck.low { background: var(--bad); }
+.truck-fuel.low b { color: var(--bg); background: var(--bad); border-color: var(--bad); }
+.truck-fuel.stale i, .key-truck.stale { background: var(--faint); }
+.truck-fuel.stale b { color: var(--muted); font-weight: 400; }
+/* with all trucks on the map, the parts that belong to one truck hide */
+.rec-main.is-fleet > article:not(:first-child), .rec-main.is-fleet .map-tools, .rec-main.is-fleet .rec-stats:empty { display: none; }
+.loves.dim i { background: var(--faint); transform: scale(0.6); }
+.loves.dim b { color: var(--faint); font-weight: 400; }
+.loves.off i { background: var(--bg); border: 2px solid var(--warn); }
+.loves.off b { color: var(--warn); }
 
-/* money on a load: figure tiles above the plan / habit / actual table */
-.money-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
-.money-stat { display: grid; gap: 2px; align-content: start; padding: 12px 14px; border-radius: 10px; background: var(--panel-2); }
-.money-stat span { color: var(--muted); font-size: 12px; }
-.money-stat b { font-size: 20px; font-weight: 600; line-height: 1.3; }
-.money-stat b.on { color: var(--good); }
-.money-stat b.off { color: var(--bad); }
-.money-stat small { min-height: 16px; color: var(--faint); font-size: 12px; }
-.money-habit { margin-top: 12px; }
-@media (max-width: 1280px) { .money-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 700px) { .money-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* what we told the driver and what they did: one row per message or own fill, its edge colored by how it went */
+.plays { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.play { display: grid; grid-template-columns: 130px minmax(0, 1fr) minmax(0, 1fr); gap: 4px 18px; padding: 12px 14px; border-radius: 10px; background: var(--panel-2); border-left: 3px solid var(--line); }
+.play.good { border-left-color: var(--good); }
+.play.warn { border-left-color: var(--warn); }
+.play.bad { border-left-color: var(--bad); }
+.play.open { border-left-color: var(--s1); }
+.play.dim { opacity: 0.55; }
+.play-when { color: var(--muted); font-size: 12px; }
+.play-part { display: grid; gap: 2px; min-width: 0; align-content: start; }
+.play-part span { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+.play-part b { font-size: 14px; font-weight: 600; }
+.play-part small { color: var(--muted); font-size: 12px; }
+.play.good .play-did b { color: var(--good); }
+.play.warn .play-did b { color: var(--warn); }
+.play.bad .play-did b { color: var(--bad); }
+/* what a purchase cost: pump price, company paid, discount saved */
+.bought { border-collapse: collapse; margin-top: 8px; width: 100%; max-width: 320px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.bought th, .bought td { padding: 2px 0; border: 0; background: none; text-align: right; font-weight: 400; color: var(--muted); white-space: nowrap; }
+.bought th { text-align: left; }
+.bought td { padding-left: 16px; }
+.bought thead td { color: var(--faint); font-size: 11px; }
+.bought tbody td { color: var(--text); }
+.bought .saved th, .bought .saved td { color: var(--good); font-weight: 600; border-top: 1px solid var(--line); padding-top: 4px; }
 
-/* plan tables */
-.table td.left { text-align: left; }
-.table .off { color: var(--bad); }
-.table .on { color: var(--good); }
+/* the Love's ahead: each verdict in its color, the stop chosen highlighted */
 .table .note-row td { color: var(--muted); text-align: left; white-space: normal; }
-.table .muted { color: var(--faint); }
-.badge { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 11px;
-  background: rgba(91, 156, 245, 0.16); color: var(--s1); }
+.table .verdict-range { color: var(--good); }
+.table .verdict-early, .table .verdict-passed { color: var(--faint); }
+.table .verdict-late { color: var(--warn); }
+.table .verdict-out { color: var(--bad); }
+.table tr.is-chosen td { background: rgba(242, 163, 58, 0.1); }
+
+/* ---------- Data view: freshness of each source, the automatic refreshes, the gaps, and the glossary ---------- */
+.sources { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; align-content: start; }
+.source { display: grid; gap: 2px; padding: 12px 14px; border-radius: 10px; background: var(--panel-2); border-left: 3px solid var(--faint); }
+.source.fresh { border-left-color: var(--good); }
+.source.stale { border-left-color: var(--warn); }
+.source.old { border-left-color: var(--bad); }
+.source b { font-weight: 600; font-size: 13px; }
+.source span { font-size: 12px; color: var(--muted); }
+.list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; align-content: start; }
+.list li { display: flex; justify-content: space-between; gap: 16px; padding: 8px 12px; border-radius: 8px; font-size: 13px; color: var(--muted); }
+.list li:nth-child(odd) { background: var(--panel-2); }
+.list b { color: var(--text); font-weight: 600; white-space: nowrap; }
+.list b.bad { color: var(--bad); }
+.glossary { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 16px 20px; }
+.glossary summary { cursor: pointer; font-weight: 600; color: var(--muted); }
+.glossary summary:hover { color: var(--text); }
+.glossary dl { margin: 16px 0 0; display: grid; grid-template-columns: minmax(150px, 220px) 1fr; gap: 10px 24px; max-width: 980px; }
+.glossary dt { font-weight: 600; }
+.glossary dd { margin: 0; color: var(--muted); }
+
+/* ---------- Accounting view: an EFS statement as a tree of boxes, each open box's parts on the row under it ---------- */
+body[data-view="accounting"] .page { max-width: 1920px; }  /* the tree grows sideways as boxes open */
+.tree-wrap { overflow-x: auto; padding: 4px 4px 12px; }
+.tree { width: max-content; min-width: 100%; }
+.tree ul { position: relative; display: flex; justify-content: center; margin: 0; padding: 24px 0 0; list-style: none; }
+.tree > ul { padding-top: 0; }
+.tree li { position: relative; display: flex; flex-direction: column; align-items: center; padding: 24px 5px 0; }
+/* the connectors: a line down from an open box, a bar over its parts' row, and a line down into each part */
+.tree li::before, .tree li::after { content: ""; position: absolute; top: 0; right: 50%; width: 50%; height: 24px;
+  border-top: 1px solid var(--faint); }
+.tree li::after { right: auto; left: 50%; border-left: 1px solid var(--faint); }
+.tree li:only-child { padding-top: 0; }
+.tree li:only-child::before, .tree li:only-child::after { display: none; }
+.tree li:first-child::before, .tree li:last-child::after { border: 0 none; }
+.tree li:last-child::before { border-right: 1px solid var(--faint); border-radius: 0 6px 0 0; }
+.tree li:first-child::after { border-radius: 6px 0 0 0; }
+.tree ul ul::before { content: ""; position: absolute; top: 0; left: 50%; height: 24px; border-left: 1px solid var(--faint); }
+/* a box: a block with its color on top and a darker side, so it reads as a cube */
+.cube { position: relative; display: grid; gap: 1px; align-content: start; width: 148px; min-height: 104px; padding: 11px 11px 10px;
+  text-align: left; font: inherit; color: var(--text); border-radius: 10px; border: 1px solid var(--line);
+  border-top: 3px solid var(--tone, var(--faint)); background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  box-shadow: 4px 4px 0 0 #0a0e14, 4px 4px 0 1px var(--line); }
+button.cube { cursor: pointer; transition: transform 0.12s var(--ease), border-color 0.12s; }
+button.cube:hover { transform: translate(-1px, -1px); border-color: var(--tone); border-top-color: var(--tone); }
+button.cube:focus-visible { outline: 2px solid var(--s1); outline-offset: 3px; }
+.cube.is-open { border-color: var(--tone); }
+.cube.is-root { width: 220px; }
+.cube.is-root .cube-amount { font-size: 22px; }
+.cube-label { padding-right: 26px; font-size: 12px; color: var(--muted); line-height: 1.3; }
+.cube-amount { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.cube-share, .cube-note { font-size: 11.5px; color: var(--muted); line-height: 1.35; }
+.cube-check { font-size: 11.5px; color: var(--warn); }
+/* the checks under the tree: the statement in numbers, and the Love's tables */
+.acct-figs { flex-wrap: wrap; gap: 16px 48px; }
+.acct-sub { margin: 6px 0 0; font-size: 14px; font-weight: 600; }
+.acct-warn { color: var(--warn); font-weight: 600; }
+.acct-bad { color: var(--bad); font-weight: 600; }
+/* how the box compares with Datatruck: matches, differs, lines missing, or EFS's alone */
+.badge { justify-self: start; margin-top: 5px; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  white-space: nowrap; color: var(--muted); background: rgba(142, 154, 174, 0.12); }
+.badge.good { color: var(--good); background: rgba(60, 195, 138, 0.12); }
+.badge.warn { color: var(--warn); background: rgba(242, 163, 58, 0.14); }
+.badge.bad { color: var(--bad); background: rgba(242, 103, 107, 0.14); }
+.cube-more { position: absolute; top: 9px; right: 9px; padding: 0 6px; border-radius: 999px; background: var(--line);
+  font-size: 11px; font-weight: 600; color: var(--text); }
 
 /* ---------- narrower screens ---------- */
 @media (max-width: 1280px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 1100px) {
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .span-2 { grid-column: 1 / -1; }
-  .plans { grid-template-columns: minmax(0, 1fr); }
-  .plans-list { position: static; max-height: none; }
+  .rec-layout { grid-template-columns: minmax(0, 1fr); }
+  .rec-list { position: static; max-height: none; }
   .units { flex: none; max-height: 360px; }
-  .topbar { grid-template-columns: 1fr auto; }
+  .rec-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .topbar { grid-template-columns: 1fr auto auto; }
   .live { display: none; }
 }
+@media (max-width: 800px) {
+  .play { grid-template-columns: 1fr; }
+  .msg-why { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .msg-row { grid-column: 1 / -1; grid-row: 2; }
+}
 @media (max-width: 700px) {
-  .grid, .kpis { grid-template-columns: 1fr; }
+  .grid, .kpis, .pair { grid-template-columns: 1fr; }
   .map { height: 460px; }
   .topbar { grid-template-columns: 1fr; }
   .glossary dl { grid-template-columns: 1fr; }

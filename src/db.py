@@ -5,13 +5,14 @@ import sqlite3
 import threading
 from collections import defaultdict
 from contextlib import contextmanager
-from dataclasses import asdict
+from dataclasses import asdict, fields
 from datetime import datetime, timezone
 
 import config
-from models import (DatatruckDriver, DatatruckTruck, Event, FuelCard, FuelLine, FuelPlan, FuelStop, LoadPlan,
-                    MarketPrice, Order, PlanStop, Progress, SamsaraLive, SamsaraVehicle, Stop, Store, StoreOnRoute,
-                    SyncedTruck, TankEstimate, TelegramGroup, Truck, Waypoint)
+from models import (BurnFactor, DatatruckDriver, DatatruckTruck, EfsLine, EfsStatement, FillEvidence, FillLookup, FuelCard,
+                    FuelLine, FuelStop, MarketPrice, Order, Problem, Recommendation, Region, SamsaraLive, SamsaraVehicle,
+                    SourceHealth, Stop, Store, SyncedTruck, TankEstimate, TelegramGroup, Truck, TruckBurn, Trip, TruckWatch,
+                    UsualLevel)
 
 # Raise when a refreshed table changes shape: those tables are then dropped and refilled by their jobs.
 SCHEMA_VERSION = 2
@@ -207,6 +208,14 @@ CREATE TABLE IF NOT EXISTS tank_estimates (
     synced_at TEXT NOT NULL
 );
 
+-- Writer: engine fuel factors. How many gallons one unit of each pilot truck's engine meter burns.
+CREATE TABLE IF NOT EXISTS burn_factors (
+    unit         TEXT PRIMARY KEY,
+    gal_per_unit REAL NOT NULL,
+    stretches    INTEGER NOT NULL,
+    synced_at    TEXT NOT NULL
+);
+
 -- ===== Yours. Writer: you (`pilot-add`, `pilot-remove`, `set-tank`, `set-chat`). Nothing else ever touches it. =====
 -- The trucks the assistant serves. An empty tank or chat means "use the helper's estimate / the auto-matched group".
 CREATE TABLE IF NOT EXISTS pilot_trucks (
@@ -217,38 +226,129 @@ CREATE TABLE IF NOT EXISTS pilot_trucks (
     added_at TEXT NOT NULL
 );
 
--- ===== The app's own records. Writer: the planner job (plan_loads). Kept: never replaced, never dropped. =====
--- One plan per load, made once; a load started over (plan_loads.restart, a truck going live mid-load) gets a second,
--- later one, and the newest is the one followed. `plan` is the whole plan as JSON (the truck as it was, the road, the
--- Love's along it, the stops), so it can be redrawn and checked exactly as it was made.
-CREATE TABLE IF NOT EXISTS plans (
-    plan_id  INTEGER PRIMARY KEY AUTOINCREMENT,
-    unit     TEXT NOT NULL,
-    order_id INTEGER NOT NULL,
-    load_id  TEXT NOT NULL,
-    made_at  TEXT NOT NULL,
-    plan     TEXT NOT NULL,
-    UNIQUE (unit, order_id, made_at)
+-- ===== The app's own records. Kept: never replaced, never dropped. =====
+-- Writer: fill lookups. One row per diesel fill outside Love's, written once and kept (not refilled): where the truck was (outside Love's) and the Samsara gauge just before (FillLookup).
+CREATE TABLE IF NOT EXISTS fill_lookups (
+    line_id      INTEGER PRIMARY KEY,
+    lat          REAL,
+    lng          REAL,
+    gauge_before REAL,
+    synced_at    TEXT NOT NULL
 );
 
--- Every message about a plan, oldest first: the first one, then one full message per major event, each to a chat
--- (the test chat for now). sent_at and message_id stay empty until Telegram took it. Only a plan's newest message
--- keeps its navigation link; older ones read "Newer update below" instead.
-CREATE TABLE IF NOT EXISTS plan_messages (
-    message_no INTEGER PRIMARY KEY AUTOINCREMENT,
-    plan_id    INTEGER NOT NULL REFERENCES plans (plan_id),
-    chat_id    INTEGER NOT NULL,
-    text       TEXT NOT NULL,
-    made_at    TEXT NOT NULL,
-    sent_at    TEXT,
-    message_id INTEGER
+-- Writer: Love's exits job. One row per Love's store whose own page was read, written once and kept: its highway and
+-- exit as the page says them, "I-70 (Exit 208)" (empty when the page names none).
+CREATE TABLE IF NOT EXISTS store_exits (
+    store_no  TEXT PRIMARY KEY,
+    way       TEXT,
+    synced_at TEXT NOT NULL
 );
 
--- How far each followed plan has got, as JSON (models.Progress): the road in force (the plan or its latest re-plan),
--- the waypoints passed on it, the Love's planned so far, and every event told.
-CREATE TABLE IF NOT EXISTS plan_progress (
-    plan_id  INTEGER PRIMARY KEY REFERENCES plans (plan_id),
-    progress TEXT NOT NULL
+-- Writer: fuel recommendations. One row per pilot truck: its latest look, with its road kept so it isn't asked of
+-- Google again; `look` is models.TruckWatch as JSON.
+CREATE TABLE IF NOT EXISTS truck_watch (
+    unit TEXT PRIMARY KEY,
+    look TEXT NOT NULL
+);
+
+-- Writer: fuel recommendations. One row per pilot truck per load: its stops, the engine's first and last look at it, and
+-- the latest road planned. Kept (truck_watch holds only the current look): the Recommend tab's past trips.
+CREATE TABLE IF NOT EXISTS trips (
+    unit       TEXT NOT NULL,
+    order_id   INTEGER NOT NULL,
+    load_id    TEXT,
+    stops      TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    ended_at   TEXT NOT NULL,
+    line       TEXT,
+    PRIMARY KEY (unit, order_id)
+);
+
+-- Writer: fuel recommendations. Everything a driver would have been told, and what became of it. Kept.
+CREATE TABLE IF NOT EXISTS recommendations (
+    rec_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    unit         TEXT NOT NULL,
+    driver       TEXT,
+    order_id     INTEGER NOT NULL,
+    load_id      TEXT NOT NULL,
+    made_at      TEXT NOT NULL,
+    kind         TEXT NOT NULL,
+    store_no     TEXT,
+    station      TEXT,
+    miles_ahead  REAL,
+    gauge_pct    REAL NOT NULL,
+    arrive_pct   REAL,
+    worst_pct    REAL,
+    gallons      REAL,
+    then_station TEXT,
+    reason       TEXT,
+    net          REAL,
+    retail       REAL,
+    price_date   TEXT,
+    forecast_mpg REAL NOT NULL,
+    cautious_mpg REAL NOT NULL,
+    usual_pct    REAL NOT NULL,
+    text         TEXT NOT NULL,
+    status       TEXT NOT NULL,
+    settled_at   TEXT,
+    sent_at      TEXT,
+    lat          REAL,
+    lng          REAL
+);
+
+-- Writer: statements job. One row per EFS statement read from data/efs (a changed file is read again): page 1's
+-- figures; `summary` is its Transaction Summary as JSON [[EFS's name, dollars], ...].
+CREATE TABLE IF NOT EXISTS efs_statements (
+    statement_no  TEXT PRIMARY KEY,
+    account       TEXT NOT NULL,
+    statement_day TEXT NOT NULL,
+    charges       REAL NOT NULL,
+    summary       TEXT NOT NULL,
+    path          TEXT NOT NULL,
+    size          INTEGER NOT NULL,
+    modified      REAL NOT NULL,
+    synced_at     TEXT NOT NULL
+);
+-- Writer: statements job. Every line of those statements, in their order.
+CREATE TABLE IF NOT EXISTS efs_lines (
+    statement_no TEXT NOT NULL,
+    seq          INTEGER NOT NULL,
+    tn           TEXT NOT NULL,
+    day          TEXT NOT NULL,
+    unit         TEXT NOT NULL,
+    city         TEXT NOT NULL,
+    state        TEXT NOT NULL,
+    description  TEXT NOT NULL,
+    quantity     REAL NOT NULL,
+    amount       REAL NOT NULL,
+    fee          REAL NOT NULL,
+    synced_at    TEXT NOT NULL,
+    PRIMARY KEY (statement_no, seq)
+);
+
+-- Writer: fill evidence job. One row per diesel fill on a statement (its Datatruck line): the gauge's biggest rise near
+-- it and where the truck was then, from Samsara. Looked up once and kept.
+CREATE TABLE IF NOT EXISTS fill_evidence (
+    line_id    INTEGER PRIMARY KEY,
+    gauge_from REAL,
+    gauge_to   REAL,
+    risen_at   TEXT,
+    lat        REAL,
+    lng        REAL,
+    place      TEXT,
+    synced_at  TEXT NOT NULL
+);
+-- Writer: fill evidence job. Per statement, every Samsara vehicle's engine fuel used, miles and gauge at the start and
+-- end of its days. Looked up once per statement and kept.
+CREATE TABLE IF NOT EXISTS statement_burn (
+    statement_no TEXT NOT NULL,
+    samsara_id   TEXT NOT NULL,
+    burned_gal   REAL NOT NULL,
+    miles        REAL NOT NULL,
+    gauge_start  REAL,
+    gauge_end    REAL,
+    synced_at    TEXT NOT NULL,
+    PRIMARY KEY (statement_no, samsara_id)
 );
 
 -- Writer: the scheduler. When each automatic refresh last ran and whether it crashed.
@@ -257,6 +357,24 @@ CREATE TABLE IF NOT EXISTS job_runs (
     started_at  TEXT NOT NULL,
     finished_at TEXT,
     error       TEXT
+);
+
+-- Writer: every source refresh (jobs/mirror). One row per source: when it was last tried, last worked, and why the last
+-- try failed (NULL when it worked). A failed refresh keeps the old copy, so this is where a failure shows.
+CREATE TABLE IF NOT EXISTS source_health (
+    name        TEXT PRIMARY KEY,
+    last_try_at TEXT NOT NULL,
+    last_ok_at  TEXT,
+    error       TEXT
+);
+
+-- Writer: the heartbeat (jobs/heartbeat). The problems found and not yet fixed, one per component, and whether the
+-- alert about each went out: each is told once when it starts and once when it ends.
+CREATE TABLE IF NOT EXISTS health_alerts (
+    component TEXT PRIMARY KEY,
+    text      TEXT NOT NULL,
+    since     TEXT,
+    told      INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -356,11 +474,10 @@ FROM fleet WHERE pilot AND (fuel_at IS NULL OR fuel_at < datetime('now', '-{conf
 """
 
 # Tables filled by refreshes: listed by the `status` command, and dropped for refilling when SCHEMA_VERSION changes.
-# Your pilot list (pilot_trucks), the saved plans with their messages and progress, and job_runs are not in this
-# list, so they are never dropped.
+# Your pilot list (pilot_trucks), fill_lookups and job_runs are not in this list, so they are never dropped.
 SYNCED_TABLES = ["samsara_vehicles", "samsara_live", "dt_trucks", "dt_drivers", "tg_groups", "dt_orders", "dt_stops",
                  "stores", "price_history", "price_files", "fuel_lines", "fuel_cards", "market_prices", "trucks",
-                 "tank_estimates", "fuel_stops"]
+                 "tank_estimates", "fuel_stops", "burn_factors", "efs_statements", "efs_lines"]
 
 
 _schema_lock = threading.Lock()
@@ -391,7 +508,16 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         if conn.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
             _rebuild(conn)
         conn.executescript("BEGIN IMMEDIATE;" + TABLES + VIEWS + "COMMIT;")
+        _add_column(conn, "recommendations", "sent_at", "TEXT")
+        _add_column(conn, "recommendations", "lat", "REAL")
+        _add_column(conn, "recommendations", "lng", "REAL")
         _schema_ready.add(str(config.DB_PATH))
+
+
+# Adds a column a kept table got later (kept tables are never dropped and rebuilt, so CREATE TABLE alone won't add it).
+def _add_column(conn: sqlite3.Connection, table: str, column: str, kind: str) -> None:
+    if column not in {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
 
 
 # Drops every refreshed table (its job refills it) and stamps the new schema version. Manual settings stay.
@@ -484,7 +610,19 @@ def replace_orders(conn: sqlite3.Connection, orders: list[Order]) -> None:
 
 # Replaces the Love's stores and prices.
 def replace_stores(conn: sqlite3.Connection, stores: list[Store]) -> None:
-    _replace(conn, "stores", [_row(s, skip="name") for s in stores])  # `name` is only for stations that aren't Love's
+    # `name` is only for stations that aren't Love's; `way` is kept in its own table (store_exits)
+    _replace(conn, "stores", [{k: v for k, v in _row(s, skip="name").items() if k != "way"} for s in stores])
+
+
+# Keeps a Love's store's highway and exit as its own page says them (None: the page names none).
+def save_store_exit(conn: sqlite3.Connection, store_no: str, way: str | None) -> None:
+    conn.execute("INSERT OR REPLACE INTO store_exits (store_no, way, synced_at) VALUES (?, ?, ?)", (store_no, way, now()))
+
+
+# The Love's stores whose own page hasn't been read for its exit yet, by store number.
+def stores_without_exit(conn: sqlite3.Connection) -> list[str]:
+    return [row[0] for row in conn.execute(
+        "SELECT store_no FROM stores WHERE store_no NOT IN (SELECT store_no FROM store_exits) ORDER BY store_no")]
 
 
 # Adds one price sheet to the price history (a store's price for a day it already has is replaced) and records the
@@ -508,6 +646,99 @@ def newest_price_file(conn: sqlite3.Connection) -> str | None:
     return row["path"] if row else None
 
 
+# Adds one EFS statement with its lines (a statement read before is replaced: same number, new file) and records
+# the file it came from as read.
+def add_statement(conn: sqlite3.Connection, path: str, size: int, modified: float, statement: EfsStatement,
+                  lines: list[EfsLine]) -> None:
+    conn.execute("DELETE FROM efs_lines WHERE statement_no = ?", (statement.statement_no,))
+    conn.execute("DELETE FROM efs_statements WHERE statement_no = ? OR path = ?", (statement.statement_no, path))
+    row = _row(statement) | {"summary": json.dumps(statement.summary), "path": path, "size": size, "modified": modified}
+    _insert(conn, "efs_statements", [row])
+    _insert(conn, "efs_lines", [_row(line) for line in lines])
+
+
+# Returns the statement files already read, as {path: (size, modified)}.
+def statement_files(conn: sqlite3.Connection) -> dict[str, tuple[int, float]]:
+    return {row["path"]: (row["size"], row["modified"]) for row in conn.execute("SELECT path, size, modified FROM efs_statements")}
+
+
+# Returns every EFS statement read, newest first (by statement date, then account).
+def statements(conn: sqlite3.Connection) -> list[EfsStatement]:
+    rows = conn.execute("SELECT statement_no, account, statement_day, charges, summary FROM efs_statements "
+                        "ORDER BY statement_day DESC, account")
+    return [_statement(row) for row in rows]
+
+
+# Returns one statement and its lines in their order; None when it was never read.
+def statement(conn: sqlite3.Connection, statement_no: str) -> tuple[EfsStatement, list[EfsLine]] | None:
+    row = conn.execute("SELECT statement_no, account, statement_day, charges, summary FROM efs_statements "
+                       "WHERE statement_no = ?", (statement_no,)).fetchone()
+    if row is None:
+        return None
+    lines = conn.execute("SELECT statement_no, seq, tn, day, unit, city, state, description, quantity, amount, fee "
+                         "FROM efs_lines WHERE statement_no = ? ORDER BY seq", (statement_no,))
+    return _statement(row), [EfsLine(**line) for line in lines]
+
+
+# Keeps what Samsara showed around these fills.
+def add_fill_evidence(conn: sqlite3.Connection, found: list[FillEvidence]) -> None:
+    conn.executemany("DELETE FROM fill_evidence WHERE line_id = ?", [(e.line_id,) for e in found])
+    _insert(conn, "fill_evidence", [_row(e) for e in found])
+
+
+# Returns the evidence kept for these Datatruck lines, as {line id: FillEvidence}; a line not looked up isn't in it.
+def fill_evidence(conn: sqlite3.Connection, line_ids: list[int]) -> dict[int, FillEvidence]:
+    marks = ",".join("?" * len(line_ids))
+    rows = conn.execute(f"SELECT line_id, gauge_from, gauge_to, risen_at, lat, lng, place FROM fill_evidence "
+                        f"WHERE line_id IN ({marks})", line_ids) if line_ids else []
+    return {row["line_id"]: FillEvidence(**{**row, "risen_at": _dt(row["risen_at"])}) for row in rows}
+
+
+# Keeps one statement's fuel used per Samsara vehicle (a statement looked up again is replaced).
+def add_statement_burn(conn: sqlite3.Connection, statement_no: str, burns: list[TruckBurn]) -> None:
+    conn.execute("DELETE FROM statement_burn WHERE statement_no = ?", (statement_no,))
+    _insert(conn, "statement_burn", [_row(b) for b in burns])
+
+
+# Returns one statement's fuel used per Samsara vehicle, as {samsara id: TruckBurn}; empty when not looked up yet.
+def statement_burn(conn: sqlite3.Connection, statement_no: str) -> dict[str, TruckBurn]:
+    rows = conn.execute("SELECT statement_no, samsara_id, burned_gal, miles, gauge_start, gauge_end FROM statement_burn "
+                        "WHERE statement_no = ?", (statement_no,))
+    return {row["samsara_id"]: TruckBurn(**row) for row in rows}
+
+
+# A stored statement row back as an EfsStatement (its summary from JSON).
+def _statement(row: sqlite3.Row) -> EfsStatement:
+    return EfsStatement(**{**row, "summary": tuple((name, amount) for name, amount in json.loads(row["summary"]))})
+
+
+# Returns each price sheet day's Love's discount (pump price minus our price) averaged over every store, from
+# `since_day` on, as {day: dollars per gallon}.
+def network_discounts(conn: sqlite3.Connection, since_day: str) -> dict[str, float]:
+    rows = conn.execute("SELECT price_date, AVG(retail - net) AS discount FROM price_history WHERE price_date >= ? "
+                        "GROUP BY price_date", (since_day,))
+    return {row["price_date"]: row["discount"] for row in rows}
+
+
+# Returns every price sheet from `since_day` on as {day: {store_no: our price per gallon}}.
+def price_sheets(conn: sqlite3.Connection, since_day: str) -> dict[str, dict[str, float]]:
+    sheets = defaultdict(dict)
+    for row in conn.execute("SELECT store_no, price_date, net FROM price_history WHERE price_date >= ?", (since_day,)):
+        sheets[row["price_date"]][row["store_no"]] = row["net"]
+    return dict(sheets)
+
+
+# Adds newly looked-up fills.
+def add_fill_lookups(conn: sqlite3.Connection, fills: list[FillLookup]) -> None:
+    _insert(conn, "fill_lookups", [_row(f) for f in fills])
+
+
+# Returns every looked-up fill by its fuel line id.
+def fill_lookups(conn: sqlite3.Connection) -> dict[int, FillLookup]:
+    rows = conn.execute("SELECT line_id, lat, lng, gauge_before FROM fill_lookups")
+    return {row["line_id"]: FillLookup(**row) for row in rows}
+
+
 # Replaces the Datatruck drivers copy.
 def replace_dt_drivers(conn: sqlite3.Connection, drivers: list[DatatruckDriver]) -> None:
     _replace(conn, "dt_drivers", [_row(d) for d in drivers])
@@ -524,131 +755,107 @@ def replace_fuel_lines_since(conn: sqlite3.Connection, since_day: str, lines: li
     _insert(conn, "fuel_lines", [_row(f) for f in lines])
 
 
-# Saves a load's plan and returns its plan_id. The table refuses the same plan twice (same truck, load and moment);
-# a load started over gets a later one.
-def save_plan(conn: sqlite3.Connection, p: LoadPlan) -> int:
-    cursor = conn.execute("INSERT INTO plans (unit, order_id, load_id, made_at, plan) VALUES (?, ?, ?, ?, ?)",
-                          (p.truck.unit, p.order.order_id, p.order.load_id, _ts(p.made_at),
-                           json.dumps(asdict(p), default=_iso)))
-    return cursor.lastrowid
+# Replaces the engine fuel factors.
+def replace_burn_factors(conn: sqlite3.Connection, factors: list[BurnFactor]) -> None:
+    _replace(conn, "burn_factors", [_row(f) for f in factors])
 
 
-# Queues one more message about a plan for a chat; the planner job sends it (see unsent_messages).
-def queue_message(conn: sqlite3.Connection, plan_id: int, chat_id: int, text: str, made_at: str) -> None:
-    conn.execute("INSERT INTO plan_messages (plan_id, chat_id, text, made_at) VALUES (?, ?, ?, ?)",
-                 (plan_id, chat_id, text, made_at))
+# Each pilot truck's engine fuel factor, by unit.
+def burn_factors(conn: sqlite3.Connection) -> dict[str, float]:
+    return {r["unit"]: r["gal_per_unit"] for r in conn.execute("SELECT unit, gal_per_unit FROM burn_factors")}
 
 
-# Returns (message_no, plan_id, chat_id, text) of each message not sent yet that was written at or after `since`,
-# oldest first.
-def unsent_messages(conn: sqlite3.Connection, since: datetime) -> list[tuple[int, int, int, str]]:
-    rows = conn.execute("SELECT message_no, plan_id, chat_id, text FROM plan_messages WHERE sent_at IS NULL "
-                        "AND made_at >= ? ORDER BY message_no", (_ts(since),))
-    return [tuple(row) for row in rows]
+# Saves a pilot truck's latest look, replacing the one before.
+def save_truck_watch(conn: sqlite3.Connection, watch: TruckWatch) -> None:
+    conn.execute("INSERT OR REPLACE INTO truck_watch (unit, look) VALUES (?, ?)",
+                 (watch.unit, json.dumps(asdict(watch), default=lambda v: v.isoformat())))
 
 
-# Records that a message was sent, with its Telegram id (to edit it later).
-def mark_sent(conn: sqlite3.Connection, message_no: int, message_id: int, sent_at: str) -> None:
-    conn.execute("UPDATE plan_messages SET sent_at = ?, message_id = ? WHERE message_no = ?",
-                 (sent_at, message_id, message_no))
+# A pilot truck's latest look; None before its first.
+def truck_watch(conn: sqlite3.Connection, unit: str) -> TruckWatch | None:
+    row = conn.execute("SELECT look FROM truck_watch WHERE unit = ?", (unit,)).fetchone()
+    return _watch(row["look"]) if row else None
 
 
-# Returns (message_no, chat_id, message_id, text) of the newest message sent to `chat_id` about the truck of plan
-# `plan_id`, any of its plans (before message `before` when given), or None when none was sent there. A truck's next
-# plan so takes the link off its last plan's last message too.
-def last_sent(conn: sqlite3.Connection, plan_id: int, chat_id: int,
-              before: int | None = None) -> tuple[int, int, int, str] | None:
-    row = conn.execute("SELECT m.message_no, m.chat_id, m.message_id, m.text FROM plan_messages m JOIN plans p "
-                       "USING (plan_id) WHERE p.unit = (SELECT unit FROM plans WHERE plan_id = ?) AND m.chat_id = ? "
-                       "AND m.message_id IS NOT NULL AND (? IS NULL OR m.message_no < ?) "
-                       "ORDER BY m.message_no DESC LIMIT 1", (plan_id, chat_id, before, before)).fetchone()
-    return tuple(row) if row else None
+# A saved look back as a TruckWatch.
+def _watch(look: str) -> TruckWatch:
+    d = json.loads(look)
+    return TruckWatch(**_known(TruckWatch, {**d, "at": _dt(d["at"]), "road_made_at": _dt(d["road_made_at"]),
+                         "line": [tuple(p) for p in d["line"]] if d["line"] else None,
+                         "regions": tuple(Region(**r) for r in d["regions"]),
+                         "usual": UsualLevel(**d["usual"]) if d.get("usual") else None,
+                         "road_stops": tuple(tuple(p) for p in d.get("road_stops") or ()),
+                         "fueled_at": _dt(d.get("fueled_at"))}))
 
 
-# Returns the chats a plan's messages go to: those its first message was queued for, so a truck that goes live
-# mid-load starts in its own group with its next plan, not with an update about one it never got.
-def plan_chats(conn: sqlite3.Connection, plan_id: int) -> list[int]:
-    rows = conn.execute("SELECT chat_id FROM plan_messages WHERE plan_id = ? GROUP BY chat_id ORDER BY MIN(message_no)",
-                        (plan_id,))
-    return [row["chat_id"] for row in rows]
+# Records a look at a truck's load: a trip starts on its first look and each look moves its end; a road made anew
+# (`line`; None when the road was kept) replaces the one kept.
+def save_trip(conn: sqlite3.Connection, trip: Trip) -> None:
+    conn.execute("INSERT INTO trips (unit, order_id, load_id, stops, started_at, ended_at, line) VALUES (?, ?, ?, ?, ?, ?, ?) "
+                 "ON CONFLICT (unit, order_id) DO UPDATE SET load_id = excluded.load_id, stops = excluded.stops, "
+                 "ended_at = excluded.ended_at, line = COALESCE(excluded.line, trips.line)",
+                 (trip.unit, trip.order_id, trip.load_id, json.dumps(trip.stops), _ts(trip.started_at), _ts(trip.ended_at),
+                  json.dumps(trip.line) if trip.line else None))
 
 
-# Records a sent message's text as edited.
-def set_text(conn: sqlite3.Connection, message_no: int, text: str) -> None:
-    conn.execute("UPDATE plan_messages SET text = ? WHERE message_no = ?", (text, message_no))
+# A truck's trips that ended since a UTC day ("YYYY-MM-DD"), newest first.
+def trips(conn: sqlite3.Connection, unit: str, since_day: str) -> list[Trip]:
+    return [Trip(r["unit"], r["order_id"], r["load_id"], tuple(tuple(s) for s in json.loads(r["stops"])), _dt(r["started_at"]),
+                 _dt(r["ended_at"]), [tuple(p) for p in json.loads(r["line"])] if r["line"] else None)
+            for r in conn.execute("SELECT * FROM trips WHERE unit = ? AND ended_at >= ? ORDER BY started_at DESC", (unit, since_day))]
 
 
-# Saves how far a followed plan has got (replacing what was saved before).
-def save_progress(conn: sqlite3.Connection, plan_id: int, progress: Progress) -> None:
-    conn.execute("INSERT OR REPLACE INTO plan_progress (plan_id, progress) VALUES (?, ?)",
-                 (plan_id, json.dumps(asdict(progress), default=_iso)))
+# Every pilot truck's latest look.
+def truck_watches(conn: sqlite3.Connection) -> list[TruckWatch]:
+    return [_watch(r["look"]) for r in conn.execute("SELECT look FROM truck_watch ORDER BY unit")]
 
 
-# Returns (plan_id, plan, progress) of each truck's newest plan that is being followed and was made at or after
-# `since`.
-def followed(conn: sqlite3.Connection, since: datetime) -> list[tuple[int, LoadPlan, Progress]]:
-    rows = conn.execute("SELECT g.plan_id, p.plan, g.progress FROM plan_progress g JOIN plans p USING (plan_id) "
-                        "WHERE p.made_at >= ? AND p.plan_id = (SELECT MAX(plan_id) FROM plans q WHERE q.unit = p.unit)",
-                        (_ts(since),))
-    return [(row["plan_id"], _load_plan(json.loads(row["plan"])), _progress(json.loads(row["progress"])))
-            for row in rows]
+# Records something a driver would be told, and returns its id.
+def add_recommendation(conn: sqlite3.Connection, rec: Recommendation) -> int:
+    row = _row(rec, skip="rec_id")
+    return conn.execute(f"INSERT INTO recommendations ({', '.join(row)}) VALUES ({', '.join(':' + c for c in row)})", row).lastrowid
 
 
-# Returns (unit, order id) of every load that already has a plan.
-def planned_loads(conn: sqlite3.Connection) -> set[tuple[str, int]]:
-    return {(row["unit"], row["order_id"]) for row in conn.execute("SELECT unit, order_id FROM plans")}
+# Marks a recommendation as sent to the driver's own group.
+def mark_sent(conn: sqlite3.Connection, rec_id: int, at: datetime) -> None:
+    conn.execute("UPDATE recommendations SET sent_at = ? WHERE rec_id = ?", (_ts(at), rec_id))
 
 
-# Returns the plans made on or after a UTC day ("YYYY-MM-DD"), newest first, each as stored plus its plan_id.
-def plans(conn: sqlite3.Connection, since_day: str) -> list[dict]:
-    rows = conn.execute("SELECT plan_id, plan FROM plans WHERE made_at >= ? ORDER BY made_at DESC", (since_day,))
-    return [_saved_plan(row) for row in rows]
+# The recommendation of a truck still waiting to see what becomes of it; None when there is none.
+def open_recommendation(conn: sqlite3.Connection, unit: str) -> Recommendation | None:
+    row = conn.execute("SELECT * FROM recommendations WHERE unit = ? AND status = 'open' ORDER BY rec_id DESC LIMIT 1",
+                       (unit,)).fetchone()
+    return _recommendation(row) if row else None
 
 
-# Returns one saved plan as stored plus its plan_id, or None when there is no such plan.
-def plan(conn: sqlite3.Connection, plan_id: int) -> dict | None:
-    row = conn.execute("SELECT plan_id, plan FROM plans WHERE plan_id = ?", (plan_id,)).fetchone()
-    return _saved_plan(row) if row else None
+# How many fuel stops told to a truck after a moment ended driven past.
+def passed_stops(conn: sqlite3.Connection, unit: str, since: datetime) -> int:
+    return conn.execute("SELECT COUNT(*) FROM recommendations WHERE unit = ? AND kind = 'stop' AND status = 'passed' "
+                        "AND made_at > ?", (unit, _ts(since))).fetchone()[0]
 
 
-# A stored plan row as a dict: the plan's JSON plus its plan_id.
-def _saved_plan(row: sqlite3.Row) -> dict:
-    return {"plan_id": row["plan_id"], **json.loads(row["plan"])}
+# Closes a recommendation with what became of it.
+def settle_recommendation(conn: sqlite3.Connection, rec_id: int, status: str, at: datetime) -> None:
+    conn.execute("UPDATE recommendations SET status = ?, settled_at = ? WHERE rec_id = ?", (status, _ts(at), rec_id))
 
 
-# Returns one saved plan as the LoadPlan it was made from. Raises LookupError when there is no such plan.
-def load_plan(conn: sqlite3.Connection, plan_id: int) -> LoadPlan:
-    row = conn.execute("SELECT plan FROM plans WHERE plan_id = ?", (plan_id,)).fetchone()
-    if row is None:
-        raise LookupError(f"There is no plan {plan_id}")
-    return _load_plan(json.loads(row["plan"]))
+# The recommendations made since a UTC day ("YYYY-MM-DD"), newest first.
+def recommendations(conn: sqlite3.Connection, since_day: str) -> list[Recommendation]:
+    return [_recommendation(r) for r in conn.execute(
+        "SELECT * FROM recommendations WHERE made_at >= ? ORDER BY rec_id DESC", (since_day,))]
 
 
-# A followed plan's progress from its JSON.
-def _progress(d: dict) -> Progress:
-    return Progress(road=_load_plan(d["road"]), passed=d["passed"], planned=tuple(Waypoint(**w) for w in d["planned"]),
-                    events=tuple(Event(**{**e, "at": _dt(e["at"])}) for e in d["events"]))
+# A `recommendations` row as a Recommendation: stored times become datetimes.
+def _recommendation(row: sqlite3.Row) -> Recommendation:
+    return Recommendation(**_known(Recommendation, {**row, "made_at": _dt(row["made_at"]), "settled_at": _dt(row["settled_at"]),
+                                                    "sent_at": _dt(row["sent_at"])}))
 
 
-# A plan's JSON back as the LoadPlan it was made from (datetimes from ISO text, lists back to tuples).
-def _load_plan(d: dict) -> LoadPlan:
-    truck, order, fuel = d["truck"], d["order"], d["plan"]
-    return LoadPlan(
-        made_at=_dt(d["made_at"]),
-        truck=Truck(**{**truck, "fuel_at": _dt(truck["fuel_at"]), "gps_at": _dt(truck["gps_at"])}),
-        order=Order(**{**order, "pickup_at": _dt(order["pickup_at"]), "stops": tuple(Stop(**s) for s in order["stops"])}),
-        stops_ahead=tuple(Stop(**s) for s in d["stops_ahead"]), line=tuple(tuple(p) for p in d["line"]),
-        route_mi=d["route_mi"], candidates=tuple(StoreOnRoute(**{**c, "store": Store(**c["store"])}) for c in d["candidates"]),
-        mpg=d["mpg"], price_date=d["price_date"], end_price=d.get("end_price"),  # plans before 2026-10-21 lack it
-        end_pump=d.get("end_pump"),  # and those before 2026-10-22 this
-        via=tuple(tuple(p) for p in d.get("via", ())),  # and those before 2026-10-23 this
-        plan=FuelPlan(stops=tuple(PlanStop(**{**s, "store": Store(**s["store"])}) for s in fuel["stops"]),
-                      end_gal=fuel["end_gal"], fuel_cost=fuel["fuel_cost"]) if fuel else None)
-
-
-# How a datetime is written into JSON: ISO text, which browsers read directly.
-def _iso(value: datetime) -> str:
-    return value.isoformat()
+# The stored values a record type still has: a field dropped from the code since doesn't stop old rows from loading
+# (otherwise every look of the engine would fail on its saved look, quietly).
+def _known(cls, values: dict) -> dict:
+    names = {f.name for f in fields(cls)}
+    return {k: v for k, v in values.items() if k in names}
 
 
 # Records that a scheduled job started (error None) or finished (with its error, if it crashed).
@@ -663,15 +870,49 @@ def job_runs(conn: sqlite3.Connection) -> dict[str, sqlite3.Row]:
     return {row["job"]: row for row in conn.execute("SELECT * FROM job_runs")}
 
 
+# Records one try at refreshing a source: when, and the error when it failed (None: it worked, so it worked then too).
+def record_source(conn: sqlite3.Connection, name: str, at: datetime, error: str | None) -> None:
+    conn.execute("INSERT INTO source_health (name, last_try_at, last_ok_at, error) VALUES (?, ?, ?, ?) "
+                 "ON CONFLICT (name) DO UPDATE SET last_try_at = excluded.last_try_at, error = excluded.error, "
+                 "last_ok_at = COALESCE(excluded.last_ok_at, source_health.last_ok_at)",
+                 (name, _ts(at), None if error else _ts(at), error))
+
+
+# How each source's last refresh went.
+def source_health(conn: sqlite3.Connection) -> list[SourceHealth]:
+    return [SourceHealth(r["name"], _dt(r["last_try_at"]), _dt(r["last_ok_at"]), r["error"])
+            for r in conn.execute("SELECT * FROM source_health ORDER BY name")]
+
+
+# The problems the heartbeat found and hasn't seen fixed yet, by component.
+def health_alerts(conn: sqlite3.Connection) -> dict[str, Problem]:
+    return {r["component"]: Problem(r["component"], r["text"], _dt(r["since"]), bool(r["told"]))
+            for r in conn.execute("SELECT * FROM health_alerts ORDER BY component")}
+
+
+# Keeps a problem found (it replaces the one kept for that component).
+def set_alert(conn: sqlite3.Connection, problem: Problem) -> None:
+    conn.execute("INSERT OR REPLACE INTO health_alerts (component, text, since, told) VALUES (?, ?, ?, ?)",
+                 (problem.component, problem.text, _ts(problem.since) if problem.since else None, int(problem.told)))
+
+
+# Forgets an alerted problem once it is fixed.
+def clear_alert(conn: sqlite3.Connection, component: str) -> None:
+    conn.execute("DELETE FROM health_alerts WHERE component = ?", (component,))
+
+
+# The newest moments the data shows: Samsara's newest GPS point (UTC), the newest fuel purchase (Central, as Datatruck
+# writes it, "YYYY-MM-DD HH:MM") and the newest Love's price sheet's day. None where there is nothing yet.
+def newest_data(conn: sqlite3.Connection) -> tuple[datetime | None, str | None, str | None]:
+    gps = conn.execute("SELECT MAX(gps_at) FROM samsara_live").fetchone()[0]
+    fuel = conn.execute("SELECT MAX(fueled_at) FROM fuel_lines").fetchone()[0]
+    sheet = conn.execute("SELECT MAX(price_date) FROM price_files").fetchone()[0]
+    return _dt(gps), fuel, sheet
+
+
 # Replaces the fuel cards copy.
 def replace_fuel_cards(conn: sqlite3.Connection, cards: list[FuelCard]) -> None:
     _replace(conn, "fuel_cards", [_row(c) for c in cards])
-
-
-# Returns card id -> its deduction policy ("retail_plus_fee", "retail_amount", "invoice_amount"), for what each
-# purchase cost the driver.
-def card_policies(conn: sqlite3.Connection) -> dict[int, str | None]:
-    return {row["card_id"]: row["deduction_policy"] for row in conn.execute("SELECT card_id, deduction_policy FROM fuel_cards")}
 
 
 # Replaces the EIA market prices copy.
@@ -710,16 +951,21 @@ def fuel_lines(conn: sqlite3.Connection, since_day: str) -> list[FuelLine]:
     return [FuelLine(**{**row, "billable": bool(row["billable"])}) for row in rows]
 
 
+# Returns the fuel lines fueled from one local day through another ("YYYY-MM-DD", both whole), oldest first.
+def fuel_lines_between(conn: sqlite3.Connection, first_day: str, last_day: str) -> list[FuelLine]:
+    return [l for l in fuel_lines(conn, first_day) if l.fueled_at[:10] <= last_day]
+
+
 # Returns the market prices taken on or after a day ("YYYY-MM-DD").
 def market_prices(conn: sqlite3.Connection, since_day: str) -> list[MarketPrice]:
     rows = conn.execute("SELECT day, region, price FROM market_prices WHERE day >= ? ORDER BY day", (since_day,))
     return [MarketPrice(**row) for row in rows]
 
 
-# Returns the Love's stores with their prices.
+# Returns the Love's stores with their prices, and their highway and exit where the store's page was read.
 def stores(conn: sqlite3.Connection) -> list[Store]:
     return [Store(**row) for row in conn.execute(
-        "SELECT store_no, city, state, lat, lng, retail, net, price_date FROM stores")]
+        "SELECT store_no, city, state, lat, lng, retail, net, price_date, way FROM stores LEFT JOIN store_exits USING (store_no)")]
 
 
 # Returns the Telegram groups copy.
@@ -741,6 +987,12 @@ def fleet(conn: sqlite3.Connection) -> list[Truck]:
 # Returns only the trucks you picked for the pilot.
 def pilot(conn: sqlite3.Connection) -> list[Truck]:
     return [_truck(row) for row in conn.execute("SELECT * FROM fleet WHERE pilot ORDER BY unit")]
+
+
+# One pilot truck by its unit; None when the unit isn't in the pilot.
+def pilot_truck(conn: sqlite3.Connection, unit: str) -> Truck | None:
+    row = conn.execute("SELECT * FROM fleet WHERE pilot AND unit = ?", (unit,)).fetchone()
+    return _truck(row) if row else None
 
 
 # Turns a `fleet` row into a Truck: stored times become datetimes, the pilot flag a real true/false.

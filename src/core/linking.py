@@ -19,16 +19,15 @@ def link_by_vin(vehicles: list[SamsaraVehicle], trucks: list[DatatruckTruck]) ->
             if trucks_by_vin[vin].unit in unique_units]
 
 
-# Finds each unit's Telegram group: the one group whose title names the unit number (and no other fleet unit) and
-# one of the unit's active drivers, and isn't marked INACTIVE. A unit's number alone isn't enough: old groups of
-# former drivers keep it. Dispatch renames a group before Datatruck catches up, so when Datatruck has no driver on
-# the unit, a title naming the unit and an active driver Datatruck puts on no truck counts too (nothing contradicts
-# it; the note says so, for `holes`). Anything less certain gets a note instead of a guess.
+# Finds each unit's Telegram group: the one group not marked INACTIVE whose title names the unit number (no other fleet
+# unit) and one of its active drivers, since old groups of former drivers keep the number. Else a note, never a guess.
 def match_chats(units: list[str], groups: list[TelegramGroup], drivers: list[DatatruckDriver]) -> dict[str, ChatMatch]:
     unit_numbers = Counter(_number(u) for u in units)
     open_groups = [g for g in groups if not INACTIVE.search(g.title)]
     # per group: the numbers in its title that are fleet unit numbers ("Unit 340 2024" -> {"340"})
     title_units = {g.chat_id: _numbers_in(g.title) & unit_numbers.keys() for g in open_groups}
+    # Dispatch renames a group before Datatruck catches up: a unit Datatruck has no driver on may match on an active
+    # driver it puts on no truck (`free`). Nothing contradicts it, and the note says so, for `holes`.
     names, free = defaultdict(list), []  # unit -> its active drivers' names; active drivers on no truck
     for d in drivers:
         if d.employee_status == "active":

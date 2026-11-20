@@ -1,30 +1,37 @@
 // Number, date and text formatting shared by every part of the dashboard.
 
-const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 });
-const ZONE = 'America/Chicago';  // the company's clock: every time on the page is US Central, whatever this PC's zone
+const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 });  // "3.2K", "1.07M"
 
-// A moment (ISO text, Date or milliseconds) on the company's clock, with the Intl `parts` asked for, 24-hour.
-const central = (when, parts) => new Date(when).toLocaleString('en-US', { timeZone: ZONE, hourCycle: 'h23', ...parts });
+// A real moment (ISO text with its zone) as "Tue, Oct 20, 07:11" on the company's clock, US Central.
+export const dayTime = (when) => new Date(when).toLocaleString('en-US', {
+  timeZone: 'America/Chicago', hourCycle: 'h23', weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+});
 
-// "Tue, Oct 20, 07:11" in Central time.
-export const dayTime = (when) => central(when, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-// "13:05" in Central time.
-export const clock = (when) => central(when, { hour: '2-digit', minute: '2-digit' });
-
-// "Thu 13:05" in Central time.
-export const dayClock = (when) => central(when, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+// A real moment as "Thu 13:05" on the company's clock.
+export const dayClock = (when) => new Date(when).toLocaleString('en-US', {
+  timeZone: 'America/Chicago', hourCycle: 'h23', weekday: 'short', hour: '2-digit', minute: '2-digit',
+});
 
 // Formats values for people; a missing value shows as a dash.
 export const fmt = {
-  money: (v) => (v == null ? '—' : (v < 0 ? '−$' : '$') + compact.format(Math.abs(v))),
-  gallons: (v) => (v == null ? '—' : compact.format(v) + ' gal'),
+  money: (v) => (v == null ? '—' : (v < 0 ? '−$' : '$') + (Math.abs(v) < 1000 ? Math.round(Math.abs(v)) : compact.format(Math.abs(v)))),  // "$34", "$3.2K"
+  exact: (v) => (v == null ? '—' : (v < 0 ? '−$' : '$')
+    + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })),  // to the cent, as on a statement: "$1,234.50"
+  dollars: (v) => (v == null ? '—' : (Math.round(v) < 0 ? '−$' : '$') + Math.abs(Math.round(v)).toLocaleString('en-US')),  // "$1,234", "−$5"
+  gallons: (v) => (v == null ? '—' : compact.format(v) + ' gal'),  // big totals: "1.07K gal"
+  wholeGallons: (v) => (v == null ? '—' : Math.round(v) + ' gal'),  // one fill or tank: "93 gal"
   price: (v) => (v == null ? '—' : '$' + v.toFixed(2)),
   cents: (v) => (v == null ? '—' : Math.round(v * 100) + '¢'),
   cents1: (v) => (v == null ? '—' : (v * 100).toFixed(1) + '¢'),  // for small changes, where 4.0¢ vs 4.3¢ matters
-  share: (v) => (v == null ? '—' : (v * 100).toFixed(1) + '%'),
+  share: (v) => (v == null ? '—' : (v * 100).toFixed(1) + '%'),  // a share from 0 to 1: "86.8%"
+  percent: (v) => (v == null ? '—' : Math.round(v * 100) + '%'),  // a share from 0 to 1, whole: "87%"
+  level: (v) => (v == null ? '—' : Math.round(v) + '%'),  // a gauge level already in percent (0 to 100): "43%"
   count: (v) => (v == null ? '—' : Math.round(v).toLocaleString('en-US')),
+  miles: (v) => (v == null ? '—' : Math.round(v).toLocaleString('en-US') + ' mi'),  // "1,739 mi"
 };
+
+// A count with its word, plural when it isn't one: "1 fill", "3 fills".
+export const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 // A local date from "YYYY-MM-DD", moved by whole calendar days (so clock changes can't shift it).
 export function dateOf(iso, plusDays = 0) {
@@ -50,15 +57,12 @@ export function ago(when, now = new Date()) {
   return `${Math.round(minutes / 1440)} days ago`;
 }
 
-// Average of the numbers in a list, skipping missing ones; null when there are none.
-export function avg(values) {
-  const known = values.filter((v) => v != null);
-  return known.length ? known.reduce((a, b) => a + b, 0) / known.length : null;
-}
+// "BAYTOWN" -> "Baytown": each word with a capital first letter.
+const capitalized = (text) => text.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 
 // "TAYLOR TRANSPORTS LLC" -> "Taylor Transports LLC": readable company names, keeping legal suffixes in capitals.
 export function niceName(name) {
-  return name.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\b(Llc|Inc|Uz|Dt|Vkl|Ttl|Ta|Fj)\b/g, (w) => w.toUpperCase());
+  return capitalized(name).replace(/\b(Llc|Inc|Uz|Dt|Vkl|Ttl|Ta|Fj)\b/g, (w) => w.toUpperCase());
 }
 
 // "Mon 13": a short day label for chart axes, from "YYYY-MM-DD".
@@ -80,9 +84,6 @@ export function change(now, before, { points = false, better } = {}) {
   const tone = better ? ((better === 'up') === (diff > 0) ? 'good' : 'bad') : '';
   return { text: `${diff > 0 ? '▲' : '▼'} ${Math.abs(diff).toFixed(1)}${unit}`, tone };
 }
-
-// "BAYTOWN" -> "Baytown": each word with a capital first letter.
-export const capitalized = (text) => text.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 
 // Drivers as people say them: "JACOB BYRON KILMER (CPM-M)" -> "Jacob Byron Kilmer"; a team ("A & B") keeps both.
 export function personName(name) {

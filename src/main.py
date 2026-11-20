@@ -8,9 +8,9 @@ from itertools import groupby
 import config
 import db
 import server
-from core import loads, message
-from jobs import (driver_habits, estimate_tanks, load_prices, plan_loads, refresh_fuel, refresh_live, refresh_market,
-                  refresh_orders, sync_registry)
+from core import loads
+from jobs import (driver_habits, estimate_burn, estimate_tanks, fill_lookups, load_prices, read_statements, refresh_fuel,
+                  refresh_live, refresh_market, refresh_orders, statement_evidence, store_exits, sync_registry)
 from models import Order
 from sources import telegram
 
@@ -73,9 +73,19 @@ def cmd_sync(args) -> None:
     print(f"{linked} trucks linked. Next: `holes` to see what didn't link, `fleet` for the list.")
 
 
-# Loads the newest Love's price sheet.
+# Reads the Love's price sheets not read before; the newest one's prices are the ones in force.
 def cmd_prices(args) -> None:
     load_prices.run()
+
+
+# Reads the EFS statement PDFs saved in data/efs that were not read before.
+def cmd_statements(args) -> None:
+    print(f"{read_statements.run()} new EFS statements read from {config.STATEMENTS_DIR}")
+
+
+# Looks up in Samsara, now and for every truck, what the statements' evidence still lacks (several minutes per statement).
+def cmd_evidence(args) -> None:
+    print(f"{statement_evidence.run(trucks=None)} fills looked up in Samsara")
 
 
 # Copies the active Datatruck orders and their stops.
@@ -104,16 +114,26 @@ def cmd_tanks(args) -> None:
     print("See the tank sizes with `pilot`; a truck without one is listed in `holes`.")
 
 
+# Reads the Love's store pages not read yet for their highway and exit (all stores the first time, ~10 min).
+def cmd_exits(args) -> None:
+    print(f"Kept the highway and exit of {store_exits.run()} Love's stores.")
+
+
+# Calibrates the pilot trucks' engines as fuel meters.
+def cmd_burn(args) -> None:
+    estimate_burn.run()
+    print("See them on the dashboard's Recommend tab (live MPG).")
+
+
 # Runs the dashboard in the browser at http://127.0.0.1:<port>, refreshing its data on a timetable unless told not to.
 def cmd_serve(args) -> None:
     server.serve(args.port, refresh=not args.no_refresh)
 
 
-# Logs Bob's Telegram account in once (you type the code Telegram sends him).
+# Logs the assistant's Telegram account (TG_PHONE) in once: you type the code Telegram sends to it.
 def cmd_login(args) -> None:
     name = telegram.login()
-    in_test = config.TEST_CHAT_ID in telegram.member_of([config.TEST_CHAT_ID] if config.TEST_CHAT_ID else [])[1]
-    print(f"Logged in as {name}. Member of the test chat: {'yes' if in_test else 'NO - add this account to it'}.")
+    print(f"Logged in as {name}.")
 
 
 # Prints each refreshed table with its row count and last refresh time.
@@ -164,28 +184,17 @@ def cmd_pilot(args) -> None:
     print(f"\n{len(trucks)} pilot trucks. Add one with `pilot-add <unit>`; gaps are listed in `holes`.")
 
 
-# Dry run: plans one pilot truck's current load and prints the plan. Sends nothing, saves nothing.
-def cmd_plan(args) -> None:
-    print(message.first_text(plan_loads.plan_for(args.unit, args.via)))
-
-
-# Starts a truck's current load over with a fresh plan of the road ahead and sends it (see plan_loads.restart).
-def cmd_restart(args) -> None:
-    fresh = plan_loads.restart(args.unit, args.via)
-    print(f"Unit {args.unit} has a fresh plan for the rest of load {fresh.order.load_id}, sent to its chats:")
-    print(message.first_text(fresh))
-
-
 # Collects every driver's fuel stops of the last days with the Samsara gauge around them; the Drivers tab shows them.
 def cmd_habits(args) -> None:
     driver_habits.run()
     print("See every driver's habits on the dashboard's Drivers tab.")
 
 
-# Plans every pilot truck's load that has no plan yet, saves the plans and sends them to the test chat; the Plans
-# tab shows them.
-def cmd_plans(args) -> None:
-    print(f"{plan_loads.run()} new plans saved. See them on the dashboard's Plans tab.")
+# Looks up the fills not looked up yet: where the truck was (outside Love's) and the gauge before; the Live view's
+# outside list uses them.
+def cmd_lookups(args) -> None:
+    fill_lookups.run()
+    print("See them on the dashboard's Live tab.")
 
 
 # Adds a truck to the pilot, with an optional note.
@@ -232,17 +241,21 @@ def main() -> None:
 
     sub.add_parser("init-db", help="create the database").set_defaults(run=cmd_init_db)
     sub.add_parser("sync", help="refresh Samsara, Datatruck, Telegram and relink trucks").set_defaults(run=cmd_sync)
-    sub.add_parser("prices", help="load the newest Love's price sheet").set_defaults(run=cmd_prices)
+    sub.add_parser("prices", help="read new Love's price sheets (the newest is in force)").set_defaults(run=cmd_prices)
+    sub.add_parser("statements", help="read new EFS statement PDFs saved in data/efs").set_defaults(run=cmd_statements)
+    sub.add_parser("evidence", help="look up the statements' fuel used and fill evidence in Samsara now, every truck").set_defaults(run=cmd_evidence)
     sub.add_parser("orders", help="copy active Datatruck orders").set_defaults(run=cmd_orders)
     sub.add_parser("fuel", help="copy every Datatruck fuel line and fuel card").set_defaults(run=cmd_fuel)
     sub.add_parser("market", help="copy the EIA weekly diesel prices by region").set_defaults(run=cmd_market)
     sub.add_parser("live", help="copy every truck's latest Samsara position and fuel level").set_defaults(run=cmd_live)
     sub.add_parser("tanks", help="estimate the pilot trucks' tank sizes from fill-ups").set_defaults(run=cmd_tanks)
+    sub.add_parser("burn", help="calibrate the pilot trucks' engines as fuel meters").set_defaults(run=cmd_burn)
+    sub.add_parser("exits", help="read the highway and exit of Love's stores from their own pages").set_defaults(run=cmd_exits)
     p = sub.add_parser("serve", help="run the dashboard in the browser")
     p.add_argument("--port", type=int, default=config.DASHBOARD_PORT)
     p.add_argument("--no-refresh", action="store_true", help="only show the data; don't refresh it automatically")
     p.set_defaults(run=cmd_serve)
-    sub.add_parser("login", help="log Bob's Telegram account in (once)").set_defaults(run=cmd_login)
+    sub.add_parser("login", help="log the assistant's Telegram account in (once)").set_defaults(run=cmd_login)
     sub.add_parser("status", help="row counts and refresh times").set_defaults(run=cmd_status)
     sub.add_parser("fleet", help="list trucks and their links").set_defaults(run=cmd_fleet)
 
@@ -252,17 +265,8 @@ def main() -> None:
 
     sub.add_parser("pilot", help="show the pilot trucks with everything known about them").set_defaults(run=cmd_pilot)
 
-    via = "the driver's own route: a Love's store number (e.g. 372) or lat,lng the road must go through"
-    p = sub.add_parser("plan", help="plan a pilot truck's current load and print it (sends nothing)")
-    p.add_argument("unit")
-    p.add_argument("--via", help=via)
-    p.set_defaults(run=cmd_plan)
-    p = sub.add_parser("restart", help="start a truck's current load over with a fresh plan, and send it")
-    p.add_argument("unit")
-    p.add_argument("--via", help=via)
-    p.set_defaults(run=cmd_restart)
-    sub.add_parser("plans", help="plan and save every pilot load without a plan, send them to the test chat").set_defaults(run=cmd_plans)
     sub.add_parser("habits", help="collect every driver's fuel stops with the gauge (a few minutes)").set_defaults(run=cmd_habits)
+    sub.add_parser("lookups", help="look up new fills in Samsara: place outside Love's, gauge before").set_defaults(run=cmd_lookups)
 
     p = sub.add_parser("pilot-add", help="add a truck to the pilot")
     p.add_argument("unit")

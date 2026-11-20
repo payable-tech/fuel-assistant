@@ -24,15 +24,15 @@ class Measure:
     holds_at_least: float
 
 
-# Estimates one truck's tank: the middle fill-up size, but never less than what the tank has been seen to hold.
-# On trucks with two tanks and the gauge in one, filling only that side makes the gauge read full with half the
-# fuel in, so such a fill-up looks like half the tank; the "holds at least" floor keeps those from pulling it down.
-# None when fewer than `min_fills` fill-ups are clear enough, because a guess is worse than a visible gap.
+# Estimates one truck's tank: the middle fill-up size, but never less than what the tank has been seen to hold. None
+# when fewer than `min_fills` fill-ups are clear enough: a guess is worse than a visible gap.
 def estimate(unit: str, lines: list[FuelLine], readings: list[FuelReading], window: timedelta,
              min_rise_pct: float, min_fills: int) -> TankEstimate | None:
     measures = [m for fill in fill_ups(lines, window) if (m := measure(fill, readings, window, min_rise_pct))]
     if len(measures) < min_fills:
         return None
+    # With two tanks and the gauge in one, filling only that side reads full with half the fuel in: such a fill-up looks
+    # like half the tank. The "holds at least" floor keeps those from pulling the estimate down.
     floor = sorted(m.holds_at_least for m in measures)[-2:][0]  # 2nd biggest: the biggest may be a gauge glitch
     return TankEstimate(unit=unit, tank_gal=round(max(median(m.size for m in measures), floor)), fills=len(measures))
 
@@ -57,6 +57,11 @@ def measure(fill: FillUp, readings: list[FuelReading], window: timedelta, min_ri
 # after), or None when either side has no reading.
 def gauge_around(first: datetime, last: datetime, readings: list[FuelReading],
                  window: timedelta) -> tuple[float, float] | None:
-    before = [r.pct for r in readings if first - window <= r.at <= first]
+    before = gauge_before(first, readings, window)
     after = [r.pct for r in readings if last <= r.at <= last + window]
-    return (min(before), max(after)) if before and after else None
+    return (before, max(after)) if before is not None and after else None
+
+
+# The lowest gauge reading in the `window` before a moment; None without one.
+def gauge_before(at: datetime, readings: list[FuelReading], window: timedelta) -> float | None:
+    return min((r.pct for r in readings if at - window <= r.at <= at), default=None)

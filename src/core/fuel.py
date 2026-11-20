@@ -1,5 +1,5 @@
-# Fuel baseline (pure): what counts as diesel and as Love's, purchases grouped by stop, the company's Monday weeks,
-# weekly totals and breakdowns.
+# Fuel purchases in figures (pure): what counts as diesel and as Love's, purchases grouped by stop, the company's Monday
+# weeks, and the totals, breakdowns and discount chart of the Trends and Live views.
 import re
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
@@ -34,6 +34,17 @@ def chain(location: str) -> str:
     return next((label for label, pattern in CHAINS if pattern.match(name)), OTHER_STATIONS)
 
 
+# True for a purchase at a Love's.
+def is_loves(line: FuelLine) -> bool:
+    return chain(line.location) == LOVES
+
+
+# The store number in a station name or a label: "LOVES #0473 TRAVEL STOP" or "Love's #473 Leary, TX" -> "473".
+def store_no(text: str) -> str | None:
+    found = re.search(r"#\s*(\d+)", text)
+    return (found.group(1).lstrip("0") or "0") if found else None
+
+
 # True for a diesel purchase: a fuel-card line of diesel ("ULSD") with gallons pumped.
 def is_diesel(line: FuelLine) -> bool:
     return line.transaction_type == "fuel" and line.product == "ULSD" and line.gallons > 0
@@ -49,19 +60,6 @@ def purchase_stops(lines: list[FuelLine], window: timedelta) -> list[list[FuelLi
         else:
             stops.append([line])
     return stops
-
-
-# What a fuel line cost the driver: nothing when it isn't billed to them (the company pays); else by their card's
-# deduction policy: what EFS billed after the discount ("invoice_amount"), the pump price ("retail_amount"), or the
-# pump price plus the fee ("retail_plus_fee", the usual one, also when the policy isn't known).
-def driver_paid(line: FuelLine, policy: str | None) -> float:
-    if not line.billable:
-        return 0.0
-    if policy == "invoice_amount":
-        return line.billed
-    if policy == "retail_amount":
-        return line.pump_total
-    return line.pump_total + line.fee
 
 
 # Converts a Datatruck purchase time ("YYYY-MM-DD HH:MM", Central clock time) to UTC, daylight saving included.
@@ -97,9 +95,10 @@ def summarize(lines: list[FuelLine]) -> dict:
     gallons = sum(l.gallons for l in lines)
     spend = sum(l.billed for l in lines)
     pump = sum(l.pump_total for l in lines)
-    loves = [l for l in lines if chain(l.location) == LOVES]
-    outside = [l for l in lines if chain(l.location) != LOVES]
+    loves = [l for l in lines if is_loves(l)]
+    outside = [l for l in lines if not is_loves(l)]
     loves_gallons = sum(l.gallons for l in loves)
+    loves_price = sum(l.billed for l in loves) / loves_gallons if loves_gallons else None
     return {
         "lines": len(lines),
         "outside_lines": len(outside),     # fills outside Love's
@@ -112,7 +111,10 @@ def summarize(lines: list[FuelLine]) -> dict:
         "discount_billable": sum(l.pump_total - l.billed for l in lines if l.billable),     # kept from drivers
         "discount_company": sum(l.pump_total - l.billed for l in lines if not l.billable),  # lower cost on company fuel
         "loves_share": gallon_share(loves, lines),
-        "loves_price_per_gal": sum(l.billed for l in loves) / loves_gallons if loves_gallons else None,
+        "loves_price_per_gal": loves_price,
+        "outside_price_per_gal": sum(l.billed for l in outside) / (gallons - loves_gallons) if gallons > loves_gallons else None,
+        # what the gallons bought outside Love's cost above the same gallons at these lines' average Love's price
+        "outside_extra": sum(l.billed for l in outside) - (gallons - loves_gallons) * loves_price if outside and loves_price else None,
         "loves_discount_per_gal": discount_per_gal(loves),
         "outside_discount_per_gal": discount_per_gal(outside),
         "billable_share": gallon_share([l for l in lines if l.billable], lines),
@@ -121,17 +123,44 @@ def summarize(lines: list[FuelLine]) -> dict:
     }
 
 
-# Our lines against the market: what they would have cost at market price (`price_of(line)`, dollars a gallon) and
-# how much less we paid, in total and per gallon. All None when a line has no market price yet.
-def vs_market(lines: list[FuelLine], price_of) -> dict:
-    prices = [price_of(l) for l in lines]
-    gallons = sum(l.gallons for l in lines)
-    if not gallons or None in prices:
-        return {"market_value": None, "market_per_gal": None, "saved_vs_market": None, "saved_per_gal": None}
-    market = sum(l.gallons * p for l, p in zip(lines, prices))
-    saved = market - sum(l.billed for l in lines)
-    return {"market_value": market, "market_per_gal": market / gallons, "saved_vs_market": saved,
-            "saved_per_gal": saved / gallons}
+# The value that `share` of the gallons were bought at or below (0.1 -> the 10th percentile, counted in gallons, so a
+# 150-gallon fill weighs three times a 50-gallon one), from (value, gallons) pairs; None when there are none.
+def gallon_percentile(pairs: list[tuple[float, float]], share: float) -> float | None:
+    ordered = sorted(pairs)
+    total = sum(gallons for _, gallons in ordered)
+    bought = 0.0
+    for value, gallons in ordered:
+        bought += gallons
+        if bought >= share * total:
+            return value
+    return ordered[-1][0] if ordered else None
+
+
+# How a per-gallon number (`per_gal(line)`) spreads over a set of lines: its average (all dollars over all gallons),
+# the range the middle 80% of the gallons fall in, and the lowest and highest single fill. None when there are none.
+def spread(lines: list[FuelLine], per_gal) -> dict | None:
+    if not lines:
+        return None
+    pairs = [(per_gal(l), l.gallons) for l in lines]
+    return {"average": sum(v * g for v, g in pairs) / sum(g for _, g in pairs),
+            "low": gallon_percentile(pairs, 0.1), "high": gallon_percentile(pairs, 0.9),
+            "lowest": min(v for v, _ in pairs), "highest": max(v for v, _ in pairs)}
+
+
+# Love's pump price and Love's discount per gallon, each with how it spread over the week's Love's fills.
+def loves_spread(lines: list[FuelLine]) -> dict:
+    loves = [l for l in lines if is_loves(l)]
+    return {"loves_pump": spread(loves, lambda l: l.pump_total / l.gallons),
+            "loves_discount": spread(loves, lambda l: (l.pump_total - l.billed) / l.gallons)}
+
+
+# The Love's discount offered across all its stores each week, from the price sheets: {week: average of its sheet days},
+# given each sheet day's average over every store ({day: dollars per gallon}). Weeks with no sheet are left out.
+def network_by_week(daily: dict[str, float]) -> dict[str, float]:
+    weeks = defaultdict(list)
+    for day, discount in daily.items():
+        weeks[week_of(day)].append(discount)
+    return {week: mean(days) for week, days in weeks.items()}
 
 
 # Distinct drivers who fueled, counted per driver type.
@@ -155,7 +184,7 @@ def breakdown(lines: list[FuelLine], key) -> list[dict]:
 def outside_concentration(lines: list[FuelLine], top: int) -> dict:
     per_driver = defaultdict(float)
     for l in lines:
-        if l.driver_id and chain(l.location) != LOVES:
+        if l.driver_id and not is_loves(l):
             per_driver[l.driver_id] += l.gallons
     ranked = sorted(per_driver.values(), reverse=True)
     total = sum(ranked)
@@ -184,11 +213,10 @@ def average(rows: list[dict]) -> dict:
     return result
 
 
-# The dashboard's numbers. Only full weeks count (the week of `today` is still running). The latest full week is
-# compared with the average of the 4 weeks before it; breakdowns cover the last `breakdown_weeks` full weeks.
-# `price_of(line)` gives a line's market price per gallon, for comparing each week with the market.
-def baseline(lines: list[FuelLine], today: date, linked_units: set[str], weeks: int, breakdown_weeks: int,
-             price_of) -> dict:
+# The Trends view's numbers, full weeks only (the week of `today` is still running): the latest week against the average
+# of the 4 before it, and breakdowns of the last `breakdown_weeks`. `network`: Love's discount offered, by week.
+def baseline(lines: list[FuelLine], network: dict[str, float], today: date, linked_units: set[str], weeks: int,
+             breakdown_weeks: int) -> dict:
     running_week = week_of(today.isoformat())
     full = [l for l in lines if week_of(l.fueled_at) < running_week]
     diesel = defaultdict(list)
@@ -199,8 +227,8 @@ def baseline(lines: list[FuelLine], today: date, linked_units: set[str], weeks: 
         elif is_def(l):
             def_spend[week_of(l.fueled_at)] += l.billed
     week_keys = sorted(diesel)[-weeks:]
-    series = [{"week": w, **summarize(diesel[w]), **vs_market(diesel[w], price_of), "def_spend": def_spend[w],
-               "drivers_by_type": drivers_by_type(diesel[w])}
+    series = [{"week": w, **summarize(diesel[w]), **loves_spread(diesel[w]), "network_discount": network.get(w),
+               "def_spend": def_spend[w], "drivers_by_type": drivers_by_type(diesel[w])}
               for w in week_keys]
     recent_weeks = week_keys[-breakdown_weeks:]
     recent = [l for w in recent_weeks for l in diesel[w]]
@@ -232,22 +260,25 @@ def feed_row(l: FuelLine) -> dict:
             "discount_per_gal": (l.pump_total - l.billed) / l.gallons, "billable": l.billable}
 
 
-# Drivers who bought outside Love's, with the discount they missed: their gallons times how much smaller their
-# discount per gallon was than Love's average (`loves_discount`). Largest miss first.
-def outside_by_driver(lines: list[FuelLine], loves_discount: float, limit: int) -> list[dict]:
-    drivers = defaultdict(lambda: {"fills": 0, "gallons": 0.0, "missed": 0.0, "last": ""})
+# Drivers who bought outside Love's, with what they paid above the cheapest Love's near each fill that day (`above`:
+# dollars by fuel line id, None for a fill it can't be told for yet). Most paid above first.
+def outside_by_driver(lines: list[FuelLine], above: dict[int, float | None], limit: int) -> list[dict]:
+    drivers = defaultdict(lambda: {"fills": 0, "gallons": 0.0, "told": 0, "paid_above": 0.0, "last": ""})
     for l in sorted(lines, key=lambda l: l.fueled_at):
-        if chain(l.location) == LOVES:
+        if is_loves(l):
             continue
         d = drivers[l.driver_id]
         d.update(driver=l.driver_name or "Unknown driver", unit=l.unit, last=l.fueled_at, station=chain(l.location))
         d["fills"] += 1
         d["gallons"] += l.gallons
-        d["missed"] += l.gallons * max(0.0, loves_discount - (l.pump_total - l.billed) / l.gallons)
-    return sorted(drivers.values(), key=lambda d: -d["missed"])[:limit]
+        if above.get(l.line_id) is not None:
+            d["told"] += 1
+            d["paid_above"] += above[l.line_id]
+    return sorted(drivers.values(), key=lambda d: -d["paid_above"])[:limit]
 
 
-# Daily totals for the last `days` days up to `last_day`: gallons at Love's and elsewhere, spend, fills.
+# Daily totals for the last `days` days up to `last_day`: gallons at Love's and elsewhere, spend, fills, the discount
+# kept and the discount missed outside Love's.
 def daily(lines: list[FuelLine], last_day: str, days: int) -> list[dict]:
     rows = []
     for back in range(days - 1, -1, -1):
@@ -256,13 +287,64 @@ def daily(lines: list[FuelLine], last_day: str, days: int) -> list[dict]:
         s = summarize(today)
         rows.append({"day": day, "loves_gallons": s["gallons"] * (s["loves_share"] or 0),
                      "outside_gallons": s["gallons"] * (1 - (s["loves_share"] or 0)), "spend": s["spend"],
-                     "fills": s["lines"], "outside_fills": s["outside_lines"], "loves_share": s["loves_share"]})
+                     "fills": s["lines"], "outside_fills": s["outside_lines"], "loves_share": s["loves_share"],
+                     "gallons": s["gallons"], "discount": s["discount"], "missed": missed_discount(today)})
     return rows
 
 
-# What is happening now, measured up to the newest purchase: this week so far against the same hours of last week,
-# today so far, the last days one by one, the newest purchases, and who bought outside Love's this week.
-def live(lines: list[FuelLine], feed_size: int, days: int, outside_limit: int) -> dict:
+# The Live tab's discount chart (the user's ask, 2026-11-04) over the last `count` days, weeks or months to `last_day`:
+# the discount kept (the part at our stops, `ours` by day, apart), the discount missed outside Love's, and the gallons.
+def discount_periods(lines: list[FuelLine], ours: dict[str, float], last_day: str, period: str, count: int) -> list[dict]:
+    keys = period_keys(last_day, period, count)
+    # periods without fills stay zeros; the last one is still in progress
+    rows = {k: {"key": k, "discount": 0.0, "ours": 0.0, "missed": 0.0, "gallons": 0.0, "outside_gallons": 0.0} for k in keys}
+    by_day: dict[str, list[FuelLine]] = {}
+    for l in lines:
+        by_day.setdefault(l.fueled_at[:10], []).append(l)
+    for day in set(by_day) | set(ours):
+        row = rows.get(_period_key(day, period))
+        if row is None:
+            continue
+        today = by_day.get(day, [])
+        s = summarize(today)
+        row["discount"] += s["discount"]
+        row["missed"] += missed_discount(today) or 0.0
+        row["gallons"] += s["gallons"]
+        row["outside_gallons"] += sum(l.gallons for l in today if not is_loves(l))
+        row["ours"] += ours.get(day, 0.0)
+    return [r | {"own": r["discount"] - r["ours"]} for r in rows.values()]
+
+
+# The day, week or month a day ("YYYY-MM-DD") falls in, as the chart names it: the day, the week's Monday, "YYYY-MM".
+def _period_key(day: str, period: str) -> str:
+    return {"day": day, "week": week_of(day), "month": day[:7]}[period]
+
+
+# The last `count` periods' keys up to the one holding `last_day`, oldest first.
+def period_keys(last_day: str, period: str, count: int) -> list[str]:
+    if period == "day":
+        return [shift_days(last_day, -k) for k in range(count - 1, -1, -1)]
+    if period == "week":
+        return [shift_days(week_of(last_day), -7 * k) for k in range(count - 1, -1, -1)]
+    year, month = int(last_day[:4]), int(last_day[5:7])
+    return [f"{year + (month - 1 - k) // 12}-{(month - 1 - k) % 12 + 1:02d}" for k in range(count - 1, -1, -1)]
+
+
+# The discount missed outside Love's, estimated (the user's ask, 2026-11-04): each such fill's gallons at the day's average
+# Love's discount (`lines`: one day's), less the discount it got. None without Love's fills to go by.
+def missed_discount(lines: list[FuelLine]) -> float | None:
+    loves = [l for l in lines if is_loves(l)]
+    loves_gallons = sum(l.gallons for l in loves)
+    if not loves_gallons:
+        return None
+    per_gallon = sum(l.pump_total - l.billed for l in loves) / loves_gallons
+    # falls as the fleet moves to Love's
+    return sum(max(per_gallon * l.gallons - (l.pump_total - l.billed), 0) for l in lines if not is_loves(l))
+
+
+# The Live view's numbers up to the newest purchase: this week against last week's same hours, today, the last days, the
+# newest purchases, who bought outside Love's (`above`: what each such fill paid above the cheapest Love's near it).
+def live(lines: list[FuelLine], above: dict[int, float | None], feed_size: int, days: int, outside_limit: int) -> dict:
     diesel = [l for l in lines if is_diesel(l)]
     if not diesel:
         return {"latest": None}
@@ -272,7 +354,6 @@ def live(lines: list[FuelLine], feed_size: int, days: int, outside_limit: int) -
     # last week up to the same weekday and time as the newest purchase, so both sides cover the same hours
     last_week = [l for l in diesel if shift_days(week_start, -7) <= l.fueled_at <= shift_days(latest, -7)]
     week_now = summarize(this_week)
-    loves_discount = week_now["loves_discount_per_gal"] or summarize(last_week)["loves_discount_per_gal"] or 0.0
     return {
         "latest": latest,
         "week_start": week_start,
@@ -281,5 +362,5 @@ def live(lines: list[FuelLine], feed_size: int, days: int, outside_limit: int) -
         "today": summarize([l for l in diesel if l.fueled_at[:10] == latest[:10]]),
         "daily": daily(diesel, latest[:10], days),
         "feed": [feed_row(l) for l in sorted(diesel, key=lambda l: l.fueled_at, reverse=True)[:feed_size]],
-        "outside": outside_by_driver(this_week, loves_discount, outside_limit),
+        "outside": outside_by_driver(this_week, above, outside_limit),
     }

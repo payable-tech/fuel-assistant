@@ -1,6 +1,7 @@
 // Chart shapes: each function returns the settings for one kind of chart; `draw` puts them into a box on the page.
 // Time charts take rows (weeks or days) plus `tick(row)` for the axis label and `title(row)` for the tooltip title.
-import { esc } from './format.js';
+import { tooltip } from './dom.js';
+import { dayClock, dayTime, fmt } from './format.js';
 import { fade, token } from './theme.js';
 
 const charts = new Map();  // element id -> its chart, so a live refresh redraws instead of stacking new charts
@@ -27,11 +28,8 @@ const rowAxis = (rows, tick, boundaryGap = true) => ({
   type: 'category', boundaryGap, data: rows.map(tick), axisLabel: { hideOverlap: true },
 });
 
-// One tooltip line: color marker, label, value.
-const tipRow = (marker, label, value) => `<div class="tt-row">${marker || ''}<span>${esc(label)}</span><b>${esc(value)}</b></div>`;
-
 // Tooltip for one row: its title, each series, an optional total, then extra lines for that row.
-function rowTooltip(rows, title, format, { total = false, extra, pointer = 'shadow' } = {}) {
+function rowTooltip(rows, title, format, { total = false, totalLabel = 'Total', extra, pointer = 'shadow' } = {}) {
   return {
     trigger: 'axis',
     axisPointer: pointer === 'shadow'
@@ -39,21 +37,21 @@ function rowTooltip(rows, title, format, { total = false, extra, pointer = 'shad
       : { type: 'line', lineStyle: { color: token('--faint'), type: 'dashed' } },
     formatter: (items) => {
       const row = rows[items[0].dataIndex];
-      const lines = items.map((i) => tipRow(i.marker, i.seriesName, format(i.value)));
-      if (total) lines.push(`<div class="tt-row tt-total"><span>Total</span><b>${esc(format(items.reduce((s, i) => s + (i.value || 0), 0)))}</b></div>`);
-      (extra ? extra(row) : []).forEach(([label, value]) => lines.push(tipRow('', label, value)));
-      return `<div class="tt-title">${esc(title(row))}</div>${lines.join('')}`;
+      const sum = items.reduce((s, i) => s + (i.value || 0), 0);
+      return tooltip(title(row), [...items.map((i) => [i.seriesName, format(i.value), i.marker]),
+        ...(total ? [[totalLabel, format(sum), '', true]] : []), ...(extra ? extra(row) : [])]);
     },
   };
 }
 
-// Bars over time: one series, or several stacked. `series` items: {name, color, value(row)}.
-export function bars(rows, series, format, { tick, title, extra }) {
+// Bars over time: one series, or several stacked (`totalLabel` names their sum in the tooltip). `series` items:
+// {name, color, value(row)}.
+export function bars(rows, series, format, { tick, title, extra, totalLabel }) {
   const stacked = series.length > 1;
   return {
     grid: { left: 4, right: 12, top: stacked ? 40 : 14, bottom: 4, containLabel: true },
     legend: stacked ? { top: 0, left: 0 } : undefined,
-    tooltip: rowTooltip(rows, title, format, { total: stacked, extra }),
+    tooltip: rowTooltip(rows, title, format, { total: stacked, totalLabel, extra }),
     xAxis: rowAxis(rows, tick),
     yAxis: { type: 'value', axisLabel: { formatter: format } },
     series: series.map((s, i) => ({
@@ -64,38 +62,50 @@ export function bars(rows, series, format, { tick, title, extra }) {
   };
 }
 
-// Lines over time on one shared axis. Options as `bars`, plus axisFormat, min, max and interval for the axis.
-export function lines(rows, series, format, { tick, title, extra, axisFormat = format, min, max, interval }) {
+// Lines over time on one shared axis. Options as `bars`, plus `min` where the axis starts (else it fits the lines);
+// `smooth` rounds the lines; `stack` piles each series on the ones before it (parts of one whole, each band filled) and
+// `totalLabel` names their sum in the tooltip.
+export function lines(rows, series, format, { tick, title, extra, min, smooth = false, stack = false, totalLabel } = {}) {
   return {
     grid: { left: 4, right: 12, top: series.length > 1 ? 40 : 14, bottom: 4, containLabel: true },
     legend: series.length > 1 ? { top: 0, left: 0 } : undefined,
-    tooltip: rowTooltip(rows, title, format, { extra, pointer: 'line' }),
+    tooltip: rowTooltip(rows, title, format, { extra, pointer: 'line', total: Boolean(totalLabel), totalLabel }),
     xAxis: rowAxis(rows, tick, false),
-    yAxis: { type: 'value', min, max, interval, scale: min == null, axisLabel: { formatter: axisFormat } },
+    yAxis: { type: 'value', min, scale: min == null, axisLabel: { formatter: format } },
     series: series.map((s) => ({
-      name: s.name, type: 'line', data: rows.map(s.value), symbol: 'circle', symbolSize: 7, showSymbol: false,
-      lineStyle: { width: 2.5, color: s.color }, itemStyle: { color: s.color }, areaStyle: s.area ? areaFill(s.color) : undefined,
+      name: s.name, type: 'line', data: rows.map(s.value), symbol: 'circle', symbolSize: 7, showSymbol: false, smooth,
+      stack: stack ? 'all' : undefined, lineStyle: { width: 2.5, color: s.color }, itemStyle: { color: s.color },
+      areaStyle: stack ? { color: fade(s.color, 0.3) } : undefined,
     })),
+  };
+}
+
+// The frame of small charts stacked over the same rows: each part's heading, its box (an equal slice of the height)
+// and its axis of rows, labelled only under the bottom part.
+function stackFrame(rows, names, tick) {
+  const band = 100 / names.length;  // each part's slice of the box's height, in percent
+  return {
+    band,
+    title: names.map((text, i) => ({ text, left: 0, top: `${i * band}%`,
+      textStyle: { color: token('--muted'), fontSize: 12, fontWeight: 500, fontFamily: token('--font') } })),
+    grid: names.map((_, i) => ({ left: 4, right: 12, top: `${i * band + 6}%`, height: `${band - (i === names.length - 1 ? 10.5 : 9)}%`, containLabel: true })),
+    axisPointer: { link: [{ xAxisIndex: 'all' }] },
+    xAxis: names.map((_, i) => ({ ...rowAxis(rows, tick, true), gridIndex: i,
+      axisLabel: { show: i === names.length - 1, hideOverlap: true } })),
   };
 }
 
 // Several small charts stacked over the same rows, each with its own axis, so you can see which ones rise and fall
 // together. Hovering a week shows every row's value for it. parts: {name, color, value(row), format, type: 'line'|'bar'}.
 export function stackedRows(rows, parts, { tick, title }) {
-  const band = 100 / parts.length;  // each part gets an equal slice of the box's height, in percent
-  const heading = (text, i) => ({ text, left: 0, top: `${i * band}%`,
-    textStyle: { color: token('--muted'), fontSize: 12, fontWeight: 500, fontFamily: token('--font') } });
+  const { band, ...frame } = stackFrame(rows, parts.map((p) => p.name), tick);
   return {
-    title: parts.map((p, i) => heading(p.name, i)),
-    grid: parts.map((p, i) => ({ left: 4, right: 12, top: `${i * band + 6}%`, height: `${band - (i === parts.length - 1 ? 10.5 : 9)}%`, containLabel: true })),
-    axisPointer: { link: [{ xAxisIndex: 'all' }] },
+    ...frame,
     tooltip: {
       trigger: 'axis', axisPointer: { type: 'line', lineStyle: { color: token('--faint'), type: 'dashed' } },
-      formatter: (items) => `<div class="tt-title">${esc(title(rows[items[0].dataIndex]))}</div>`
-        + items.map((i) => tipRow(i.marker, i.seriesName, parts[i.seriesIndex].format(i.value))).join(''),
+      formatter: (items) => tooltip(title(rows[items[0].dataIndex]),
+        items.map((i) => [i.seriesName, parts[i.seriesIndex].format(i.value), i.marker])),
     },
-    xAxis: parts.map((p, i) => ({ ...rowAxis(rows, tick, true), gridIndex: i,
-      axisLabel: { show: i === parts.length - 1, hideOverlap: true } })),  // dates only under the bottom part
     // a line may zoom in on its range; bars always start at zero so their heights stay honest
     yAxis: parts.map((p, i) => ({ type: 'value', gridIndex: i, scale: p.type === 'line', splitNumber: 2, axisLabel: { formatter: p.format } })),
     series: parts.map((p, i) => ({
@@ -106,49 +116,53 @@ export function stackedRows(rows, parts, { tick, title }) {
   };
 }
 
-// Two lines over time with the space between them shaded (e.g. "at market price" above "what we paid"), and under
-// them that space per unit as bars with a rolling-average line, all over the same rows.
-// upper/lower: {name, color, value(row)}; band: the shaded space's name; gap: {name, averageName, color, value(row),
-// average(row), format}. `format` is for the top lines; `tip(row)` lists the tooltip's [label, text] lines.
-export function gapChart(rows, { upper, lower, band, gap }, { format, tick, title, tip }) {
-  // the space between the lines; unknown when either line is (a plain subtraction would treat a missing value as 0)
-  const space = (r) => (upper.value(r) == null || lower.value(r) == null ? null : upper.value(r) - lower.value(r));
-  const line = (s, axis) => ({ name: s.name, type: 'line', xAxisIndex: axis, yAxisIndex: axis, symbol: 'circle', symbolSize: 6,
-    showSymbol: false, lineStyle: { width: 2.5, color: s.color }, itemStyle: { color: s.color } });
-  // the shaded band: an invisible line along `lower`, with the space stacked on top of it and filled
-  const stacked = { type: 'line', stack: 'band', stackStrategy: 'all', symbol: 'none', silent: true, lineStyle: { opacity: 0 } };
+// Small line charts stacked over the same rows, where a part can shade a range around its line (e.g. an average with
+// where the middle of the gallons were) and can hold more than one line (named at its top right).
+// parts: {name, format, lines: [{name, color, value(row)}], range: {low(row), high(row)} or none, shaded in the first
+// line's color}. `tip(row)` lists the tooltip: [label, text] lines, and plain text for a heading over the next lines.
+export function rangeRows(rows, parts, { tick, title, tip }) {
+  const { band, ...frame } = stackFrame(rows, parts.map((p) => p.name), tick);
+  const series = parts.flatMap((p, i) => {
+    const axes = { xAxisIndex: i, yAxisIndex: i };
+    // the shaded range: an invisible line along `low`, with high minus low stacked on top of it and filled
+    const shade = { ...axes, type: 'line', stack: `range-${i}`, symbol: 'none', silent: true, lineStyle: { opacity: 0 } };
+    const width = (r) => (p.range.low(r) == null || p.range.high(r) == null ? null : p.range.high(r) - p.range.low(r));
+    return [
+      ...(p.range ? [{ ...shade, data: rows.map(p.range.low) },
+        { ...shade, data: rows.map(width), areaStyle: { color: fade(p.lines[0].color, 0.2) } }] : []),
+      ...p.lines.map((s) => ({ ...axes, name: s.name, type: 'line', data: rows.map(s.value), symbol: 'circle', symbolSize: 6,
+        showSymbol: false, lineStyle: { width: 2.5, color: s.color }, itemStyle: { color: s.color } })),
+    ];
+  });
   return {
-    legend: [
-      { top: 0, left: 0, data: [upper.name, lower.name, { name: band, icon: 'rect' }] },
-      { top: '64%', left: 0, data: [gap.name, gap.averageName] },
-    ],
-    grid: [
-      { left: 4, right: 12, top: 36, bottom: '40%', containLabel: true },
-      { left: 4, right: 12, top: '71%', bottom: 4, containLabel: true },
-    ],
-    axisPointer: { link: [{ xAxisIndex: 'all' }] },
+    ...frame,
+    legend: parts.map((p, i) => (p.lines.length > 1 ? { top: `${i * band}%`, right: 0, data: p.lines.map((s) => s.name) } : null))
+      .filter(Boolean),
     tooltip: {
       trigger: 'axis', axisPointer: { type: 'line', lineStyle: { color: token('--faint'), type: 'dashed' } },
-      formatter: (items) => {
-        const row = rows[items[0].dataIndex];
-        return `<div class="tt-title">${esc(title(row))}</div>${tip(row).map(([l, v]) => tipRow('', l, v)).join('')}`;
-      },
+      formatter: (items) => tooltip(title(rows[items[0].dataIndex]), tip(rows[items[0].dataIndex])),
     },
-    xAxis: [0, 1].map((i) => ({ ...rowAxis(rows, tick, true), gridIndex: i, axisLabel: { show: i === 1, hideOverlap: true } })),
-    yAxis: [
-      { type: 'value', gridIndex: 0, scale: true, axisLabel: { formatter: format } },
-      // bars start at zero so their heights stay honest; a week paid above market goes below the line
-      { type: 'value', gridIndex: 1, splitNumber: 2, axisLabel: { formatter: gap.format } },
-    ],
-    series: [
-      { ...stacked, data: rows.map(lower.value) },
-      { ...stacked, name: band, data: rows.map(space), areaStyle: { color: fade(gap.color, 0.2) }, itemStyle: { color: fade(gap.color, 0.5) } },
-      { ...line(upper, 0), data: rows.map(upper.value) },
-      { ...line(lower, 0), data: rows.map(lower.value) },
-      { name: gap.name, type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: rows.map(gap.value), barMaxWidth: 22,
-        itemStyle: { color: fade(gap.color, 0.45), borderRadius: [4, 4, 0, 0] } },
-      { ...line({ name: gap.averageName, color: gap.color }, 1), data: rows.map(gap.average) },
-    ],
+    yAxis: parts.map((p, i) => ({ type: 'value', gridIndex: i, scale: true, splitNumber: 2, axisLabel: { formatter: p.format } })),
+    series,
+  };
+}
+
+// A truck's fuel gauge over time, 0 to 100%, with an upright line at each fill-up labelled with its gallons (green where
+// we told the driver, amber elsewhere). readings: [time, percent], a null percent breaks the line; fills: {at, told, gallons}.
+export function gauge(readings, fills) {
+  const brand = token('--brand'), good = token('--good'), warn = token('--warn');
+  return {
+    grid: { left: 4, right: 20, top: 26, bottom: 4, containLabel: true },
+    tooltip: { trigger: 'axis', formatter: (items) => tooltip(dayTime(items[0].value[0]),
+      [['Fuel gauge', items[0].value[1] == null ? 'no reading' : fmt.level(items[0].value[1])]]) },
+    xAxis: { type: 'time', axisLabel: { hideOverlap: true, formatter: (v) => dayClock(v) } },
+    yAxis: { type: 'value', min: 0, max: 100, interval: 25, axisLabel: { formatter: '{value}%' } },
+    series: [{
+      name: 'Fuel gauge', type: 'line', data: readings, showSymbol: readings.filter(([, v]) => v != null).length < 3,  // dots only when too few for a line
+      lineStyle: { width: 2, color: brand }, itemStyle: { color: brand }, areaStyle: { color: fade(brand, 0.12) },
+      markLine: { symbol: 'none', silent: true, data: fills.map((f) => ({ xAxis: f.at, lineStyle: { color: f.told ? good : warn, type: 'solid', width: 1.5 },
+        label: { formatter: fmt.wholeGallons(f.gallons), color: f.told ? good : warn, position: 'end' } })) },
+    }],
   };
 }
 
@@ -169,7 +183,7 @@ export function donut(items, format, center) {
   const total = items.reduce((s, i) => s + i.value, 0);
   const pct = (v) => (total ? ((v / total) * 100).toFixed(1) + '%' : '—');
   return {
-    tooltip: { trigger: 'item', formatter: (p) => `<div class="tt-title">${esc(p.name)}</div>${tipRow('', format(p.value), pct(p.value))}` },
+    tooltip: { trigger: 'item', formatter: (p) => tooltip(p.name, [[format(p.value), pct(p.value)]]) },
     legend: { orient: 'vertical', right: 0, top: 'middle', itemGap: 12, formatter: (name) => `${name}  ${pct(items.find((i) => i.name === name).value)}` },
     title: {
       text: center.value, subtext: center.label, left: '29%', top: '40%', textAlign: 'center',
@@ -189,10 +203,7 @@ export function donut(items, format, center) {
 export function hbars(rows, { value, format, color, tip, reference, max }) {
   return {
     grid: { left: 4, right: 64, top: reference ? 22 : 6, bottom: 4, containLabel: true },
-    tooltip: {
-      trigger: 'item',
-      formatter: (p) => `<div class="tt-title">${esc(p.name)}</div>${tip(rows[p.dataIndex]).map(([l, v]) => tipRow('', l, v)).join('')}`,
-    },
+    tooltip: { trigger: 'item', formatter: (p) => tooltip(p.name, tip(rows[p.dataIndex])) },
     xAxis: { type: 'value', show: false, max },
     yAxis: { type: 'category', inverse: true, data: rows.map((r) => r.label), axisLine: { show: false }, axisLabel: { color: token('--text'), fontSize: 12 } },
     series: [{

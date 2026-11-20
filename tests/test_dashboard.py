@@ -1,52 +1,99 @@
-# Tests that the Plans view never waits for Samsara on a plan built before, and which plans the background loop builds.
-import time
+# Tests the Recommend view's numbers: a truck's plan to draw, with and without a road, and a stop told earlier standing.
+from dataclasses import replace
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from jobs import dashboard
+import config
+import dashboard
+import db
+from models import FuelLine, Recommendation, Region, Store, SyncedTruck, TruckWatch, UsualLevel
+
+AT = datetime(2026, 11, 2, 12, 0, tzinfo=timezone.utc)
+LINE = [(30.0 + k * 0.1, -97.0) for k in range(40)]  # about 270 miles due north
 
 
-# Replaces the slow build (DB + Samsara) with one that counts its calls, on an empty cache; returns the calls.
-@pytest.fixture
-def builds(monkeypatch):
-    calls = []
-
-    # Records the call and keeps a payload numbered by how many builds there were.
-    def build(plan_id):
-        calls.append(plan_id)
-        payload = {"build": len(calls)}
-        dashboard._trips[plan_id] = (time.monotonic(), payload)
-        return payload
-
-    monkeypatch.setattr(dashboard, "_build", build)
-    monkeypatch.setattr(dashboard, "_trips", {})
-    return calls
+# A test truck with a tank, and two Love's on its road.
+@pytest.fixture(autouse=True)
+def truck(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DB_PATH", tmp_path / "t.db")
+    with db.connect() as conn:
+        db.replace_trucks(conn, [SyncedTruck("340", "1", "V", "Unit 340", 7.0, None, None)])
+        db.add_pilot(conn, "340", None)
+        db.set_tank(conn, "340", 150.0)
+        db.replace_stores(conn, [Store("7", "Near", "TX", 30.5, -97.0, 6.0, 5.5, "2026-11-02"), Store("8", "Far", "TX", 31.5, -97.0, 5.5, 5.0, "2026-11-02")])
 
 
-# Waits up to a second for the background rebuild to have happened.
-def wait_for(condition):
-    deadline = time.monotonic() + 1
-    while not condition() and time.monotonic() < deadline:
-        time.sleep(0.01)
+# The look of a truck on that road, at a gauge level.
+def look(fuel_pct: float) -> TruckWatch:
+    return TruckWatch(unit="340", at=AT, state="watch", order_id=1, load_id="L", road_made_at=AT, line=LINE, route_mi=2000.0, mile=0.0,
+                      fuel_pct=fuel_pct, forecast_mpg=7.0, cautious_mpg=5.6, usual_known=True,
+                      usual=UsualLevel(20, 15, 25, 95, 9), regions=(Region(30.0, 110.0, 2, "x", False, 30.0),))
 
 
-# A plan never built waits for its build; a fresh build is reused; a stale one is answered at once and rebuilt behind.
-def test_plan_answered_from_last_build(builds):
-    assert dashboard.plan_payload(5) == {"build": 1}
-    assert dashboard.plan_payload(5) == {"build": 1} and builds == [5]
-    dashboard._trips[5] = (time.monotonic() - dashboard.TRIP_CACHE_S, {"build": 1})
-    assert dashboard.plan_payload(5) == {"build": 1}
-    wait_for(lambda: len(builds) == 2)
-    assert dashboard.plan_payload(5) == {"build": 2}
+# A truck nobody knows is a 404 for the page, not a crash.
+def test_unknown_truck():
+    with pytest.raises(LookupError):
+        dashboard.recommend_truck("999")
 
 
-# Each truck's newest plan is built once; after that only an open load's stale build is rebuilt.
-def test_newest_plans_warmed(builds):
-    stale = time.monotonic() - dashboard.TRIP_CACHE_S
-    dashboard._trips.update({2: (stale, {}), 3: (stale, {}), 4: (time.monotonic(), {})})
-    trucks = [{"plans": [{"plan_id": 1, "active": False}, {"plan_id": 9, "active": False}]},  # never built
-              {"plans": [{"plan_id": 2, "active": True}]},  # open load, stale build
-              {"plans": [{"plan_id": 3, "active": False}]},  # finished load, stale build
-              {"plans": [{"plan_id": 4, "active": True}]},  # open load, fresh build
-              {"plans": []}]  # no plan yet
-    assert dashboard._to_warm(trucks) == [1, 2]
+# No road yet: its place and history, nothing to draw.
+def test_truck_without_a_road():
+    d = dashboard.recommend_truck("340")
+    assert d["road"] is None and d["state"] == "not looked at yet" and d["recommendations"] == [] and d["own_fills"] == [] and d["trips"] == []
+
+
+# With a road: every Love's with its verdict, the chosen one, the forecast, and nothing said as told.
+def test_truck_with_a_road():
+    with db.connect() as conn:
+        db.save_truck_watch(conn, look(20.0))
+    r = dashboard.recommend_truck("340")["road"]
+    assert {v["stop"]["store"]["store_no"] for v in r["loves"]} == {"7", "8"}
+    assert r["chosen"] in ("7", "8") and r["told"] is False and r["would_say"]
+    assert len(r["line"]) > 1
+    assert r["zones"][0]["end_mi"] == 0.2 * 150 * 5.6 and len(r["zones"][0]["safe"]) > 1
+
+
+# A stop told earlier stays the chosen one, with its own words, and its follow-up Love's is marked.
+def test_told_stop_stands(monkeypatch):
+    monkeypatch.setattr(dashboard, "today", lambda: date(2026, 11, 3))  # the message stays within the days the tab lists
+    rec = Recommendation(None, "340", "Ali", 1, "L", AT, "stop", "7", "Love's Near, TX", 34.0, 20.0, 18.0, 17.0, 30.0, "Love's Far, TX", "range",
+                         5.5, 6.0, "2026-11-02", 7.0, 5.6, 20.0, "the words", "open", None)
+    with db.connect() as conn:
+        db.save_truck_watch(conn, look(20.0))
+        db.add_recommendation(conn, rec)
+    r = dashboard.recommend_truck("340")["road"]
+    assert r["told"] is True and r["chosen"] == "7" and r["then"] == "8" and r["would_say"] == "the words"
+
+
+# The plans on the Live view: a message sent and followed counts its fill's discount, one called off by us is marked so;
+# the live trucks' Love's share counts their fills after their first message, the whole fleet's every fill.
+def test_messages_sent(monkeypatch):
+    monkeypatch.setattr(config, "LIVE_FROM", "2026-11-02")
+
+    def line(at: str, store: str, unit: str) -> FuelLine:
+        return FuelLine(int(store), at, "fuel", "ULSD", 100, 600, 550, 0.0, False, f"LOVES #{store} TRAVEL STOP", "Near", "TX", "TTL",
+                        unit, "company", 7, "Ali", "company", None)
+
+    rec = Recommendation(None, "340", "Ali", 1, "L", AT, "stop", "7", "Love's Near, TX", 30.0, 30.0, 20.0, 17.0, 130.0, None,
+                         "range", 5.5, 6.0, "2026-11-02", 7.0, 5.6, 20.0, "text", "open", None, sent_at=AT)
+    with db.connect() as conn:
+        db.add_recommendation(conn, rec)
+        db.add_recommendation(conn, replace(rec, unit="342", status="replaced", sent_at=AT + timedelta(hours=1)))
+        db.replace_fuel_lines(conn, [line("2026-11-02 05:00", "6", "340"), line("2026-11-02 08:00", "7", "340"),
+                                     line("2026-11-02 09:00", "8", "341")])
+    p = dashboard.live_payload(date(2026, 11, 5))["plans"]  # the messages sent come with the Live view
+    assert [m["became"] for m in p["messages"]] == ["there", "off"]
+    assert p["at_stops"] == {"gallons": 100, "discount": 50, "paid": 550} and p["by_day"] == {"2026-11-02": 50}
+    assert p["live"] == {"gallons": 100, "loves_share": 1, "discount": 50, "paid": 550, "trucks": 1}  # 05:00 Central is before the message
+    assert p["fleet"] == {"gallons": 300, "loves_share": 1, "discount": 150, "paid": 1650, "trucks": 2}
+
+
+# The list of trucks says where each one is, for the map of all trucks; nowhere until Samsara has its position.
+def test_truck_list_has_positions():
+    from models import SamsaraLive
+    assert dashboard.recommend_payload()["trucks"][0]["where"] is None
+    with db.connect() as conn:
+        db.replace_samsara_live(conn, [SamsaraLive("1", 30.2, -97.1, "Austin, TX", AT, 40.0, AT)])
+    row = dashboard.recommend_payload()["trucks"][0]
+    assert (row["where"], row["place"], row["fuel_pct"]) == ([30.2, -97.1], "Austin, TX", 40.0)

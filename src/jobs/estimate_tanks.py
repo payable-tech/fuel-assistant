@@ -1,4 +1,5 @@
 # Tank helper job: estimates each pilot truck's tank size from its recent fill-ups into `tank_estimates`.
+import logging
 from datetime import datetime, timedelta, timezone
 
 import config
@@ -7,6 +8,8 @@ from core import tank
 from jobs import mirror
 from models import TankEstimate
 from sources import samsara
+
+log = logging.getLogger(__name__)
 
 
 # Replaces the estimates. Returns True when they were refreshed (a failure keeps the previous ones).
@@ -23,7 +26,11 @@ def estimates() -> list[TankEstimate]:
         lines = db.fuel_lines(conn, since_day=start.date().isoformat())
     found = []
     for truck in trucks:
-        readings = samsara.fuel_history(truck.samsara_id, start, end)
+        try:
+            readings = samsara.fuel_history(truck.samsara_id, start, end)
+        except Exception as error:  # one truck's Samsara trouble mustn't stop the others' estimates
+            log.warning("No gauge history for unit %s: %r", truck.unit, error)
+            continue
         estimate = tank.estimate(truck.unit, [line for line in lines if line.unit == truck.unit], readings,
                                  timedelta(minutes=config.TANK_WINDOW_MIN), config.TANK_MIN_RISE_PCT,
                                  config.TANK_MIN_FILLS)

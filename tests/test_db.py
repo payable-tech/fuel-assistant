@@ -7,11 +7,9 @@ import pytest
 
 import config
 import db
-import sqlite3
 
-from core import follow
-from models import (DatatruckDriver, DatatruckTruck, Event, FuelLine, FuelPlan, FuelStop, LoadPlan, Order, SamsaraLive,
-                    Stop, Store, SyncedTruck, TankEstimate, TelegramGroup)
+from models import (BurnFactor, DatatruckDriver, DatatruckTruck, FuelLine, FuelStop, Order, Recommendation, Region, SamsaraLive, TruckWatch,
+                    Stop, Store, SyncedTruck, TankEstimate, TelegramGroup, FillLookup)
 
 
 # Points the database at a temporary file so tests never touch data/fuel.db.
@@ -127,6 +125,15 @@ def test_pilot_values_need_a_pilot_truck():
         db.set_tank(conn, "340", 150)
 
 
+# A pilot truck is found by its unit; a truck outside the pilot, or no truck at all, is not.
+def test_pilot_truck():
+    sync(synced("340"), synced("341"))
+    join_pilot("340")
+    with db.connect() as conn:
+        assert db.pilot_truck(conn, "340").unit == "340"
+        assert db.pilot_truck(conn, "341") is None and db.pilot_truck(conn, "999") is None
+
+
 # Removing a truck from the pilot drops it and your values for it; removing it twice fails loudly.
 def test_remove_pilot():
     sync(synced("340"))
@@ -187,77 +194,8 @@ def test_schema_change_keeps_manual_settings():
         assert conn.execute("SELECT tank_gal FROM pilot_trucks WHERE unit = '340'").fetchone()[0] == 180
 
 
-# A saved plan comes back as stored, its load counts as planned, and a second plan for the same load is refused.
-def test_save_plan_once():
-    sync(synced("340"))
-    join_pilot("340")
-    stop = Stop(11, 1, 1, "delivery", 33.7, -84.4, "Atlanta", "GA")
-    made = datetime(2026, 10, 20, 12, tzinfo=timezone.utc)
-    with db.connect() as conn:
-        truck = db.pilot(conn)[0]
-        p = LoadPlan(made_at=made, truck=truck, order=Order(1, "L-1", "dispatched", "340", made, (stop,)),
-                     stops_ahead=(stop,), line=((32.7, -96.8), (33.7, -84.4)), route_mi=780, candidates=(), mpg=7,
-                     price_date="2026-10-19", end_price=5.5, plan=FuelPlan(stops=(), end_gal=60, fuel_cost=0),
-                     via=((33.2, -90.1),))
-        plan_id = db.save_plan(conn, p)
-        saved = db.plans(conn, "2026-10-01")
-        assert db.load_plan(conn, plan_id) == p  # read back exactly as it was made, the driver's route with it
-        assert db.planned_loads(conn) == {("340", 1)}
-        assert saved[0]["made_at"] == "2026-10-20T12:00:00+00:00" and saved[0]["plan"]["end_gal"] == 60
-        assert db.plan(conn, saved[0]["plan_id"])["order"]["load_id"] == "L-1"
-    with db.connect() as conn, pytest.raises(sqlite3.IntegrityError):
-        db.save_plan(conn, p)
-    with db.connect() as conn:  # the load started over later: a second plan, the newest is the one followed
-        db.save_plan(conn, replace(p, made_at=made + timedelta(hours=5)))
-        assert len(db.plans(conn, "2026-10-01")) == 2
-
-
-# A plan's messages queue oldest first and wait until marked sent; one written before the cut-off is never offered.
-# The newest sent one (or the newest before a given one) is found for editing, and an edit is recorded.
-def test_message_log():
-    sync(synced("340"))
-    join_pilot("340")
-    stop = Stop(11, 1, 1, "delivery", 33.7, -84.4, "Atlanta", "GA")
-    made = datetime(2026, 10, 20, 12, tzinfo=timezone.utc)
-    with db.connect() as conn:
-        p = LoadPlan(made_at=made, truck=db.pilot(conn)[0], order=Order(1, "L-1", "dispatched", "340", made, (stop,)),
-                     stops_ahead=(stop,), line=((32.7, -96.8), (33.7, -84.4)), route_mi=780, candidates=(), mpg=7,
-                     price_date="2026-10-19", end_price=5.5, plan=None)
-        plan_id = db.save_plan(conn, p)
-        db.queue_message(conn, plan_id, -5, "first", "2026-10-20 12:00:00+00:00")
-        db.queue_message(conn, plan_id, -5, "second", "2026-10-20 15:00:00+00:00")
-        assert db.unsent_messages(conn, made) == [(1, plan_id, -5, "first"), (2, plan_id, -5, "second")]
-        assert db.unsent_messages(conn, datetime(2026, 10, 20, 13, tzinfo=timezone.utc)) == [(2, plan_id, -5, "second")]
-        assert db.last_sent(conn, plan_id, -5) is None
-        db.mark_sent(conn, 1, 77, db.now())
-        db.mark_sent(conn, 2, 78, db.now())
-        assert db.last_sent(conn, plan_id, -5) == (2, -5, 78, "second")
-        assert db.last_sent(conn, plan_id, -6) is None  # another chat's messages are its own
-        db.set_text(conn, 1, "first, link taken off")
-        assert db.last_sent(conn, plan_id, -5, before=2) == (1, -5, 77, "first, link taken off")
-        db.queue_message(conn, plan_id, -9, "to the truck's group", "2026-10-20 16:00:00+00:00")
-        assert db.plan_chats(conn, plan_id) == [-5, -9]
-
-
-# A followed plan's progress comes back as saved, for the truck's newest plan made since the cut-off.
-def test_progress_round_trip():
-    sync(synced("340"))
-    join_pilot("340")
-    stop = Stop(11, 1, 1, "delivery", 33.7, -84.4, "Atlanta", "GA")
-    made = datetime(2026, 10, 20, 12, tzinfo=timezone.utc)
-    with db.connect() as conn:
-        p = LoadPlan(made_at=made, truck=db.pilot(conn)[0], order=Order(1, "L-1", "dispatched", "340", made, (stop,)),
-                     stops_ahead=(stop,), line=((32.7, -96.8), (33.7, -84.4)), route_mi=780, candidates=(), mpg=7,
-                     price_date="2026-10-19", end_price=5.5, plan=FuelPlan(stops=(), end_gal=60, fuel_cost=0))
-        plan_id = db.save_plan(conn, p)
-        prog = replace(follow.start(p), passed=1, events=(Event("delivery", "Atlanta, GA", made + timedelta(hours=9)),))
-        db.save_progress(conn, plan_id, prog)
-        assert db.followed(conn, made) == [(plan_id, p, prog)]
-        assert db.followed(conn, made + timedelta(days=1)) == []
-
-
 # Price sheets build a history (a store's price for a day already there is replaced), and the sheet with the newest
-# price date is the newest, whatever order the files were read in.
+# price date is the newest, whatever order the files were read in. A day's network discount averages every store.
 def test_price_history():
     def sheet(day, net):
         return [Store("1", "Town", "TX", 30.0, -97.0, net + 0.5, net, day), Store("2", "Town", "OK", 35.0, -97.0, net, net, day)]
@@ -268,8 +206,18 @@ def test_price_history():
         assert db.newest_price_file(conn) == "new.xlsx"
         assert db.price_files(conn)["old.xlsx"] == (10, 3.0)
         assert tuple(conn.execute("SELECT COUNT(*), MIN(net) FROM price_history WHERE price_date = '2026-10-14'").fetchone()) == (2, 5.4)
+        assert db.network_discounts(conn, "2026-10-15") == {"2026-10-20": 0.25}  # (0.50 + 0.00) / 2 stores
+        assert db.price_sheets(conn, "2026-10-15") == {"2026-10-20": {"1": 5.0, "2": 5.0}}
         db.replace_stores(conn, sheet("2026-10-20", 5.0))  # the newest sheet becomes the stores, read back as they went in
         assert sorted(db.stores(conn), key=lambda s: s.store_no) == sheet("2026-10-20", 5.0)
+
+
+# The test trucks' fills come back as they went in, by fuel line id (a fill with nothing known still counts as done).
+def test_fill_lookups_round_trip():
+    fills = [FillLookup(7, 35.1, -97.2, 18.0), FillLookup(8, None, None, None)]
+    with db.connect() as conn:
+        db.add_fill_lookups(conn, fills)
+        assert db.fill_lookups(conn) == {7: fills[0], 8: fills[1]}
 
 
 # Fuel stops come back as they went in, with times as datetimes and Love's as a real true/false.
@@ -334,3 +282,51 @@ def test_fuel_lines_round_trip():
         db.replace_fuel_lines(conn, [f])
         assert db.fuel_lines(conn, since_day="2026-10-01") == [f]
         assert db.fuel_lines(conn, since_day="2026-10-14") == []
+
+
+# A truck's look comes back as saved, road and regions included; saving again replaces it.
+def test_truck_watch_round_trip():
+    at = datetime(2026, 10, 19, 12, 0, tzinfo=timezone.utc)
+    look = TruckWatch(unit="340", at=at, state="watch", order_id=1, load_id="L", road_made_at=at, line=[(30.0, -97.0), (31.0, -97.0)],
+                      route_mi=69.0, mile=10.0, fuel_pct=50.0, regions=(Region(10.0, 40.0, 2, "Love's Town, TX", True),))
+    with db.connect() as conn:
+        assert db.truck_watch(conn, "340") is None
+        db.save_truck_watch(conn, look)
+        assert db.truck_watch(conn, "340") == look
+        db.save_truck_watch(conn, TruckWatch(unit="340", at=at, state="no load"))
+        assert db.truck_watch(conn, "340").state == "no load" and len(db.truck_watches(conn)) == 1
+
+
+# A recommendation stays open until settled, and is listed with what became of it.
+def test_recommendations():
+    at = datetime(2026, 10, 19, 12, 0, tzinfo=timezone.utc)
+    rec = Recommendation(None, "340", "Ali", 1, "L", at, "stop", "412", "Love's Dunn, NC", 109.0, 30.0, 20.0, 17.0, 130.0, None, "hard_stop",
+                         5.25, 5.69, "2026-10-19", 6.69, 5.35, 13.0, "text", "open", None)
+    with db.connect() as conn:
+        db.add_recommendation(conn, rec)
+        told = db.open_recommendation(conn, "340")
+        assert told.station == "Love's Dunn, NC" and told.made_at == at
+        db.settle_recommendation(conn, told.rec_id, "passed", at)
+        assert db.open_recommendation(conn, "340") is None
+        assert db.recommendations(conn, "2026-10-19")[0].status == "passed"
+
+
+# The stops a truck drove past are counted from a moment on: not earlier ones, an emergency, a stop fueled at, or
+# another truck's.
+def test_passed_stops():
+    at = datetime(2026, 10, 19, 12, 0, tzinfo=timezone.utc)
+    rec = Recommendation(None, "340", "Ali", 1, "L", at, "stop", "412", "Love's Dunn, NC", 109.0, 30.0, 20.0, 17.0, 130.0, None, "range",
+                         5.25, 5.69, "2026-10-19", 6.69, 5.35, 13.0, "text", "passed", None)
+    with db.connect() as conn:
+        for hours, change in ((0, {}), (1, {}), (2, {}), (3, {"kind": "urgent"}), (4, {"status": "fueled"}), (5, {"unit": "341"})):
+            db.add_recommendation(conn, replace(rec, made_at=at + timedelta(hours=hours), **change))
+        assert db.passed_stops(conn, "340", at - timedelta(hours=1)) == 3
+        assert db.passed_stops(conn, "340", at) == 2
+        assert db.passed_stops(conn, "340", at + timedelta(hours=2)) == 0
+
+
+# The engine factors are read back by unit.
+def test_burn_factors():
+    with db.connect() as conn:
+        db.replace_burn_factors(conn, [BurnFactor("340", 1e-7, 4)])
+        assert db.burn_factors(conn) == {"340": 1e-7}

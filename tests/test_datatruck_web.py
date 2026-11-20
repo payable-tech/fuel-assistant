@@ -25,6 +25,13 @@ def test_fuel_line_without_truck_or_driver():
     assert (f.unit, f.truck_ownership, f.driver_id, f.driver_type, f.card_id) == (None, None, None, None, None)
 
 
+# A line read twice (pushed onto the next page by a new purchase while the pages are read) is kept once.
+def test_fuel_lines_once_each(monkeypatch):
+    pages = [RAW_LINE | {"id": 3}, RAW_LINE | {"id": 2}, RAW_LINE | {"id": 2}, RAW_LINE | {"id": 1}]
+    monkeypatch.setattr(datatruck_web, "_all", lambda path, params: pages)
+    assert [l.line_id for l in datatruck_web.fuel_lines()] == [3, 2, 1]
+
+
 # A fuel card keeps who it belongs to and how it is charged, not its number.
 def test_fuel_card_mapping():
     c = datatruck_web._fuel_card({"id": 4, "number": "7083050030000000000", "mc_number": {"company_name": "DT"},

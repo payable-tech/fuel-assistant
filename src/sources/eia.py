@@ -3,10 +3,9 @@
 import httpx
 import xlrd
 
-from models import MarketPrice
+from models import MarketPrice, US
 
 URL = "https://www.eia.gov/petroleum/gasdiesel/xls/psw18vwall.xls"
-US = "U.S."
 SERIES = {  # EIA series key -> region. The finest regions EIA publishes; together they cover every state.
     "EMD_EPD2D_PTE_NUS_DPG": US,
     "EMD_EPD2D_PTE_R1X_DPG": "New England",

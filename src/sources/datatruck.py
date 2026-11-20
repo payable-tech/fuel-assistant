@@ -15,12 +15,11 @@ PAUSE_SEC = 3.1         # Datatruck allows 20 calls per minute, so calls are kep
 _last_call = 0.0        # monotonic time of the previous call, shared by every job in this process
 
 
-# Returns all active orders (assigned, dispatched, in transit) with their stops in route order. An order added or
-# changed while the pages are read (~11 pages, half a minute) shifts the list, so one can come on two pages: each
-# order is kept once, as last read.
+# Returns all active orders (assigned, dispatched, in transit) with their stops in route order, each order once.
 def active_orders() -> list[Order]:
     query = json.dumps([{"column": "status", "value": ACTIVE_STATUSES, "contains": "is_in"}])
     with _client() as client:
+        # an order added or changed while the ~11 pages are read shifts the list onto two pages: kept as last read
         raw = {o["id"]: o for o in _results(client, "/orders/", {"filter": query})}
     return [_order(o) for o in raw.values()]
 

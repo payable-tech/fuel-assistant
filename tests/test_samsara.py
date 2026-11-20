@@ -20,3 +20,4 @@ def test_live_mapping():
 def test_live_without_fuel_or_gps():
     live = samsara._live({"id": "282", "name": "Unit 717"})
     assert (live.lat, live.place, live.gps_at, live.fuel_pct, live.fuel_at) == (None, None, None, None, None)
+
