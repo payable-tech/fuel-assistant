@@ -5,9 +5,12 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import NamedTuple
 
+import httpx
+
 import config
 import db
 from core import burn, geo, habits, loads, message, no_load, outcomes, recommend
+from jobs import progress
 from models import (NO_LOAD_ORDER, Decision, FuelLine, Order, Recommendation, Stop, Store, StoreOnRoute, TrackPoint, Trip,
                     Truck, TruckNow, TruckWatch, UsualLevel)
 from rules import RULES, truck_now
@@ -15,6 +18,8 @@ from sources import google_places, google_routes, samsara, telegram
 
 log = logging.getLogger(__name__)
 _tracks: dict[str, tuple[datetime, list[TrackPoint]]] = {}  # unit -> (kept from, GPS track), between looks (see _track)
+# A service not answering or answering with an error (OSError covers a lost connection and Telegram's ConnectionError)
+NETWORK_ERRORS = (httpx.HTTPError, OSError)
 
 
 # The road a look goes by: its line, when it was made, how far along it the truck is, the load's stops it was made
@@ -27,7 +32,8 @@ class Road(NamedTuple):
     new: bool
 
 
-# Looks at every pilot truck once. One truck failing doesn't stop the others. Returns how many it looked at.
+# Looks at every pilot truck once. One truck failing doesn't stop the others: a network failure is one log line, any
+# other failure (a fault in the code) its full trace. Each truck done ticks the watchdog. Returns how many it looked at.
 def run() -> int:
     now = datetime.now(timezone.utc)
     with db.connect() as conn:
@@ -43,8 +49,11 @@ def run() -> int:
             ids = {d.driver_id for d in drivers if d.unit == truck.unit and d.employee_status == "active"}
             usual = habits.usual_level([s for s in stops if s.driver_id in ids], config.USUAL_MIN_STOPS)
             _look(truck, [o for o in orders if o.unit == truck.unit], stores, usual, factors.get(truck.unit), lines, now)
+        except NETWORK_ERRORS as error:  # its full trace for every truck filled 72 MB of log in one night's outage
+            log.error("Fuel recommendation for unit %s failed: %r", truck.unit, error)
         except Exception:
             log.exception("Fuel recommendation for unit %s failed", truck.unit)
+        progress.tick()  # a long pass (the first after a restart: ~25 min) is moving, not hung
     return len(trucks)
 
 

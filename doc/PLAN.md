@@ -95,7 +95,7 @@ Fuel Assistent project/
 │  ├─ fuel.db                 SQLite database (created automatically)
 │  ├─ telegram.session        Telegram login of the assistant's account (TG_PHONE), which sends the messages — never share
 │  ├─ bob.session             Telegram login of Bob's account, which lists the driver groups — never share
-│  └─ fuel.log                log file
+│  └─ fuel.log                log file, written by `serve` only (fuel.log.1 … .4: the older ones, 20 MB each)
 ├─ doc/PLAN.md                this file
 ├─ src/
 │  ├─ main.py                 command line (see section 5.2)
@@ -160,8 +160,8 @@ the dashboard keeps reading while a refresh writes.
 **24/7 on this PC (PC-017).** `run.bat` runs `serve` and starts it again 30 s after it stops; a shortcut
 "Fuel assistant" in the Windows Startup folder opens it, minimized, at logon. While it runs, `serve` asks Windows
 not to sleep (the screen may still turn off) and turns off click-to-select in its window (a click there used to
-pause the whole program). A watchdog ends the program when no job has finished for `STUCK_MIN`
-(30 min), so a hang is restarted like a crash. After a Windows restart someone has to log in for it to start (no
+pause the whole program). A watchdog ends the program when nothing has moved on (no job finished, no truck
+looked at) for `STUCK_MIN` (30 min), so a hang is restarted like a crash. After a Windows restart someone has to log in for it to start (no
 automatic login on this PC; LOOP.md section 5).
 
 Errors: a failing job is logged and retried on its next run; one truck failing doesn't stop the others.
@@ -563,7 +563,8 @@ drawn so the scope of each figure shows without asking (the user, 2026-11-03):
 | `NEAR_MI` | 25 | Live: a fill outside Love's is compared with the cheapest Love's this close |
 | `SHEET_MAX_AGE_DAYS` | 3 | ...on the newest price sheet at most this old |
 | `LOOKUPS_FROM` | 2026-09-28 | fills outside Love's are looked up from this day on |
-| `STUCK_MIN` | 30 | no job finished for this long: the program ends itself and run.bat restarts it |
+| `STUCK_MIN` | 30 | no job finished and no truck looked at for this long: the program ends itself and run.bat restarts it |
+| `LOG_MAX_MB`, `LOG_FILES_KEPT` | 20, 4 | `data/fuel.log` starts afresh at 20 MB; the 4 newest old ones are kept |
 | `TG_SESSION_PATH` | data/telegram.session | the assistant's Telegram login: sends the messages |
 | `TG_GROUPS_SESSION_PATH` | data/bob.session | the login that lists the driver groups (linking); point it at the assistant's once that account is in them all |
 

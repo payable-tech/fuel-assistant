@@ -37,6 +37,8 @@ EFS_ACCOUNTS = {
     "DT NATIONAL TRANSPORTATION LLC": ("DT National Transportation LLC",),
 }
 LOG_PATH = DATA_DIR / "fuel.log"
+LOG_MAX_MB = 20        # fuel.log starts afresh at this size, the old one kept as fuel.log.1 (a normal day writes ~0.2 MB)
+LOG_FILES_KEPT = 4     # old files kept (fuel.log.1 to .4, newest first): at most ~100 MB of log in all
 TG_SESSION_PATH = DATA_DIR / "telegram.session"    # the assistant's account (TG_PHONE): sends the messages (test group, live trucks)
 TG_GROUPS_SESSION_PATH = DATA_DIR / "bob.session"  # Bob's account: lists the driver groups for linking trucks, until
                                                    # the assistant's account is in them all (then point this above)
@@ -127,7 +129,8 @@ TANK_MIN_RISE_PCT = 25     # smaller gauge rises are too noisy to use
 TANK_MIN_FILLS = 3         # fewer usable fill-ups -> no estimate (the truck shows in `holes`)
 
 # Schedule, in minutes
-STUCK_MIN = 30                     # no job finished for this long (the longest takes ~17): the program restarts itself
+STUCK_MIN = 30                     # no progress for this long (a job done or a truck looked at; the longest job takes
+                                   # ~17): the program restarts itself
 NIGHT_HOURS = (3, 6)               # Central: the slow daily jobs (scheduler.NIGHT_JOBS) run once a night between these
                                    # hours, when the fewest stops are told (user's go, 2026-11-05)
 EVERY_LIVE_MIN = 5                 # Samsara position and fuel level of every truck

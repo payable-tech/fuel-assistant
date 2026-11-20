@@ -4,6 +4,7 @@ import logging
 import sys
 from datetime import datetime, timezone
 from itertools import groupby
+from logging.handlers import RotatingFileHandler
 
 import config
 import db
@@ -17,14 +18,15 @@ from sources import telegram
 HOLES_SHOWN = 10    # items listed per hole unless --all
 
 
-# Sends log lines to the console and to data/fuel.log; library chatter is kept to warnings.
-def setup_logging() -> None:
-    config.LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        handlers=[logging.StreamHandler(), logging.FileHandler(config.LOG_PATH, encoding="utf-8")],
-    )
+# Sends log lines to the console, and with `to_file` also to data/fuel.log, which starts afresh at LOG_MAX_MB (the old
+# ones kept as fuel.log.1, .2, ...). Library chatter is kept to warnings.
+def setup_logging(to_file: bool) -> None:
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    if to_file:
+        config.LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(RotatingFileHandler(config.LOG_PATH, maxBytes=config.LOG_MAX_MB * 1024 * 1024,
+                                            backupCount=config.LOG_FILES_KEPT, encoding="utf-8"))
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s", handlers=handlers)
     for noisy in ("httpx", "telethon"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
@@ -292,7 +294,9 @@ def main() -> None:
     p.set_defaults(run=cmd_set_tank)
 
     args = parser.parse_args()
-    setup_logging()
+    # only the running assistant writes the log file: Windows can't rename a file another program holds open, and a
+    # failed rename deletes the old files one by one
+    setup_logging(to_file=args.run is cmd_serve)
     try:
         args.run(args)
     except (LookupError, RuntimeError) as error:  # e.g. unknown unit, missing .env key: something you can fix

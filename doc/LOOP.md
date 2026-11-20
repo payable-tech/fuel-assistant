@@ -115,8 +115,10 @@ Details and why: PLAN.md §6.1. Everything shows on the dashboard's Recommend ta
 ```
 
 - **Crash:** the program ends and run.bat starts it again 30 s later (tested by killing it; it came back each time).
-- **Hang** (a job stuck, e.g. on a network call that never answers): the watchdog sees no job finish for
-  `STUCK_MIN` (30 min; the longest job takes ~17) and ends the program, so run.bat restarts it fresh.
+- **Hang** (a job stuck, e.g. on a network call that never answers): the watchdog sees no progress for
+  `STUCK_MIN` (30 min; the longest job takes ~17) and ends the program, so run.bat restarts it fresh. Progress is a
+  job finished or one truck looked at by the engine: its first pass after a restart takes ~25 min (each truck's GPS
+  track is fetched anew), and on 2026-11-20 it nearly got cut off when only finished jobs counted.
 - **Sleep:** the program asks Windows to stay awake (the PC was set to sleep after 2 h idle: on 2026-10-21 that
   stopped it for 2.3 h before this; none since, overnight included).
 - **A click in the window:** Windows starts a text selection ("Select Fuel assistant" in the title) and pauses the
@@ -131,6 +133,10 @@ Details and why: PLAN.md §6.1. Everything shows on the dashboard's Recommend ta
   due (`job_runs`). A job cut off mid-run (no finish time) is due again at once, so a daily job isn't lost for a
   day when the program restarts while it runs.
 - To check it's alive: the Data tab lists each job's last run and any error; `data/fuel.log` has the details.
+  Only `serve` writes that file (one-off commands print to their window). At 20 MB it starts afresh and the old one
+  becomes `fuel.log.1` (then `.2` … `.4`; older ones are deleted), so the log never passes ~100 MB. A network
+  failure in the engine is one line per truck, not the full error trace: an 8-hour outage on 2026-11-20 wrote
+  72 MB of those traces (the file had grown to 277 MB).
 
 ## 4. Not in the loop yet
 

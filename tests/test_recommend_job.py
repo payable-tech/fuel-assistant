@@ -1,7 +1,9 @@
 # Tests that recommendations reach the driver only on live trucks, and the test group always.
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
+import httpx
 import pytest
 
 import config
@@ -24,6 +26,25 @@ def sent(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "TEST_CHAT_ID", TEST_GROUP)
     monkeypatch.setattr(job.telegram, "send", lambda chat, text: calls.append((chat, text)))
     return calls
+
+
+# A truck failing on the network gets one log line, a fault in the code its full trace; every truck ticks the watchdog.
+def test_failures_are_logged_and_each_truck_ticks(sent, monkeypatch, caplog):
+    failures = iter([httpx.ConnectError("getaddrinfo failed"), ValueError("a fault")])
+
+    # Stands in for one truck's look: fails with the next failure.
+    def look(*args):
+        raise next(failures)
+
+    ticks = []
+    monkeypatch.setattr(job.db, "pilot", lambda conn: [SimpleNamespace(unit="340"), SimpleNamespace(unit="341")])
+    monkeypatch.setattr(job, "_look", look)
+    monkeypatch.setattr(job.progress, "tick", lambda: ticks.append(1))
+    assert job.run() == 2
+    network, fault = [r for r in caplog.records if r.name == "jobs.recommend"]
+    assert network.exc_info is None and "unit 340" in network.getMessage() and "ConnectError" in network.getMessage()
+    assert fault.exc_info is not None and "unit 341" in fault.getMessage()
+    assert len(ticks) == 2
 
 
 # It goes to the test group, naming the truck above the driver's own words.
