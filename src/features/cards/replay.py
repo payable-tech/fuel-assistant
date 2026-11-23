@@ -1,8 +1,8 @@
 # Replays saved driver cases (features/cards/cases) to the card agent against the real eManager, sending nothing. Each
 # case goes through agent.work() exactly as a live tag would, with three things replaced: what is written to Telegram
 # is kept in a list instead, the database is a copy, and a change in eManager lands on the user's own test card, never
-# on a driver's. The result is a report in data/card_cases: what each driver wrote, what the agent did and would have
-# replied, and what the office really did afterwards.
+# on a driver's. The result is a report in data/card_cases: each case as one conversation, from the chat before the
+# driver's message, through every tool the agent used and what it was answered, to what the office really did.
 import asyncio
 import html
 import json
@@ -16,14 +16,22 @@ from base import config
 from base.models import EfsCard, EfsCardRow
 from base.sources import telegram
 from base.store import db
-from features.cards import agent, cases, settings, telegram_agent, tools
+from features.cards import agent, cases, claude, settings, telegram_agent, tools
 from features.cards.emanager import fuel_cards
-from features.cards.emanager.window import EfsError
 
 log = logging.getLogger(__name__)
 CHANGERS = ("set_status", "set_override", "remove_override", "set_prompt")  # everything in fuel_cards that changes a card
 # eManager saying the rest of the batch can't work either (its own words, in a step or an outcome)
 STOP_ON = ("EFS's bot check", "eManager is not logged in", "eManager not logged in", "eManager window is not open")
+# Why a request went to the office, by words of the step that says so: the report counts these.
+HANDED_FOR = (("not clearly one of them", "team truck: can't tell which driver wrote"),
+              ("no active driver", "no active driver on the truck in Datatruck"),
+              ("cards on unit", "not exactly one card on the unit in the driver's name"),
+              ("override already on", "the card already has an override on"),
+              ("asked the office", "the card is on hold or inactive: the rule wants a person's yes"),
+              ("opened this card", "the agent opened this card less than 6 hours ago"),
+              ("eManager", "eManager did not answer or did not confirm"),
+              ("that is not for the fuel desk", "the card's status is not in the owner's table"))
 
 
 # The replay may not go on: the test card is not as expected, or a change was asked for on another card.
@@ -62,6 +70,21 @@ def no_telegram(written: list[tuple[int, str, int | None]]) -> None:
         return len(written)
 
     telegram_agent.write, telegram_agent._client, telegram.send, telegram._client = keep, refuse, refuse, refuse
+
+
+# Makes Claude's runs leave a trace: what it was given to read and its last words go into `heard` (one dict, written
+# over at each run). Claude itself runs for real.
+def listen_to_claude(heard: dict) -> None:
+    real = claude.run
+
+    # The same run, with its input and its last words kept.
+    async def run(system, text, photos, tools_given, workspace):
+        heard.update(given=text, photos=len(photos), said="", problem="", cost=None)
+        said = await real(system, text, photos, tools_given, workspace)
+        heard.update(said=said.text, problem=said.problem, cost=said.cost_usd)
+        return said
+
+    claude.run = run
 
 
 # The test card as eManager has it now: its Card Lookup row and its page. ReplayError when it can't be found.
@@ -126,8 +149,10 @@ def run(most: int) -> Path:
     if not todo:
         raise ReplayError("no cases saved yet: run `card-cases` first")
     written: list[tuple[int, str, int | None]] = []
+    heard: dict = {}
     no_telegram(written)
     only_the_test_card()
+    listen_to_claude(heard)
     copy = cases.CASES_DIR / "replay.db"
     _copy_database(copy)
     config.DB_PATH = copy
@@ -142,7 +167,7 @@ def run(most: int) -> Path:
     results = []
     try:
         for case in todo:
-            result = asyncio.run(_one(case, cards, written))
+            result = asyncio.run(_one(case, cards, written, heard))
             results.append(result)
             log.info("Replayed unit %s (%s): %s", case["unit"], case["at"][:16], result["outcome"])
             if any(word in " ".join([str(result["outcome"]), *result["steps"]]) for word in STOP_ON):
@@ -156,30 +181,48 @@ def run(most: int) -> Path:
     return report
 
 
-# One case through the agent, as a live tag: the run is claimed, the request worked to its end, and what it did kept.
-async def _one(case: dict, cards: OnTestCard, written: list) -> dict:
+# One case through the agent, as a live tag: the run is claimed, the request worked to its end, and everything it did
+# kept in order: each tool it used, with what it asked and what it was answered.
+async def _one(case: dict, cards: OnTestCard, written: list, heard: dict) -> dict:
     with db.connect() as conn:
         conn.execute("DELETE FROM agent_runs")  # each case starts clean: no reopen wait left by the case before it
     truck, drivers = agent._truck_of(case["chat_id"])
     age_days = (datetime.now(timezone.utc) - datetime.fromisoformat(case["at"])).days
     seen = {"unit": case["unit"], "at": case["at"], "age_days": age_days, "sender": case["sender"], "text": case["text"],
-            "chat": [f"{c['sender']}{' (us)' if c['ours'] else ''}: {c['text']}{' [photo]' if c['photo'] else ''}"
-                     for c in case["chat"]], "after": [f"{a['sender']}: {a['text']}" for a in case["after"]]}
+            "chat": [{"at": c["at"], "sender": c["sender"], "ours": c["ours"], "text": c["text"], "photo": bool(c["photo"])}
+                     for c in case["chat"]], "after": case["after"]}
     if truck is None:
-        return seen | {"outcome": "no truck on this group any more", "steps": [], "reply": None, "office": []}
+        return seen | {"outcome": "no truck on this group any more", "steps": [], "talk": [], "reply": None, "office": []}
     with db.connect() as conn:
         db.claim_agent_run(conn, case["chat_id"], case["message_id"], truck.unit, datetime.now(timezone.utc), case["text"][:2000])
     request = tools.Request(None, case["chat_id"], case["message_id"], case["text"], case["sender"], truck, drivers)
     request.efs = cards
+    talk: list[dict] = []
+    its_tools = request.tools
+    request.tools = lambda: [replace(tool, run=_recorded(tool, talk)) for tool in its_tools()]
+    heard.clear()
     start = len(written)
     await agent.work(request, cases.chat_of(case))
     mine = written[start:]
     with db.connect() as conn:
         recorded = conn.execute("SELECT outcome, error FROM agent_runs WHERE message_id = ?", (case["message_id"],)).fetchone()
-    return seen | {"outcome": recorded["outcome"], "error": recorded["error"], "steps": request.steps,
+    return seen | {"outcome": recorded["outcome"], "error": recorded["error"], "steps": request.steps, "talk": talk,
+                   "given": heard.get("given", ""), "said": heard.get("said", ""), "problem": heard.get("problem", ""),
+                   "cost": heard.get("cost"),
                    "reply": next((text for chat, text, _ in mine if chat == case["chat_id"]), None),
                    "office": [text for chat, text, _ in mine if chat != case["chat_id"]],
                    "drivers_now": [d.full_name for d in drivers]}
+
+
+# A tool that also writes down each use: what Claude asked of it and what it answered.
+def _recorded(tool, talk: list[dict]):
+    # The tool's own run, with the call and its answer added to `talk`.
+    async def run(args: dict) -> dict:
+        answer = await tool.run(args)
+        talk.append({"tool": tool.name, "asked": args, "answer": answer["content"][0]["text"], "refused": bool(answer.get("is_error"))})
+        return answer
+
+    return run
 
 
 # Copies the live database (read only) for the replay to work on.
@@ -209,33 +252,78 @@ def kind(result: dict) -> str:
     return "did nothing"
 
 
-# The report as one HTML page: the counts on top, then every case with the chat, what the agent did, and what the
-# office really did. Everything from Telegram is escaped.
+# Why a case went to the office, in a few words; None when it didn't. A hand-over the agent chose itself (a request
+# that is not a card opening: a money code, a check, a lost card) is named as that.
+def handed_for(result: dict) -> str | None:
+    steps = " ".join(result["steps"])
+    if "hand_to_office" not in steps and "asked the office" not in steps:
+        return None
+    for words, reason in HANDED_FOR:
+        if words in steps:
+            return reason
+    return "not a card opening: the agent has no tool for it"
+
+
+# The report as one HTML page: the counts and the reasons for every hand-over on top, then each case as one
+# conversation. Everything from Telegram and from Claude is escaped.
 def page(results: list[dict], changes: int) -> str:
-    counts = {}
+    e = html.escape
+    counts, reasons = {}, {}
     for r in results:
         counts[kind(r)] = counts.get(kind(r), 0) + 1
-    e = html.escape
-    rows = []
-    for r in results:
-        rows.append(f"""<section><h2>Unit {e(r['unit'])} · {e(r['at'][:16].replace('T', ' '))} UTC · {r['age_days']} days ago
-<span class="k {e(kind(r).replace(' ', '-'))}">{e(kind(r))}</span></h2>
-<div class="cols"><div><h3>The chat before the driver's message</h3><pre>{e(chr(10).join(r['chat']))}</pre></div>
-<div><h3>What the agent did</h3><pre>{e(chr(10).join(r['steps']) or '(no tool used)')}</pre>
-<p><b>Outcome:</b> {e(str(r['outcome']))}{' · <b>error:</b> ' + e(str(r['error'])) if r.get('error') else ''}</p>
-<p><b>Would reply to the driver:</b> {e(r['reply'] or '(nothing)')}</p>
-<p><b>Would post to the office:</b></p><pre>{e(chr(10).join(r['office']) or '(nothing)')}</pre></div>
-<div><h3>What was really written afterwards</h3><pre>{e(chr(10).join(r['after']) or '(nothing)')}</pre></div></div></section>""")
+        why = handed_for(r)
+        if why:
+            reasons[why] = reasons.get(why, 0) + 1
     summary = " · ".join(f"{e(k)}: {n}" for k, n in sorted(counts.items(), key=lambda kv: -kv[1]))
+    why_rows = "".join(f"<tr><td>{n}</td><td>{e(w)}</td></tr>" for w, n in sorted(reasons.items(), key=lambda kv: -kv[1]))
     return f"""<!doctype html><meta charset="utf-8"><title>Card agent replay</title>
-<style>body{{font:14px/1.45 "Segoe UI",system-ui,sans-serif;margin:24px;background:#0c1118;color:#e6eaf1}}
-h1{{font-size:22px}}h2{{font-size:16px;margin:28px 0 8px;border-top:1px solid #243041;padding-top:14px}}h3{{font-size:12px;
-color:#8e9aae;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px}}pre{{white-space:pre-wrap;background:#131a24;
-padding:10px;border-radius:8px;margin:0 0 8px}}.cols{{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
-gap:14px}}.k{{font-size:12px;padding:2px 8px;border-radius:10px;background:#243041;margin-left:8px}}.opened{{background:#1f6f4f}}
-.to-the-office{{background:#7a5a12}}.failed{{background:#8a2f33}}p{{margin:4px 0}}</style>
+<style>body{{font:14px/1.45 "Segoe UI",system-ui,sans-serif;margin:24px auto;max-width:980px;padding:0 16px;background:#0c1118;color:#e6eaf1}}
+h1{{font-size:22px}}h2{{font-size:16px;margin:36px 0 10px;border-top:1px solid #243041;padding-top:16px}}
+.k{{font-size:12px;padding:2px 8px;border-radius:10px;background:#243041;margin-left:8px}}.opened{{background:#1f6f4f}}
+.to-the-office{{background:#7a5a12}}.failed{{background:#8a2f33}}
+.m{{margin:6px 0;padding:8px 12px;border-radius:10px;background:#131a24;max-width:78%;white-space:pre-wrap}}
+.m b{{display:block;font-size:12px;color:#8e9aae;font-weight:600}}.ours{{background:#1a2330}}.case{{outline:2px solid #f2a33a}}
+.agent{{margin-left:auto;background:#17324a}}.office{{margin-left:auto;background:#3a2f12}}.after{{opacity:.75}}
+.step{{margin:6px 0 6px 22%;padding:8px 12px;border-left:3px solid #5b9cf5;background:#10161f;white-space:pre-wrap;font-size:13px}}
+.step b{{color:#5b9cf5}}.refused{{border-color:#f2676b}}.label{{font-size:12px;color:#8e9aae;text-transform:uppercase;letter-spacing:.06em;margin:16px 0 4px}}
+details{{margin:8px 0}}summary{{cursor:pointer;color:#8e9aae}}pre{{white-space:pre-wrap;background:#131a24;padding:10px;border-radius:8px}}
+table{{border-collapse:collapse}}td{{padding:3px 12px 3px 0}}</style>
 <h1>Card agent replay: {len(results)} real cases</h1>
 <p>{summary}</p>
 <p>Nothing was sent to any driver or to the office, and no driver's card was changed: {changes} real changes were made, all on the
 test card, which was put back. The truck, its drivers and its card are as they are today, not as on the message's day.</p>
-{''.join(rows)}"""
+<div class="label">Why requests went to the office</div><table>{why_rows or '<tr><td>none</td></tr>'}</table>
+{''.join(_conversation(r) for r in results)}"""
+
+
+# One case as a conversation: the chat before the driver's message, what the agent was told, each tool it used with
+# its answer, what it would have written to the driver and the office, and what was really written afterwards.
+def _conversation(r: dict) -> str:
+    e = html.escape
+    before = "".join(_bubble(c["sender"], c["text"] + (" [photo]" if c["photo"] else ""), c["at"],
+                             "ours" if c["ours"] else "", last=i == len(r["chat"]) - 1) for i, c in enumerate(r["chat"]))
+    steps = ""
+    for t in r["talk"]:
+        asked = json.dumps(t["asked"], ensure_ascii=False) if t["asked"] else ""
+        steps += (f'<div class="step{" refused" if t["refused"] else ""}"><b>{e(t["tool"])}</b> {e(asked)}\n'
+                  f'→ {e(t["answer"])}</div>')
+        if t["tool"] == "reply_to_driver" and not t["refused"]:
+            steps += _bubble("Fuel desk (would send to the driver)", t["asked"].get("text", ""), "", "agent")
+    office = "".join(_bubble("Fuel desk (would post to the office)", text, "", "office") for text in r["office"])
+    after = "".join(_bubble(a["sender"], a["text"], a["at"], "after") for a in r["after"])
+    cost = f" · ${r['cost']:.2f}" if r.get("cost") else ""
+    return f"""<h2>Unit {e(r['unit'])} · {e(r['at'][:16].replace('T', ' '))} UTC · {r['age_days']} days ago
+<span class="k {e(kind(r).replace(' ', '-'))}">{e(kind(r))}</span></h2>
+<div class="label">The chat, up to the driver's message</div>{before}
+<details><summary>What the agent was told about the truck</summary><pre>{e(r.get('given', '').split(chr(10) + chr(10) + 'The chat,')[0])}</pre></details>
+<div class="label">What the agent did{e(cost)}</div>{steps or '<div class="step">(it used no tool)</div>'}{office}
+<div class="step"><b>its last words</b> {e(r.get('said') or '(none)')}{' · stopped: ' + e(r['problem']) if r.get('problem') else ''}
+<b>recorded outcome</b> {e(str(r['outcome']))}{' · error: ' + e(str(r['error'])) if r.get('error') else ''}</div>
+<div class="label">What was really written afterwards</div>{after or '<div class="m after">(nothing)</div>'}"""
+
+
+# One message of a conversation as a bubble: who, when (hour and minute), and the text.
+def _bubble(sender: str, text: str, at: str, style: str, last: bool = False) -> str:
+    when = f" · {at[11:16]}" if at else ""
+    return (f'<div class="m {style}{" case" if last else ""}"><b>{html.escape(sender)}{when}</b>'
+            f'{html.escape(text or "")}</div>')

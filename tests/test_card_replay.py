@@ -91,11 +91,15 @@ def test_nothing_reaches_telegram(monkeypatch):
 
 # The report's one-word kind of each case, and the page escapes what came from Telegram.
 def test_report_kinds_and_escaping():
-    base = {"unit": "3189", "at": "2026-11-20T14:00:00+00:00", "age_days": 3, "chat": ["John: <b>card</b> declined"],
-            "after": [], "outcome": "x", "reply": None, "office": [], "steps": []}
+    base = {"unit": "3189", "at": "2026-11-20T14:00:00+00:00", "age_days": 3, "outcome": "x", "reply": None, "office": [],
+            "chat": [{"at": "2026-11-20T14:00:00+00:00", "sender": "John", "ours": False, "text": "<b>card</b> declined", "photo": False}],
+            "after": [], "steps": [], "talk": [{"tool": "reply_to_driver", "asked": {"text": "<i>ok</i>"}, "answer": "Sent.", "refused": False}]}
     assert replay.kind(base | {"steps": ["declined_card: opened card …0001 for 1 fill"]}) == "opened"
     assert replay.kind(base | {"steps": ["declined_card: needs a person, 0 cards"]}) == "to the office"
     assert replay.kind(base | {"error": "RuntimeError('x')"}) == "failed"
     assert replay.kind(base | {"reply": "ok"}) == "replied only" and replay.kind(base) == "did nothing"
     text = replay.page([base], 0)
-    assert "&lt;b&gt;card&lt;/b&gt;" in text and "<b>card</b>" not in text
+    assert "&lt;b&gt;card&lt;/b&gt;" in text and "<b>card</b>" not in text and "<i>ok</i>" not in text
+    team = base | {"steps": ["declined_card: needs a person, this truck has 2 drivers and X is not clearly one of them", "hand_to_office: x"]}
+    assert replay.handed_for(team) == "team truck: can't tell which driver wrote" and replay.handed_for(base) is None
+    assert replay.handed_for(base | {"steps": ["hand_to_office: wants a money code"]}).startswith("not a card opening")
