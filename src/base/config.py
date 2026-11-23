@@ -28,8 +28,6 @@ BREAKDOWN_WEEKS = 4        # recent full weeks the breakdown tables cover
 # Files
 DB_PATH = DATA_DIR / "fuel.db"
 PRICES_DIR = DATA_DIR / "love's"
-TG_PRICES_CHAT_ID = -5551908421                    # Telegram group "Love's Daily Prices": one Love's sheet a day (user, 2026-11-20)
-TG_PRICES_DIR = PRICES_DIR / "telegram"            # its sheets, pulled by the prices job as tg-<message id>.xlsx
 STATEMENTS_DIR = DATA_DIR / "efs"                  # EFS weekly statement PDFs, saved here by hand (one per account per week)
 # Each EFS account (its name on page 1 of its statements) and the Datatruck companies whose cards are on it. The user,
 # 2026-11-19: fuel is paid only through EFS, on these two accounts. The Accounting view looks for Datatruck lines of

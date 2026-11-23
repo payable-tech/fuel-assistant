@@ -1,5 +1,4 @@
-# Telegram through user accounts (Telethon): Bob's account lists the driver groups and saves the Love's sheets posted in
-# their group; the assistant's account sends: the fuel messages (features/engine/job) to the test group and to the driver
+# Telegram through user accounts (Telethon): Bob's account lists the driver groups; the assistant's account sends: the fuel messages (features/engine/job) to the test group and to the driver
 # groups of the trucks in LIVE_UNITS, and the heartbeat's alerts (base/runner/heartbeat).
 import asyncio
 import threading
@@ -7,7 +6,6 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from telethon.sync import TelegramClient
-from telethon.tl.types import InputMessagesFilterDocument
 
 from base import config
 from base.models import TelegramGroup
@@ -36,20 +34,6 @@ def groups() -> list[TelegramGroup]:
 def send(chat_id: int, text: str) -> int:
     with _send_lock, _session(config.TG_SESSION_PATH) as client:
         return client.send_message(_chat(client, chat_id), text, parse_mode="html", link_preview=False).id
-
-
-# Saves every .xlsx posted in a chat after message `after_id` into `folder` as "tg-<message id>.xlsx", with the groups
-# login. Each is written under a temporary name first, so a download cut short never looks like a sheet. Returns the
-# files saved.
-def save_sheets(chat_id: int, after_id: int, folder: Path) -> list[Path]:
-    folder.mkdir(parents=True, exist_ok=True)
-    saved = []
-    with _session(config.TG_GROUPS_SESSION_PATH) as client:
-        for m in client.iter_messages(_chat(client, chat_id), min_id=after_id, filter=InputMessagesFilterDocument):
-            if m.file and (m.file.name or "").lower().endswith(".xlsx"):
-                part = Path(m.download_media(file=str(folder / f"tg-{m.id}.part")))
-                saved.append(part.replace(folder / f"tg-{m.id}.xlsx"))
-    return saved
 
 
 # The chat to write to, as Telegram needs it.

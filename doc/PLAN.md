@@ -156,7 +156,7 @@ they never run in the day (a night missed waits for the next one):
 | Job | Every | Does |
 |---|---|---|
 | `sync_registry` | night | Refresh Samsara, Datatruck and Telegram copies, then relink `trucks` |
-| `load_prices` | 30 min | New sheets posted in the Telegram group "Love's Daily Prices" → data/love's/telegram (Bob's login); sheets not read before → `price_history`; the newest price date → `stores` |
+| `load_prices` | 30 min | Sheets in `data/love's/` not read before → `price_history`; the newest price date → `stores` |
 | `read_statements` | 30 min | EFS statement PDFs in `data/efs` not read before → `efs_statements` / `efs_lines` (~8 s per statement) |
 | `statement_evidence` | 15 min | Per statement, every Samsara truck's engine fuel used, miles and gauge → `statement_burn` (4 calls); per diesel fill, the gauge's biggest rise and the truck's place → `fill_evidence` (two small calls per fill, 10 trucks per run). Both kept |
 | `refresh_orders` | 15 min | Active Datatruck orders + stops → `dt_orders` / `dt_stops` |
