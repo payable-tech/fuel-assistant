@@ -39,6 +39,10 @@ def register(sub) -> None:
         run=cmd_agent_login)
     sub.add_parser("card-agent", help="run the card agent: answers fuel card requests in the driver groups").set_defaults(
         run=cmd_card_agent)
+    p = sub.add_parser("card-cases", help="save what drivers wrote about their fuel cards as test cases (reads the groups)")
+    p.add_argument("--days", type=int, default=14, help="how far back to read (default 14)")
+    p.add_argument("--most", type=int, default=60, help="the most cases to save, newest first (default 60)")
+    p.set_defaults(run=cmd_card_cases)
 
 
 # Opens the eManager window and keeps its login alive until Ctrl+C. eManager still ends every login after 24 hours.
@@ -86,6 +90,13 @@ def cmd_card_agent(args) -> None:
     logging.getLogger().addHandler(handler)
     logging.getLogger(__name__).info("Card agent starting (acts: %s)", cards_settings.AGENT_ACT)
     card_agent.run()
+
+
+# Reads the truck groups' history for what drivers wrote about their fuel cards and saves the cases under
+# data/card_cases, for the replay. Only reads: nothing is written to any group.
+def cmd_card_cases(args) -> None:
+    from features.cards import cases
+    print(f"{cases.collect(args.days, args.most)} cases saved in {cases.CASES_DIR}")
 
 
 # Lists one account's cards the way Card Lookup finds them, and a card's own page when exactly one is found. Read only.
