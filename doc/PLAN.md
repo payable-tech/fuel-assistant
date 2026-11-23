@@ -115,7 +115,8 @@ Fuel Assistent project/
 │  │  ├─ sources/             the outside services: samsara.py · datatruck_web.py · datatruck.py (orders) · loves.py (price sheets, store pages)
 │  │  │                       · telegram.py · google.py (roads, truck stops as the urgent
 │  │  │                       backup, can Google be reached)
-│  │  ├─ store/db.py          schema, views, queries
+│  │  ├─ store/               schema.py (every table and view) · db.py (the functions that read and write
+│  │  │                       them, in sections that follow the tables)
 │  │  ├─ fleet/               copies.py (the safe copy step and the plain copies: positions, loads,
 │  │  │                       purchases) · price_sheets.py (Love's sheets) · link_trucks.py · link_rules.py (pure)
 │  │  └─ runner/              scheduler.py (runs the timetable's jobs) · watchdog.py (restarts a frozen
