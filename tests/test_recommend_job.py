@@ -168,7 +168,7 @@ def test_old_road_without_stops_kept(monkeypatch):
 def test_low_fuel_alarm_off_tells_nothing(sent, monkeypatch):
     monkeypatch.setattr(engine_settings, "LOW_FUEL_ALARM", False)
     monkeypatch.setattr(config, "LIVE_UNITS", ("340",))
-    state = job._act(truck("340", -100), None, [], None, Decision("urgent", reason="low"), [], None, False, [], AT)
+    state = job._act(truck("340", -100), None, None, Decision("urgent", reason="low"), job.Timing(AT, None, False, []), [], [])
     with db.connect() as conn:
         assert state == "urgent" and sent == [] and db.recommendations(conn, "2026-11-01") == []
 
