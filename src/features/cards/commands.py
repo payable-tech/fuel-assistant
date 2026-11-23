@@ -43,6 +43,9 @@ def register(sub) -> None:
     p.add_argument("--days", type=int, default=14, help="how far back to read (default 14)")
     p.add_argument("--most", type=int, default=60, help="the most cases to save, newest first (default 60)")
     p.set_defaults(run=cmd_card_cases)
+    p = sub.add_parser("card-replay", help="play the saved cases to the card agent on the real eManager; sends nothing")
+    p.add_argument("--most", type=int, default=10, help="how many cases, newest first (default 10)")
+    p.set_defaults(run=cmd_card_replay)
 
 
 # Opens the eManager window and keeps its login alive until Ctrl+C. eManager still ends every login after 24 hours.
@@ -97,6 +100,15 @@ def cmd_card_agent(args) -> None:
 def cmd_card_cases(args) -> None:
     from features.cards import cases
     print(f"{cases.collect(args.days, args.most)} cases saved in {cases.CASES_DIR}")
+
+
+# Plays the saved cases to the card agent as live tags, on the real eManager (log in in its window first). Nothing is
+# sent to a driver or the office, and the only card changed is the test card, which is put back. Writes a report.
+def cmd_card_replay(args) -> None:
+    from features.cards import replay
+    logging.getLogger().setLevel(logging.INFO)
+    window.start()
+    print(f"Report: {replay.run(args.most)}")
 
 
 # Lists one account's cards the way Card Lookup finds them, and a card's own page when exactly one is found. Read only.

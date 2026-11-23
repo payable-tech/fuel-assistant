@@ -35,3 +35,9 @@ AGENT_OFFICE_CHAT_ID = int(os.getenv("AGENT_OFFICE_CHAT_ID", "").strip() or 0) o
 # or changed for it. AGENT_TEST_ONLY=1 makes the agent ignore every other group (and skip the eManager window).
 AGENT_TEST_CHAT_ID = int(os.getenv("AGENT_TEST_CHAT_ID", "").strip() or 0) or None
 AGENT_TEST_ONLY = os.getenv("AGENT_TEST_ONLY", "").strip() == "1"
+
+# The replay (features/cards/replay) plays real driver cases to the agent against the real eManager. The one card it
+# may change is the user's own test card, parked on unit 99999 as ALIF UZ CORP, INACTIVE (the user, 2026-11-22).
+TEST_CARD_ACCOUNT = "ALIF"
+TEST_CARD_ID = "1000085144314"     # eManager's id of the card ending 0672
+TEST_CARD_UNIT = "99999"
