@@ -134,8 +134,8 @@ Fuel Assistent project/
 │     ├─ accounting/          efs_statement.py (the EFS statement PDFs in data/efs) · read_statements.py (job)
 │     │                       · statement_evidence.py (job) · pure: accounting.py (a statement as a tree)
 │     │                       · fill_checks.py (Love's promised vs charged) · evidence.py (Samsara's evidence)
-│     └─ cards/               job.py (the card agent) · rules.py (the owner's card rule, pure) · claude.py
-│                             · telegram_agent.py · commands.py (the card commands of main.py) · emanager/ (§5.7):
+│     └─ cards/               agent.py (hears a tag, works one request) · tools.py (what Claude may do) · rules.py
+│                             (every decision, pure) · wording.py (every word) · claude.py · telegram_agent.py · commands.py · emanager/ (§5.7):
 │                             window.py (its Chrome window) · page.py (reading a page) · site.py (login, account switch,
 │                             allowed buttons) · fuel_cards.py (the card tools) · fake_cards.py (a pretend eManager for
 │                             the test group)
@@ -328,7 +328,7 @@ default.
   delete prompt, transfer, reset PIN and cancel are refused in code). Every change sends the card's other settings back as its page showed them, then opens
   the card again and stops if anything is not as asked. A card in override mode is locked until the override is off.
 
-### 5.8 The card agent (`features/cards/job.py`, `features/cards/rules.py`, `features/cards/claude.py`, `features/cards/telegram_agent.py`; the user's go 2026-11-23)
+### 5.8 The card agent (`features/cards/agent.py`, `tools.py`, `rules.py`, `wording.py`, `claude.py`, `telegram_agent.py`; the user's go 2026-11-23)
 Built the way bob-agent's Telegram agent works (`D:/bob-agent/src/agent`, `src/workers/fuel_cards`).
 - **Claude** runs through the Claude Agent SDK on this PC's Claude Code login (the plan, not API billing), `AGENT_MODEL`,
   with none of Claude Code's own tools or settings: only four tools (`declined_card`, `look_up_card`, `reply_to_driver`,

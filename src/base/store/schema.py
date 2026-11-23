@@ -357,7 +357,7 @@ CREATE TABLE IF NOT EXISTS health_alerts (
     told      INTEGER NOT NULL DEFAULT 0
 );
 
--- Writer: the card agent (features/cards/job). One row per message that woke it: the truck of that group, what it decided,
+-- Writer: the card agent (features/cards/agent). One row per message that woke it: the truck of that group, what it decided,
 -- the tools it used, and the card it opened. Kept: the audit of every card it changed, and its cooldown.
 CREATE TABLE IF NOT EXISTS agent_runs (
     chat_id     INTEGER NOT NULL,

@@ -76,10 +76,10 @@ def cmd_agent_login(args) -> None:
     print(f"Card agent logged in as {telegram_agent.login()}.")
 
 
-# Runs the card agent until stopped (features/cards/job), with its own log file data/agent.log (only `serve` writes
+# Runs the card agent until stopped (features/cards/agent), with its own log file data/agent.log (only `serve` writes
 # fuel.log). run_agent.bat starts it again if it stops.
 def cmd_card_agent(args) -> None:
-    from features.cards import job as card_agent
+    from features.cards import agent as card_agent
     handler = RotatingFileHandler(config.DATA_DIR / "agent.log", maxBytes=config.LOG_MAX_MB * 1024 * 1024,
                                   backupCount=config.LOG_FILES_KEPT, encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))

@@ -15,7 +15,7 @@ EMANAGER_USERS = {"ALIF": "Bobalif", "DT": "BOB_DT"}
 # Each account's card policies. Listing every card is one lookup per policy: eManager's "All Cards" finds nothing.
 EMANAGER_POLICIES = {"ALIF": ("1", "2"), "DT": ("1",)}
 
-# The card agent (features/cards/job, the user's go 2026-11-23): wakes when the assistant's account is tagged in a driver
+# The card agent (features/cards/agent, the user's go 2026-11-23): wakes when the assistant's account is tagged in a driver
 # group, reads the chat, and when the driver needs his fuel card opened, opens it for one fill and tells him to try
 # again, the way Bob does. Its own Telegram login on the same account, apart from the engine's (one login file can't be
 # opened twice); `main.py agent-login` makes it once.

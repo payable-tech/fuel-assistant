@@ -11,7 +11,7 @@ import pytest
 from base import config
 from base.models import ChatLine, DatatruckDriver, EfsCard, EfsCardRow, Store, Truck
 from base.store import db
-from features.cards import job, rules, settings as cards_settings
+from features.cards import agent, rules, settings as cards_settings, tools, wording
 from features.cards.rules import NeedsPerson
 
 NOW = datetime(2026, 11, 23, 15, 0, tzinfo=timezone.utc)
@@ -39,9 +39,9 @@ def world(tmp_path, monkeypatch):
     w = SimpleNamespace(cards={}, opened=[], writes=[])
     for c in (card("c10001", "3189", "JOHN DOE"), card("c20002", "3189", "MARY ROE"), card("c30003", "31890", "JOHN DOE")):
         w.cards[c[0].card_id] = c
-    monkeypatch.setattr(job.fuel_cards, "cards", lambda account, by, text:
+    monkeypatch.setattr(tools.fuel_cards, "cards", lambda account, by, text:
                         [r for r, _ in w.cards.values() if account == "DT" and r.unit.startswith(text)])
-    monkeypatch.setattr(job.fuel_cards, "card", lambda account, row: w.cards[row.card_id][1])
+    monkeypatch.setattr(tools.fuel_cards, "card", lambda account, row: w.cards[row.card_id][1])
 
     def override(account, row, times):
         w.opened.append((account, row.card_id, times))
@@ -51,16 +51,16 @@ def world(tmp_path, monkeypatch):
         w.writes.append((chat, text, reply_to))
         return 1
 
-    monkeypatch.setattr(job.fuel_cards, "set_override", override)
-    monkeypatch.setattr(job.telegram_agent, "write", write)
+    monkeypatch.setattr(tools.fuel_cards, "set_override", override)
+    monkeypatch.setattr(tools.telegram_agent, "write", write)
     return w
 
 
 # A request from unit 3189's group, message 42, written by `sender`.
-def task(sender: str = "John Doe", drivers=(JOHN,), text: str = "card declined at Pilot, open please") -> job.Task:
+def task(sender: str = "John Doe", drivers=(JOHN,), text: str = "card declined at Pilot, open please") -> tools.Request:
     with db.connect() as conn:
         db.claim_agent_run(conn, -100, 42, "3189", NOW, text)
-    return job.Task(None, -100, 42, text, sender, TRUCK, list(drivers))
+    return tools.Request(None, -100, 42, text, sender, TRUCK, list(drivers))
 
 
 # Runs one of the agent's async tools and returns its answer's text.
@@ -110,7 +110,7 @@ def test_rule():
 def test_woken_and_facts():
     assert rules.woken("thanks", True) and not rules.woken("ok thanks", False) and rules.woken("card declined", False)
     assert rules.only_a_tag("@desk ") and not rules.only_a_tag("@desk card")
-    text = rules.facts(TRUCK, [JOHN], "watch", [Store("7", "Seguin", "TX", 30.0, -96.6, 6.0, 5.5, "2026-11-23")], [], NOW)
+    text = wording.facts(TRUCK, [JOHN], "watch", [Store("7", "Seguin", "TX", 30.0, -96.6, 6.0, 5.5, "2026-11-23")], [], NOW)
     assert "unit 3189" in text and "22%" in text and "Seguin" in text and "4455" not in text
 
 
@@ -202,12 +202,12 @@ def test_on_tag(world, monkeypatch):
     async def work(t, chat):
         worked.append((t.chat_id, t.message_id, t.sender))
 
-    monkeypatch.setattr(job.telegram_agent, "chat_before", chat_before)
-    monkeypatch.setattr(job, "work", work)
-    monkeypatch.setattr(job, "_truck_of", lambda chat_id: (TRUCK, [JOHN]) if chat_id == -100 else (None, []))
+    monkeypatch.setattr(agent.telegram_agent, "chat_before", chat_before)
+    monkeypatch.setattr(agent, "work", work)
+    monkeypatch.setattr(agent, "_truck_of", lambda chat_id: (TRUCK, [JOHN]) if chat_id == -100 else (None, []))
 
     def tag(chat_id: int, msg_id: int, text: str, named: bool = True) -> None:
-        asyncio.run(job.on_tag(None, SimpleNamespace(message=text, chat_id=chat_id, id=msg_id), named))
+        asyncio.run(agent.on_tag(None, SimpleNamespace(message=text, chat_id=chat_id, id=msg_id), named))
 
     tag(-555, 1, "card declined")              # the test group, where its reports go
     tag(-200, 2, "card declined")              # a group linked to no truck
@@ -232,10 +232,10 @@ def test_work(world, monkeypatch):
     async def emanager():
         return alive[0]
 
-    monkeypatch.setattr(job.claude, "run", model)
-    monkeypatch.setattr(job, "_emanager_alive", emanager)
-    monkeypatch.setattr(job, "prompt", lambda t, chat: "")
-    asyncio.run(job.work(task(), []))
+    monkeypatch.setattr(agent.claude, "run", model)
+    monkeypatch.setattr(agent, "_emanager_alive", emanager)
+    monkeypatch.setattr(agent, "prompt", lambda t, chat: "")
+    asyncio.run(agent.work(task(), []))
     with db.connect() as conn:
         assert tuple(conn.execute("SELECT outcome, opened_card FROM agent_runs WHERE message_id = 42").fetchone()) == \
             ("opened c10001, replied", "c10001")
@@ -245,7 +245,7 @@ def test_work(world, monkeypatch):
     t.message_id = 43
     with db.connect() as conn:
         db.claim_agent_run(conn, -100, 43, "3189", NOW, "x")
-    asyncio.run(job.work(t, []))
+    asyncio.run(agent.work(t, []))
     with db.connect() as conn:
         assert "not logged in" in conn.execute("SELECT outcome FROM agent_runs WHERE message_id = 43").fetchone()[0]
     assert "eManager is not logged in" in world.writes[-1][1]
@@ -254,11 +254,11 @@ def test_work(world, monkeypatch):
         raise RuntimeError("Claude Code is not logged in")
 
     alive[0] = True
-    monkeypatch.setattr(job.claude, "run", broken)
+    monkeypatch.setattr(agent.claude, "run", broken)
     t.message_id = 44
     with db.connect() as conn:
         db.claim_agent_run(conn, -100, 44, "3189", NOW, "x")
-    asyncio.run(job.work(t, []))
+    asyncio.run(agent.work(t, []))
     with db.connect() as conn:
         assert conn.execute("SELECT outcome FROM agent_runs WHERE message_id = 44").fetchone()[0] == "failed"
     assert "could not finish" in world.writes[-1][1]
