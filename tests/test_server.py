@@ -2,8 +2,7 @@
 # page's version that tells an open page to reload itself.
 import os
 
-from base import config
-from features.dashboard import server
+from features.dashboard import server, settings as dashboard_settings
 
 
 # This PC and the office network are let in; a Radmin VPN address (26.x) and a public one are not.
@@ -15,7 +14,7 @@ def test_who_may_open_the_dashboard():
 # The page's version is its newest file's change time, the vendored libraries left out, so an open page reloads
 # itself after an update of the page but not of a library.
 def test_web_version(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "WEB_DIR", tmp_path)
+    monkeypatch.setattr(dashboard_settings, "WEB_DIR", tmp_path)
     page, lib = tmp_path / "js" / "app.js", tmp_path / "vendor" / "lib.js"
     for f in (page, lib):
         f.parent.mkdir()

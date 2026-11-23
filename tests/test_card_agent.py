@@ -11,7 +11,7 @@ import pytest
 from base import config
 from base.models import ChatLine, DatatruckDriver, EfsCard, EfsCardRow, Store, Truck
 from base.store import db
-from features.cards import job, rules
+from features.cards import job, rules, settings as cards_settings
 from features.cards.rules import NeedsPerson
 
 NOW = datetime(2026, 11, 23, 15, 0, tzinfo=timezone.utc)
@@ -34,8 +34,8 @@ def card(card_id: str, unit: str, driver: str, status: str = "ACTIVE", override:
 def world(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "t.db")
     monkeypatch.setattr(config, "TEST_CHAT_ID", -555)
-    monkeypatch.setattr(config, "AGENT_OFFICE_CHAT_ID", None)
-    monkeypatch.setattr(config, "AGENT_ACT", True)
+    monkeypatch.setattr(cards_settings, "AGENT_OFFICE_CHAT_ID", None)
+    monkeypatch.setattr(cards_settings, "AGENT_ACT", True)
     w = SimpleNamespace(cards={}, opened=[], writes=[])
     for c in (card("c10001", "3189", "JOHN DOE"), card("c20002", "3189", "MARY ROE"), card("c30003", "31890", "JOHN DOE")):
         w.cards[c[0].card_id] = c
@@ -153,7 +153,7 @@ def test_held_soon_and_watch_only(world, monkeypatch):
     assert "Needs a person" in said(task().declined_card({})) and world.opened == []
     with db.connect() as conn:
         conn.execute("UPDATE agent_runs SET opened_card = NULL")
-    monkeypatch.setattr(config, "AGENT_ACT", False)
+    monkeypatch.setattr(cards_settings, "AGENT_ACT", False)
     assert "Watch-only" in said(task().declined_card({})) and world.opened == []
     assert "Would open" in world.writes[-1][1]
 
@@ -186,7 +186,7 @@ def test_claude_call(world, monkeypatch, tmp_path):
     assert options.tools == [] and options.permission_mode == "dontAsk" and options.setting_sources == []
     assert options.allowed_tools == ["mcp__fuel__declined_card", "mcp__fuel__look_up_card", "mcp__fuel__reply_to_driver",
                                      "mcp__fuel__hand_to_office"]
-    assert options.model == config.AGENT_MODEL and options.max_turns == claude.MAX_TURNS
+    assert options.model == cards_settings.AGENT_MODEL and options.max_turns == claude.MAX_TURNS
     content = seen["message"][0]["message"]["content"]
     assert content[0]["type"] == "image" and content[-1] == {"type": "text", "text": "the chat"}
 

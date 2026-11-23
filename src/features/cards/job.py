@@ -13,13 +13,13 @@ from base import config
 from base.fuel import is_diesel
 from base.models import ChatLine, DatatruckDriver, EfsCardRow, Truck
 from base.store import db
-from features.cards import claude, efs_cards, efs_chrome, efs_fake, efs_web, rules, telegram_agent
+from features.cards import claude, efs_cards, efs_chrome, efs_fake, efs_web, rules, settings, telegram_agent
 from features.cards.claude import Tool, answer
 from features.cards.efs_chrome import EfsError
 from features.cards.rules import NeedsPerson
 
 log = logging.getLogger(__name__)
-ACCOUNTS = tuple(config.EMANAGER_USERS)   # the eManager accounts a card can be in ("ALIF", "DT")
+ACCOUNTS = tuple(settings.EMANAGER_USERS)   # the eManager accounts a card can be in ("ALIF", "DT")
 WORKSPACE = config.DATA_DIR / "agent"     # where the Claude runs keep their conversations
 JOIN_MINUTES = 10                         # a bare tag this soon after a request in the same group joins it: no new run
 _one_run = asyncio.Lock()                 # one request at a time, in the order they came
@@ -28,24 +28,24 @@ _efs = asyncio.Lock()                     # one eManager window: one call at a t
 
 # Forever: opens the eManager window, keeps its login alive, and answers every tag in the truck groups.
 def run() -> None:
-    if not config.AGENT_TEST_ONLY:  # the test group's card is a pretend one: no eManager needed
+    if not settings.AGENT_TEST_ONLY:  # the test group's card is a pretend one: no eManager needed
         efs_chrome.start()
     asyncio.run(_main())
 
 
 # The listener and the login keeper side by side; either stopping ends the program (run_agent.bat starts it again).
 async def _main() -> None:
-    await asyncio.gather(telegram_agent.listen(on_tag), *([] if config.AGENT_TEST_ONLY else [_keep_login()]))
+    await asyncio.gather(telegram_agent.listen(on_tag), *([] if settings.AGENT_TEST_ONLY else [_keep_login()]))
 
 
 # A tag heard. Not in its own office or test chat, only in a group linked to a truck, worth waking for, not a bare tag
 # right after a request there, and never the same message twice; then the chat is read and the request worked.
 async def on_tag(client, message, named: bool) -> None:
     text = message.message or ""
-    test = message.chat_id == config.AGENT_TEST_CHAT_ID
-    if (config.AGENT_TEST_ONLY and not test) or not rules.woken(text, named):
+    test = message.chat_id == settings.AGENT_TEST_CHAT_ID
+    if (settings.AGENT_TEST_ONLY and not test) or not rules.woken(text, named):
         return
-    if not test and message.chat_id in (config.AGENT_OFFICE_CHAT_ID, config.TEST_CHAT_ID):
+    if not test and message.chat_id in (settings.AGENT_OFFICE_CHAT_ID, config.TEST_CHAT_ID):
         return  # its reports go there: a reply in them is the office's, not a driver's
     truck, drivers = _truck_of(message.chat_id)
     if truck is None:
@@ -56,8 +56,8 @@ async def on_tag(client, message, named: bool) -> None:
             return  # "@desk" again while the request just taken there is worked: it joins that one
         if not db.claim_agent_run(conn, message.chat_id, message.id, truck.unit, now, text[:2000]):
             return
-    chat = await telegram_agent.chat_before(client, message.chat_id, message.id, config.AGENT_HISTORY,
-                                            config.AGENT_MAX_PHOTOS)
+    chat = await telegram_agent.chat_before(client, message.chat_id, message.id, settings.AGENT_HISTORY,
+                                            settings.AGENT_MAX_PHOTOS)
     async with _one_run:
         await work(Task(client, message.chat_id, message.id, text, chat[-1].sender if chat else "", truck, drivers), chat)
 
@@ -104,7 +104,7 @@ def prompt(task: "Task", chat: list[ChatLine]) -> str:
 
 # The truck whose group this is, and its active drivers in Datatruck; (None, []) for a group linked to no truck.
 def _truck_of(chat_id: int) -> tuple[Truck | None, list[DatatruckDriver]]:
-    if chat_id == config.AGENT_TEST_CHAT_ID:
+    if chat_id == settings.AGENT_TEST_CHAT_ID:
         return efs_fake.TRUCK, efs_fake.DRIVERS
     with db.connect() as conn:
         truck = next((t for t in db.fleet(conn) if t.chat_id == chat_id), None)
@@ -131,7 +131,7 @@ async def _keep_login() -> None:
             (log.info if alive else log.warning)("eManager %s", "logged in" if alive else
                                                  "NOT logged in: log in in its window")
             was = alive
-        await asyncio.sleep(config.EMANAGER_HEARTBEAT_SECONDS if alive else 60)
+        await asyncio.sleep(settings.EMANAGER_HEARTBEAT_SECONDS if alive else 60)
 
 
 # One request being worked: where it came from, who wrote it, the truck, and what was done. Its tools are what Claude
@@ -143,7 +143,7 @@ class Task:
                  drivers: list[DatatruckDriver]):
         self.client, self.chat_id, self.message_id, self.text, self.sender = client, chat_id, message_id, text, sender
         self.truck, self.drivers, self.unit = truck, drivers, truck.unit
-        self.test = chat_id == config.AGENT_TEST_CHAT_ID
+        self.test = chat_id == settings.AGENT_TEST_CHAT_ID
         self.efs = efs_fake if self.test else efs_cards  # the test group's card is a pretend one
         self.steps: list[str] = []
         self.opened: str | None = None
@@ -184,7 +184,7 @@ class Task:
             kind, ask_first = rules.rule(card, account, row)
             with db.connect() as conn:
                 soon = rules.too_soon(db.agent_last_opened(conn, row.card_id), datetime.now(timezone.utc),
-                                      config.AGENT_REOPEN_HOURS)
+                                      settings.AGENT_REOPEN_HOURS)
             if soon:
                 raise NeedsPerson(f"{rules.named(account, row)}: {soon}")
         except (NeedsPerson, EfsError) as why:
@@ -198,7 +198,7 @@ class Task:
                                                "is to activate it, then open it for 1 fill; a person decides."})
             return answer("The card is not active; the office decides. Tell the driver the card is being checked and "
                           "the office will write when it is ready.")
-        if not config.AGENT_ACT:
+        if not settings.AGENT_ACT:
             self.steps.append(f"declined_card: would open {rules.named(account, row)} (AGENT_ACT is off)")
             await self.office(f"🔍 Would open {rules.named(account, row)} for unit {self.unit}: 1 fill, all locations. "
                               f"Driver wrote: {self.text[:300]}")
@@ -228,7 +228,7 @@ class Task:
             return answer("Not sent: no card was opened for this request; don't say it is ready.", error=True)
         self.replied = True
         self.steps.append(f"reply_to_driver: {text[:200]}")
-        if not config.AGENT_ACT:
+        if not settings.AGENT_ACT:
             await self.office(f"🔍 Would reply in unit {self.unit}'s group: {text}")
             return answer("Watch-only: the reply went to the office, not the driver.")
         await telegram_agent.write(self.client, self.chat_id, text, reply_to=self.message_id)
@@ -244,7 +244,7 @@ class Task:
 
     # Posts to the office's chat (the test group when none is set); a post that fails is logged, never raised.
     async def office(self, text: str) -> None:
-        chat = config.AGENT_OFFICE_CHAT_ID or config.TEST_CHAT_ID
+        chat = settings.AGENT_OFFICE_CHAT_ID or config.TEST_CHAT_ID
         if not chat:
             log.warning("No office chat for the card agent: %s", text)
             return
@@ -268,7 +268,7 @@ class Task:
     async def _open(self, account: str, row: EfsCardRow) -> dict:
         try:
             async with _efs:
-                after = await asyncio.to_thread(self.efs.set_override, account, row, config.AGENT_OPEN_FILLS)
+                after = await asyncio.to_thread(self.efs.set_override, account, row, settings.AGENT_OPEN_FILLS)
         except EfsError as error:
             self.steps.append(f"declined_card: eManager did not open it, {error}")
             await self.hand_to_office({"note": f"Opening {rules.named(account, row)} failed in eManager: {error}"})
@@ -279,7 +279,7 @@ class Task:
         self.opened, self.opened_at = row.card_id, datetime.now(timezone.utc)
         with db.connect() as conn:  # at once: the audit and the cooldown survive a crash after this
             db.record_agent_open(conn, self.chat_id, self.message_id, row.card_id, self.opened_at)
-        self.steps.append(f"declined_card: opened {rules.named(account, row)} for {config.AGENT_OPEN_FILLS} fill")
-        await self.office(f"🔓 Opened {rules.named(account, row)} for unit {self.unit}: {config.AGENT_OPEN_FILLS} fill, "
+        self.steps.append(f"declined_card: opened {rules.named(account, row)} for {settings.AGENT_OPEN_FILLS} fill")
+        await self.office(f"🔓 Opened {rules.named(account, row)} for unit {self.unit}: {settings.AGENT_OPEN_FILLS} fill, "
                           f"all locations. Driver wrote: {self.text[:300]}")
         return answer("The card is open for one fill at any station. Tell the driver: card is ready, try again now.")

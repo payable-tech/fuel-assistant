@@ -9,7 +9,7 @@ import pytest
 from base import config
 from base.models import Decision, FuelLine, Order, Recommendation, Stop, SyncedTruck, Trip, Truck, TruckWatch
 from base.store import db
-from features.engine import job, message
+from features.engine import job, message, settings as engine_settings
 
 TEST_GROUP = -5383830098
 AT = datetime(2026, 11, 2, 12, 0, tzinfo=timezone.utc)
@@ -166,7 +166,7 @@ def test_old_road_without_stops_kept(monkeypatch):
 
 # With the low-fuel message switched off, an emergency is only the truck's state: nothing is sent or recorded.
 def test_low_fuel_alarm_off_tells_nothing(sent, monkeypatch):
-    monkeypatch.setattr(config, "LOW_FUEL_ALARM", False)
+    monkeypatch.setattr(engine_settings, "LOW_FUEL_ALARM", False)
     monkeypatch.setattr(config, "LIVE_UNITS", ("340",))
     state = job._act(truck("340", -100), None, [], None, Decision("urgent", reason="low"), [], None, False, [], AT)
     with db.connect() as conn:

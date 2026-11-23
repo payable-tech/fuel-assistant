@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 
 from websockets.sync.client import connect
 
-from base import config
+from features.cards import settings
 
 HOME = "https://emgr.efsllc.com/"
 # Where Windows installs Chrome.
@@ -34,9 +34,9 @@ def start(wait_seconds: float = 20) -> None:
     program = next((path for path in CHROME if path.is_file()), None)
     if program is None:
         raise EfsError("Chrome is not installed where Windows keeps it. Install Google Chrome, then try again.")
-    config.EMANAGER_PROFILE.mkdir(parents=True, exist_ok=True)
-    subprocess.Popen([str(program), f"--remote-debugging-port={config.EMANAGER_CHROME_PORT}",
-                      f"--user-data-dir={config.EMANAGER_PROFILE}", "--no-first-run", "--no-default-browser-check",
+    settings.EMANAGER_PROFILE.mkdir(parents=True, exist_ok=True)
+    subprocess.Popen([str(program), f"--remote-debugging-port={settings.EMANAGER_CHROME_PORT}",
+                      f"--user-data-dir={settings.EMANAGER_PROFILE}", "--no-first-run", "--no-default-browser-check",
                       HOME])
     deadline = time.monotonic() + wait_seconds
     while not _tabs():
@@ -77,7 +77,7 @@ def _emanager_tab() -> str:
 # The tabs the window reports; empty when it is not running.
 def _tabs() -> list[dict]:
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{config.EMANAGER_CHROME_PORT}/json/list", timeout=2) as answer:
+        with urllib.request.urlopen(f"http://127.0.0.1:{settings.EMANAGER_CHROME_PORT}/json/list", timeout=2) as answer:
             return json.load(answer)
     except OSError:
         return []

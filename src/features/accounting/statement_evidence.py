@@ -6,11 +6,11 @@ import logging
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 
-from base import config, fuel, geo
+from base import fuel, geo
 from base.models import EfsStatement, FillEvidence, FuelLine, TruckBurn
 from base.sources import samsara
 from base.store import db
-from features.accounting import accounting, evidence
+from features.accounting import accounting, evidence, settings
 
 log = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ GPS_AROUND = timedelta(minutes=5)  # the truck's place is its GPS point nearest 
 
 # Looks up what is missing, newest statement first: the fuel used, then the fills of up to `trucks` trucks (None: all).
 # Returns how many fills were looked up.
-def run(trucks: int | None = config.EVIDENCE_TRUCKS_PER_RUN) -> int:
+def run(trucks: int | None = settings.EVIDENCE_TRUCKS_PER_RUN) -> int:
     with db.connect() as conn:
         statements = db.statements(conn)
         samsara_ids = {t.unit: t.samsara_id for t in db.fleet(conn)}
@@ -67,7 +67,7 @@ def _burn(statement_no: str, first_day: str, last_day: str) -> None:
     end = datetime.combine(date.fromisoformat(last_day) + timedelta(days=1), time(), fuel.CENTRAL)
     if end > datetime.now(fuel.CENTRAL):
         return
-    fresh = timedelta(days=config.GAUGE_FRESH_DAYS)
+    fresh = timedelta(days=settings.GAUGE_FRESH_DAYS)
     used, before, after = samsara.fuel_used(start, end), samsara.gauges_at(start, fresh), samsara.gauges_at(end, fresh)
     burns = [TruckBurn(statement_no, vid, gallons, miles, before.get(vid), after.get(vid)) for vid, (gallons, miles) in used.items()]
     with db.connect() as conn:
@@ -88,8 +88,8 @@ def _truck(samsara_id: str, fills: list[FuelLine]) -> list[FillEvidence]:
 # Two small calls: the gauge over the hours around the fill, then the GPS just around that moment.
 def _fill(samsara_id: str, line: FuelLine) -> FillEvidence:
     at = fuel.utc(line.fueled_at)
-    start, end = at - timedelta(hours=config.EVIDENCE_BEFORE_H), at + timedelta(hours=config.EVIDENCE_AFTER_H)
-    readings = samsara.fuel_history(samsara_id, at - timedelta(hours=config.EVIDENCE_PARKED_H), end)
+    start, end = at - timedelta(hours=settings.EVIDENCE_BEFORE_H), at + timedelta(hours=settings.EVIDENCE_AFTER_H)
+    readings = samsara.fuel_history(samsara_id, at - timedelta(hours=settings.EVIDENCE_PARKED_H), end)
     rise = evidence.biggest_rise(readings, start, end)
     moment = rise[2] if rise else at
     where = geo.where_at(samsara.gps_history(samsara_id, moment - GPS_AROUND, moment + GPS_AROUND), moment)

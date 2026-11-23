@@ -15,10 +15,10 @@ from base.models import EfsCard, EfsCardRow, Order
 from base.runner import heartbeat, scheduler, watchdog
 from base.sources import telegram
 from base.store import db
-from features.accounting import read_statements, statement_evidence
-from features.cards import efs_cards, efs_chrome, efs_web
+from features.accounting import read_statements, settings as accounting_settings, statement_evidence
+from features.cards import efs_cards, efs_chrome, efs_web, settings as cards_settings
 from features.cards.efs_chrome import EfsError
-from features.dashboard import fill_lookups, server
+from features.dashboard import fill_lookups, server, settings as dashboard_settings
 from features.engine import driver_habits, estimate_burn, estimate_tanks, loads, store_exits
 
 HOLES_SHOWN = 10    # items listed per hole unless --all
@@ -88,7 +88,7 @@ def cmd_prices(args) -> None:
 
 # Reads the EFS statement PDFs saved in data/efs that were not read before.
 def cmd_statements(args) -> None:
-    print(f"{read_statements.run()} new EFS statements read from {config.STATEMENTS_DIR}")
+    print(f"{read_statements.run()} new EFS statements read from {accounting_settings.STATEMENTS_DIR}")
 
 
 # Looks up in Samsara, now and for every truck, what the statements' evidence still lacks (several minutes per statement).
@@ -257,7 +257,7 @@ def cmd_efs_login(args) -> None:
                 print(f"{datetime.now():%H:%M} {said}", flush=True)
                 was = said
             # ask often while waiting for the login, then well inside the 90-minute idle logout
-            time.sleep(config.EMANAGER_HEARTBEAT_SECONDS if alive else 5)
+            time.sleep(cards_settings.EMANAGER_HEARTBEAT_SECONDS if alive else 5)
     except KeyboardInterrupt:
         print("Stopped. The window stays open; without this, eManager logs out after 90 idle minutes.")
 
@@ -288,7 +288,7 @@ def cmd_card_agent(args) -> None:
                                   backupCount=config.LOG_FILES_KEPT, encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     logging.getLogger().addHandler(handler)
-    logging.getLogger(__name__).info("Card agent starting (acts: %s)", config.AGENT_ACT)
+    logging.getLogger(__name__).info("Card agent starting (acts: %s)", cards_settings.AGENT_ACT)
     card_agent.run()
 
 
@@ -355,7 +355,7 @@ def print_card(card: EfsCard) -> None:
 
 # The card lookup that efs-cards and efs-card share: which account, what to look up by, and what to look up.
 def add_card_lookup(p: argparse.ArgumentParser, default_by: str) -> None:
-    p.add_argument("account", choices=sorted(config.EMANAGER_USERS), help="which EFS account")
+    p.add_argument("account", choices=sorted(cards_settings.EMANAGER_USERS), help="which EFS account")
     p.add_argument("--by", choices=["all", *efs_cards.LOOKUPS], default=default_by,
                    help=f"what to look up by (default {default_by})")
     p.add_argument("text", nargs="?", default="", help="what to look up, e.g. a unit number")
@@ -378,7 +378,7 @@ def main() -> None:
     sub.add_parser("burn", help="calibrate the pilot trucks' engines as fuel meters").set_defaults(run=cmd_burn)
     sub.add_parser("exits", help="read the highway and exit of Love's stores from their own pages").set_defaults(run=cmd_exits)
     p = sub.add_parser("serve", help="run the dashboard in the browser")
-    p.add_argument("--port", type=int, default=config.DASHBOARD_PORT)
+    p.add_argument("--port", type=int, default=dashboard_settings.DASHBOARD_PORT)
     p.add_argument("--no-refresh", action="store_true", help="only show the data; don't refresh it automatically")
     p.set_defaults(run=cmd_serve)
     sub.add_parser("login", help="log the assistant's Telegram account in (once)").set_defaults(run=cmd_login)

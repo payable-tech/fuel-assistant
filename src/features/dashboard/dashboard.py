@@ -11,9 +11,9 @@ from base.models import (FleetTruck, FuelLine, FuelStop, Order, Picture, Recomme
                          Trip, Truck, TruckNow, TruckWatch, Zone)
 from base.sources import samsara
 from base.store import db
-from features.accounting import accounting, evidence, fill_checks
-from features.dashboard import fleet_status, nearby
-from features.engine import habits, message, outcomes, recommend
+from features.accounting import accounting, evidence, fill_checks, settings as accounting_settings
+from features.dashboard import fleet_status, nearby, settings
+from features.engine import habits, message, outcomes, recommend, settings as engine_settings
 from features.engine.settings import RULES, truck_now
 
 DRIVEN_CACHE_S = 60  # a truck's road driven and gauge are asked of Samsara at most this often, however often the page asks
@@ -30,14 +30,14 @@ def today() -> date:
 
 # The Trends view: weekly numbers, breakdowns of the recent weeks, data freshness and data holes.
 def baseline_payload(day: date) -> dict:
-    since = (date.fromisoformat(fuel.week_of(day.isoformat())) - timedelta(weeks=config.BASELINE_WEEKS)).isoformat()
+    since = (date.fromisoformat(fuel.week_of(day.isoformat())) - timedelta(weeks=settings.BASELINE_WEEKS)).isoformat()
     with db.connect() as conn:
         lines = db.fuel_lines(conn, since)
         network = fuel.network_by_week(db.network_discounts(conn, since))
         linked_units = {t.unit for t in db.fleet(conn)}
         sources = _sources(conn)
         holes = Counter(row["hole"] for row in db.holes(conn))
-    payload = fuel.baseline(lines, network, day, linked_units, config.BASELINE_WEEKS, config.BREAKDOWN_WEEKS)
+    payload = fuel.baseline(lines, network, day, linked_units, settings.BASELINE_WEEKS, settings.BREAKDOWN_WEEKS)
     payload["sources"] = sources
     payload["holes"] = [{"hole": hole, "count": n} for hole, n in sorted(holes.items())]
     payload["today"] = day.isoformat()
@@ -47,11 +47,11 @@ def baseline_payload(day: date) -> dict:
 # The Live view: this week so far, today, the last days, the newest purchases, who bought outside Love's, the messages
 # sent to drivers and the discount chart. The fuel lines are read once, from the earliest day any of these needs.
 def live_payload(day: date) -> dict:
-    since = day - timedelta(days=config.LIVE_DAYS + 14)  # enough for last week's same hours too
+    since = day - timedelta(days=settings.LIVE_DAYS + 14)  # enough for last week's same hours too
     with db.connect() as conn:
-        lines = db.fuel_lines(conn, min(since.isoformat(), config.LIVE_FROM, _discount_since(since.isoformat())))
-        recs = db.recommendations(conn, config.LIVE_FROM)
-        sheets = db.price_sheets(conn, (since - timedelta(days=config.SHEET_MAX_AGE_DAYS)).isoformat())
+        lines = db.fuel_lines(conn, min(since.isoformat(), settings.LIVE_FROM, _discount_since(since.isoformat())))
+        recs = db.recommendations(conn, settings.LIVE_FROM)
+        sheets = db.price_sheets(conn, (since - timedelta(days=settings.SHEET_MAX_AGE_DAYS)).isoformat())
         stores = {s.store_no: s for s in db.stores(conn)}
         lookups = db.fill_lookups(conn)
         sources = _sources(conn)
@@ -60,15 +60,15 @@ def live_payload(day: date) -> dict:
         refreshes = [_plain(s) for s in db.source_health(conn)]  # how each source's last refresh went
     recent = _from(lines, since.isoformat())
     # the fills outside Love's: what each paid above the cheapest Love's near it
-    above = {l.line_id: nearby.paid_above(l, sheets, stores, lookups, config.NEAR_MI, config.SHEET_MAX_AGE_DAYS)
+    above = {l.line_id: nearby.paid_above(l, sheets, stores, lookups, settings.NEAR_MI, settings.SHEET_MAX_AGE_DAYS)
              for l in recent if fuel.is_diesel(l) and not fuel.is_loves(l)}
-    payload = fuel.live(recent, above, config.LIVE_FEED_SIZE, config.LIVE_DAYS, config.LIVE_OUTSIDE_LIMIT)
+    payload = fuel.live(recent, above, settings.LIVE_FEED_SIZE, settings.LIVE_DAYS, settings.LIVE_OUTSIDE_LIMIT)
     payload["sources"] = sources
     payload["jobs"] = jobs
     payload["health"] = problems
     payload["source_health"] = refreshes
-    payload["near_mi"] = config.NEAR_MI
-    payload["plans"] = _messages_sent(recs, _from(lines, config.LIVE_FROM))  # the page reads them as "plans"
+    payload["near_mi"] = settings.NEAR_MI
+    payload["plans"] = _messages_sent(recs, _from(lines, settings.LIVE_FROM))  # the page reads them as "plans"
     payload["discount"] = discount_payload(lines, payload["plans"]["by_day"], payload["latest"])
     return payload
 
@@ -85,7 +85,7 @@ def discount_payload(lines: list[FuelLine], ours: dict[str, float], latest: str 
 
 # The discount chart's periods, and how many of each it shows.
 def _discount_periods() -> dict[str, int]:
-    return {"day": config.DISCOUNT_DAYS, "week": config.DISCOUNT_WEEKS, "month": config.DISCOUNT_MONTHS}
+    return {"day": settings.DISCOUNT_DAYS, "week": settings.DISCOUNT_WEEKS, "month": settings.DISCOUNT_MONTHS}
 
 
 # The first day the discount chart needs when its newest purchase is on `last` ("YYYY-MM-DD"). An earlier `last` never
@@ -103,7 +103,7 @@ def _from(lines: list[FuelLine], day: str) -> list[FuelLine]:
 # The messages sent to drivers since the first one, and what came of them (features/engine/outcomes.messages_sent), with the
 # live trucks and the goal.
 def _messages_sent(recs: list[Recommendation], lines: list[FuelLine]) -> dict:
-    head = {"units": list(config.LIVE_UNITS), "since": config.LIVE_FROM, "target": config.LOVES_TARGET}
+    head = {"units": list(config.LIVE_UNITS), "since": settings.LIVE_FROM, "target": settings.LOVES_TARGET}
     return head | outcomes.messages_sent(recs, _outcomes(recs, lines), lines)
 
 
@@ -113,8 +113,8 @@ def drivers_payload() -> dict:
     with db.connect() as conn:
         stops = db.fuel_stops(conn)
         pilot_units = {t.unit for t in db.pilot(conn)}
-    found = habits.habits(stops, config.RAN_LOW_PCT, config.TOP_OFF_GAL)
-    return {"days": config.HABIT_DAYS, "low_pct": config.RAN_LOW_PCT, "top_off_gal": config.TOP_OFF_GAL,
+    found = habits.habits(stops, settings.RAN_LOW_PCT, settings.TOP_OFF_GAL)
+    return {"days": engine_settings.HABIT_DAYS, "low_pct": settings.RAN_LOW_PCT, "top_off_gal": settings.TOP_OFF_GAL,
             "habits": [asdict(h) | {"pilot": h.unit in pilot_units} for h in found],
             "stops": [[s.gauge_before, s.gauge_after, s.loves] for s in stops if s.gauge_before is not None]}
 
@@ -129,7 +129,7 @@ def fleet_payload() -> dict:
         samsara_at = db.newest_data(conn)[0]
         refreshed = {table: at for table, _, at in db.status(conn)}
     stale = timedelta(hours=config.ACTIVE_HOURS)
-    fueled_since = f"{now.astimezone(fuel.CENTRAL) - timedelta(days=config.FLEET_FUELED_DAYS):%Y-%m-%d %H:%M}"
+    fueled_since = f"{now.astimezone(fuel.CENTRAL) - timedelta(days=settings.FLEET_FUELED_DAYS):%Y-%m-%d %H:%M}"
     copies = [refreshed[t] for t in ("dt_trucks", "dt_drivers", "fuel_cards") if refreshed[t]]
     return {"samsara_at": samsara_at.isoformat() if samsara_at else None, "synced_at": min(copies, default=None),
             "trucks": [_fleet_row(t, named, now, stale, fueled_since) for t in trucks]}
@@ -155,7 +155,7 @@ def recommend_payload() -> dict:
         newest_sheet = max((s.price_date for s in db.stores(conn)), default=None)
     told = {r.unit: r for r in reversed(recs) if r.status == "open"}
     came = list(_outcomes(recs, lines).values())
-    return {"days": config.RECOMMEND_DAYS, "price_date": newest_sheet, "count": len(recs), "fueled": len(came),
+    return {"days": settings.RECOMMEND_DAYS, "price_date": newest_sheet, "count": len(recs), "fueled": len(came),
             "live": list(config.LIVE_UNITS), "fueled_there": sum(o["there"] for o in came), "saved": sum(o["saved"] for o in came),
             "trucks": [_truck_row(t, watches.get(t.unit), told.get(t.unit)) for t in pilot]}
 
@@ -195,9 +195,9 @@ def recommend_truck(unit: str) -> dict:
             "fuel_at": truck.fuel_at.isoformat() if truck.fuel_at else None, "tank_gal": truck.tank_gal, "place": truck.place,
             "at": [truck.lat, truck.lng] if truck.lat is not None else None,
             "state": watch.state if watch else "not looked at yet", "looked_at": watch.at.isoformat() if watch else None,
-            "reserve_pct": config.RESERVE_PCT, "told": _plain(told) if told else None,
+            "reserve_pct": engine_settings.RESERVE_PCT, "told": _plain(told) if told else None,
             "recommendations": [_plain(r) | {"outcome": came.get(r.rec_id)} for r in recs],
-            "own_fills": [p for p in own if p["at"] >= config.RECOMMEND_FROM],
+            "own_fills": [p for p in own if p["at"] >= settings.RECOMMEND_FROM],
             "trips": [_trip_item(t, recs, watch) for t in kept], "road": _road_view(truck, watch, told, stores, orders)}
 
 
@@ -209,17 +209,17 @@ def _road_view(truck: Truck, watch: TruckWatch | None, told: Recommendation | No
         return None
     line = list(watch.line)
     here = truck_now(watch.fuel_pct, watch.mile or 0.0, truck.tank_gal, watch.forecast_mpg, watch.cautious_mpg, watch.usual)
-    near = geo.stores_along(line, stores, config.NEARBY_MI, config.ROUTE_STEP_MI)
-    stops, off_road = recommend.split_by_road(near, config.CORRIDOR_MI, config.DETOUR_ROAD_FACTOR)
+    near = geo.stores_along(line, stores, engine_settings.NEARBY_MI, engine_settings.ROUTE_STEP_MI)
+    stops, off_road = recommend.split_by_road(near, engine_settings.CORRIDOR_MI, engine_settings.DETOUR_ROAD_FACTOR)
     seen = recommend.picture(here, stops, watch.route_mi, RULES, _told_plan(told, stops + off_road, line, here.mile), off_road)
     order = next((o for o in orders if o.order_id == watch.order_id), None)
-    return {"line": geo.thin(line, config.MAP_STEP_MI), "made_at": watch.road_made_at.isoformat(), "load_id": watch.load_id,
+    return {"line": geo.thin(line, engine_settings.MAP_STEP_MI), "made_at": watch.road_made_at.isoformat(), "load_id": watch.load_id,
             "route_mi": watch.route_mi, "mile": here.mile, "live_mpg": watch.live_mpg, "live_used": watch.live_used,
             "forecast_mpg": here.forecast_mpg, "cautious_mpg": here.cautious_mpg, "usual": _plain(here.usual),
             "usual_known": watch.usual_known, "price_date": max((s.store.price_date for s in stops), default=None),
             "stops": _stops((s.kind, s.city, s.state, s.lat, s.lng) for s in (order.stops if order else ())),
-            **_choice(here, told, seen), "told": told is not None, "look_mi": config.LOOK_MI, "corridor_mi": config.CORRIDOR_MI,
-            "above_usual": config.ABOVE_USUAL_PTS,
+            **_choice(here, told, seen), "told": told is not None, "look_mi": engine_settings.LOOK_MI, "corridor_mi": engine_settings.CORRIDOR_MI,
+            "above_usual": engine_settings.ABOVE_USUAL_PTS,
             "loves": [_plain(v) for v in seen.views], "nearby": _nearby(off_road, here),
             "zones": [_zone(line, z) for z in seen.zones]}
 
@@ -230,7 +230,7 @@ def _told_plan(told: Recommendation | None, stops: list[StoreOnRoute], line: lis
                mile: float) -> tuple[StoreOnRoute, float | None] | None:
     if not told:
         return None
-    stop = recommend.told_stop(told, stops, line, mile, config.TRUCK_STOP_OFF_MI, config.ROUTE_STEP_MI)
+    stop = recommend.told_stop(told, stops, line, mile, engine_settings.TRUCK_STOP_OFF_MI, engine_settings.ROUTE_STEP_MI)
     return (stop, told.gallons if told.then_station else None) if stop else None
 
 
@@ -247,8 +247,8 @@ def _choice(here: TruckNow, told: Recommendation | None, seen: Picture) -> dict:
 
 # A fuel zone for the map, with its safe and its risky stretch of road.
 def _zone(line: list[geo.Point], z: Zone) -> dict:
-    return _plain(z) | {"safe": geo.thin(geo.stretch(line, z.start_mi, z.reserve_mi), config.MAP_STEP_MI),
-                        "risky": geo.thin(geo.stretch(line, z.reserve_mi, z.end_mi), config.MAP_STEP_MI)}
+    return _plain(z) | {"safe": geo.thin(geo.stretch(line, z.start_mi, z.reserve_mi), engine_settings.MAP_STEP_MI),
+                        "risky": geo.thin(geo.stretch(line, z.reserve_mi, z.end_mi), engine_settings.MAP_STEP_MI)}
 
 
 # A load's stops for the map, from (kind, city, state, lat, lng) each; those without a place are left out.
@@ -339,7 +339,7 @@ def _results(unit: str, recs: list[Recommendation], lines: list[FuelLine],
 def _driven(truck: Truck, start: datetime, end: datetime) -> tuple[list[TrackPoint], dict]:
     track = samsara.gps_history(truck.samsara_id, start, end)
     gauge = samsara.fuel_history(truck.samsara_id, start, end)
-    return track, {"track": geo.thin([(p.lat, p.lng) for p in track], config.MAP_STEP_MI) if track else [],
+    return track, {"track": geo.thin([(p.lat, p.lng) for p in track], engine_settings.MAP_STEP_MI) if track else [],
                    "gauge": [[r.at.isoformat(), r.pct] for r in gauge]}
 
 
@@ -358,17 +358,17 @@ def _outcomes(recs: list[Recommendation], lines: list) -> dict[int, dict]:
 
 # Purchases this close together are one fill-up, and a driver's stop this close to one holds its gauge.
 def _window() -> timedelta:
-    return timedelta(minutes=config.TANK_WINDOW_MIN)
+    return timedelta(minutes=engine_settings.TANK_WINDOW_MIN)
 
 
 # A purchase this soon after a message is what became of it.
 def _within() -> timedelta:
-    return timedelta(hours=config.RESULT_WINDOW_H)
+    return timedelta(hours=settings.RESULT_WINDOW_H)
 
 
 # The first day the Recommend tab lists messages from.
 def _shown_from() -> date:
-    return today() - timedelta(days=config.RECOMMEND_DAYS)
+    return today() - timedelta(days=settings.RECOMMEND_DAYS)
 
 
 # A pilot truck by its unit; LookupError (a 404 for the page) when the unit isn't one.
@@ -402,7 +402,7 @@ def accounting_payload(statement_no: str | None) -> dict:
     listed = [{"statement_no": s.statement_no, "account": s.account, "statement_day": s.statement_day, "charges": s.charges}
               for s in statements]
     chosen = next(s for s in listed if s["statement_no"] == statement.statement_no) | {"first_day": days[0], "last_day": days[-1]}
-    tree = accounting.tree(statement, lines, found, datatruck, config.EFS_ACCOUNTS.get(statement.account))
+    tree = accounting.tree(statement, lines, found, datatruck, accounting_settings.EFS_ACCOUNTS.get(statement.account))
     checks = {"headline": fill_checks.headline(lines, found), "loves": fill_checks.loves_promise(lines, found, sheets, network),
               "fills": evidence.fills(lines, found, seen, set(samsara_ids), stores),
               "burn": evidence.bought_vs_burned(lines, found, burns, samsara_ids, seen)}

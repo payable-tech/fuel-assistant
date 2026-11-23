@@ -82,8 +82,8 @@ Inside every folder the kinds of file keep their old rule:
 
 `features/dashboard/dashboard.py` is glue, run when the page asks rather than on a schedule: it reads the DB (and
 Samsara for what a truck really did) and leaves the figures to the pure files. `features/engine/settings.py` builds the
-recommendation's settings from `config.py` once, so the engine and the dashboard judge a truck by the same rules (the
-pure files never read `config.py`).
+recommendation's settings from the engine's numbers once, so the engine and the dashboard judge a truck by the same rules (the
+pure files never read a settings file).
 
 Why this shape: the pure files hold every decision and have no I/O, so they are fully unit-testable. Bugs in API calls
 stay in the sources; bugs in logic stay in the pure files. And one feature can be read, or removed, as one folder.
@@ -108,7 +108,7 @@ Fuel Assistent project/
 │  ├─ main.py                 command line (see section 5.2)
 │  ├─ timetable.py            every automatic job and how often it runs
 │  ├─ base/                   what every feature needs
-│  │  ├─ config.py            settings + secrets from .env
+│  │  ├─ config.py            the settings every part shares + secrets from .env
 │  │  ├─ models.py            dataclasses shared by everything
 │  │  ├─ fuel.py              fuel purchases in figures (pure): diesel, Love's, stops, weeks, the Trends and Live totals
 │  │  ├─ geo.py               route geometry (pure): distances, the Love's along a route
@@ -120,9 +120,9 @@ Fuel Assistent project/
 │  │  │                       purchases) · price_sheets.py (Love's sheets) · link_trucks.py · link_rules.py (pure)
 │  │  └─ runner/              scheduler.py (runs the timetable's jobs) · watchdog.py (restarts a frozen
 │  │                          program) · heartbeat.py (checks every part, alerts) · heartbeat_rules.py (pure)
-│  └─ features/
-│     ├─ engine/              the fuel messages: job.py (one look per truck) · settings.py (the rules' settings from
-│     │                       config.py) · pure: recommend.py (where to fuel) · no_load.py · loads.py (current load)
+│  └─ features/                 each with its own settings.py
+│     ├─ engine/              the fuel messages: job.py (one look per truck) · settings.py (the engine's numbers, and the
+│     │                       rules' settings built from them) · pure: recommend.py (where to fuel) · no_load.py · loads.py (current load)
 │     │                       · burn.py (live MPG) · tank.py · habits.py · message.py (what the driver is told)
 │     │                       · outcomes.py (what came of each message) · helper jobs: estimate_tanks.py
 │     │                       · estimate_burn.py · driver_habits.py · store_exits.py
@@ -637,7 +637,10 @@ drawn so the scope of each figure shows without asking (the user, 2026-11-03):
   one axis. The period in progress stays out of the lines (cut short, it would drop like the fall we watch for). Missed
   ran ~$5-7K a week, $24-26K a month in Sep-Oct (about 45¢ on each gallon bought outside Love's).
 
-## 7. Settings (`config.py`)
+## 7. Settings
+
+The settings every part shares are in `src/base/config.py`; each feature's own are in its `settings.py`
+(the engine's, most of this table, in `features/engine/settings.py`). The timetable's intervals are in `src/timetable.py`.
 
 | Setting | Default | Meaning |
 |---|---|---|

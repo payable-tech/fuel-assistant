@@ -10,13 +10,14 @@ from telethon.tl.types import MessageEntityMentionName
 
 from base import config
 from base.models import ChatLine
+from features.cards import settings
 
 
 # Logs the agent's login in once, interactively: Telegram sends a code to the account's app and you type it here.
 # Returns the account's name.
 def login() -> str:
     client = _client()
-    client.start(phone=config.AGENT_PHONE or config.secret("TG_PHONE"))  # asks for the code, and a 2FA password
+    client.start(phone=settings.AGENT_PHONE or config.secret("TG_PHONE"))  # asks for the code, and a 2FA password
     me = client.get_me()
     client.disconnect()
     return f"{me.first_name or ''} {me.last_name or ''}".strip() or str(me.id)
@@ -71,4 +72,4 @@ async def write(client: TelegramClient, chat_id: int, text: str, reply_to: int |
 
 # The client that keeps the agent's login in its own session file.
 def _client() -> TelegramClient:
-    return TelegramClient(str(config.AGENT_SESSION_PATH), int(config.secret("TG_API_ID")), config.secret("TG_API_HASH"))
+    return TelegramClient(str(settings.AGENT_SESSION_PATH), int(config.secret("TG_API_ID")), config.secret("TG_API_HASH"))

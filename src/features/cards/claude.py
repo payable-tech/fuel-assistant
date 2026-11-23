@@ -9,7 +9,7 @@ from typing import Awaitable, Callable
 
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, SdkMcpTool, create_sdk_mcp_server, query
 
-from base import config
+from features.cards import settings
 
 SERVER = "fuel"              # the tool server's name: Claude sees its tools as mcp__fuel__<tool>
 MAX_TURNS = 12               # a run that goes past either limit stops and says so, rather than running on
@@ -40,7 +40,7 @@ async def run(system: str, text: str, photos: list[bytes], tools: list[Tool], wo
     workspace.mkdir(parents=True, exist_ok=True)
     server = create_sdk_mcp_server(SERVER, tools=[SdkMcpTool(t.name, t.description, t.schema, t.run) for t in tools])
     options = ClaudeAgentOptions(
-        system_prompt=system, model=config.AGENT_MODEL, effort=config.AGENT_EFFORT,
+        system_prompt=system, model=settings.AGENT_MODEL, effort=settings.AGENT_EFFORT,
         tools=[], mcp_servers={SERVER: server}, strict_mcp_config=True,
         allowed_tools=[f"mcp__{SERVER}__{t.name}" for t in tools],
         permission_mode="dontAsk",  # a tool not allowed above is refused, never asked about

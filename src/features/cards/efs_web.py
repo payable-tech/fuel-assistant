@@ -3,8 +3,7 @@
 import json
 from urllib.parse import quote, urlencode
 
-from base import config
-from features.cards import efs_chrome
+from features.cards import efs_chrome, settings
 from features.cards.efs_chrome import EfsError
 from features.cards.efs_page import Form, Page, parse
 
@@ -35,9 +34,9 @@ def logged_in() -> str:
 
 # Makes the session act for one account ("ALIF", "DT"); switches only when it is on the other one.
 def act_as(account: str) -> None:
-    user = config.EMANAGER_USERS.get(account)
+    user = settings.EMANAGER_USERS.get(account)
     if not user:
-        raise EfsError(f"No eManager user for {account!r}; known: {', '.join(config.EMANAGER_USERS)}")
+        raise EfsError(f"No eManager user for {account!r}; known: {', '.join(settings.EMANAGER_USERS)}")
     if fetch("/cards/Index.action").user == user:
         return
     switched = fetch(f"/security/OWISSOLogon.action?selectedUserId={quote(user)}"

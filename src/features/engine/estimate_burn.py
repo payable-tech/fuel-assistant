@@ -3,12 +3,11 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
-from base import config
 from base.fleet import copies
 from base.models import BurnFactor
 from base.sources import samsara
 from base.store import db
-from features.engine import burn
+from features.engine import burn, settings
 
 log = logging.getLogger(__name__)
 
@@ -21,7 +20,7 @@ def run() -> bool:
 # Calibrates every pilot truck with a known tank (two Samsara calls per truck).
 def factors() -> list[BurnFactor]:
     end = datetime.now(timezone.utc)
-    start = end - timedelta(days=config.BURN_DAYS)
+    start = end - timedelta(days=settings.BURN_DAYS)
     with db.connect() as conn:
         trucks = db.pilot(conn)
     found = []
@@ -34,8 +33,8 @@ def factors() -> list[BurnFactor]:
         except Exception as error:  # one truck's Samsara trouble mustn't stop the others' factors
             log.warning("No engine or gauge history for unit %s: %r", truck.unit, error)
             continue
-        got = burn.gal_per_unit(burn.meter(history), history, gauge, truck.tank_gal, config.BURN_STRETCH_MI,
-                                config.FILL_RISE_PCT, config.BURN_MIN_STRETCHES)
+        got = burn.gal_per_unit(burn.meter(history), history, gauge, truck.tank_gal, settings.BURN_STRETCH_MI,
+                                settings.FILL_RISE_PCT, settings.BURN_MIN_STRETCHES)
         if got:
             found.append(BurnFactor(unit=truck.unit, gal_per_unit=got[0], stretches=got[1]))
     return found

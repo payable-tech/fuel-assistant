@@ -2,12 +2,11 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
-from base import config
 from base.fleet import copies
 from base.models import TankEstimate
 from base.sources import samsara
 from base.store import db
-from features.engine import tank
+from features.engine import settings, tank
 
 log = logging.getLogger(__name__)
 
@@ -20,7 +19,7 @@ def run() -> bool:
 # Estimates every pilot truck it can; one without enough clear fill-ups is left out, so it shows in `holes`.
 def estimates() -> list[TankEstimate]:
     end = datetime.now(timezone.utc)
-    start = end - timedelta(days=config.TANK_DAYS)
+    start = end - timedelta(days=settings.TANK_DAYS)
     with db.connect() as conn:
         trucks = db.pilot(conn)
         lines = db.fuel_lines(conn, since_day=start.date().isoformat())
@@ -32,8 +31,8 @@ def estimates() -> list[TankEstimate]:
             log.warning("No gauge history for unit %s: %r", truck.unit, error)
             continue
         estimate = tank.estimate(truck.unit, [line for line in lines if line.unit == truck.unit], readings,
-                                 timedelta(minutes=config.TANK_WINDOW_MIN), config.TANK_MIN_RISE_PCT,
-                                 config.TANK_MIN_FILLS)
+                                 timedelta(minutes=settings.TANK_WINDOW_MIN), settings.TANK_MIN_RISE_PCT,
+                                 settings.TANK_MIN_FILLS)
         if estimate:
             found.append(estimate)
     return found

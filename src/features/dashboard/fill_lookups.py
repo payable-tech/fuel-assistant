@@ -4,11 +4,12 @@ import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
-from base import config, fuel, geo
+from base import fuel, geo
 from base.models import FillLookup, FuelLine, FuelReading, TrackPoint
 from base.sources import samsara
 from base.store import db
-from features.engine import tank
+from features.dashboard import settings
+from features.engine import settings as engine_settings, tank
 
 log = logging.getLogger(__name__)
 
@@ -19,11 +20,11 @@ GPS_WINDOW = timedelta(minutes=20)  # a fill is where the truck's GPS point near
 # Looks up the fills not looked up yet. A truck whose Samsara call fails is tried again next run; a truck not in
 # Samsara is never looked up.
 def run() -> None:
-    window = timedelta(minutes=config.TANK_WINDOW_MIN)
+    window = timedelta(minutes=engine_settings.TANK_WINDOW_MIN)
     settled = datetime.now(timezone.utc) - SETTLE
     with db.connect() as conn:
         done = db.fill_lookups(conn)
-        lines = [l for l in db.fuel_lines(conn, config.LOOKUPS_FROM) if fuel.is_diesel(l) and l.line_id not in done
+        lines = [l for l in db.fuel_lines(conn, settings.LOOKUPS_FROM) if fuel.is_diesel(l) and l.line_id not in done
                  and not fuel.is_loves(l) and fuel.utc(l.fueled_at) < settled]
         samsara_ids = {t.unit: t.samsara_id for t in db.fleet(conn)}
     by_unit = defaultdict(list)

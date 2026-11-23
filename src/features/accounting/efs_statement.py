@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pdfplumber
 
-from base import config
 from base.models import EfsLine, EfsStatement
+from features.accounting import settings
 
 TN = re.compile(r"^\d{8,10}-\d{9,10}$")    # a transaction number, "1603707497-1402758361"; payments and adjustments differ
 DAY = re.compile(r"^\d\d/\d\d$")
@@ -26,7 +26,7 @@ NEAR_PT = 4.5  # a word belongs to the line whose transaction number is within t
 
 # The statement PDFs saved in data/efs.
 def files() -> list[Path]:
-    return sorted(config.STATEMENTS_DIR.glob("*.pdf"))
+    return sorted(settings.STATEMENTS_DIR.glob("*.pdf"))
 
 
 # Reads one statement: page 1's figures and every line on the pages after it. ValueError when the file isn't a

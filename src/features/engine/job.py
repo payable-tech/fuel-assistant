@@ -13,7 +13,7 @@ from base.models import (NO_LOAD_ORDER, Decision, FuelLine, Order, Recommendatio
 from base.runner import watchdog
 from base.sources import google, samsara, telegram
 from base.store import db
-from features.engine import burn, habits, loads, message, no_load, outcomes, recommend
+from features.engine import burn, habits, loads, message, no_load, outcomes, recommend, settings
 from features.engine.settings import RULES, truck_now
 
 log = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ def run() -> int:
     for truck in trucks:
         try:
             ids = {d.driver_id for d in drivers if d.unit == truck.unit and d.employee_status == "active"}
-            usual = habits.usual_level([s for s in stops if s.driver_id in ids], config.USUAL_MIN_STOPS)
+            usual = habits.usual_level([s for s in stops if s.driver_id in ids], settings.USUAL_MIN_STOPS)
             _look(truck, [o for o in orders if o.unit == truck.unit], stores, usual, factors.get(truck.unit), lines, now)
         except NETWORK_ERRORS as error:  # its full trace for every truck filled 72 MB of log in one night's outage
             log.error("Fuel recommendation for unit %s failed: %r", truck.unit, error)
@@ -74,13 +74,13 @@ def _look(truck: Truck, orders: list[Order], stores: list[Store], usual: UsualLe
     track, found = _load(truck, orders, now)
     position = (truck.lat, truck.lng)
     toward = _toward(track, position, now, truck.gps_at)
-    load = loads.pick(found, position, toward, RULES.near_mi, config.BEHIND_DEG)
+    load = loads.pick(found, position, toward, RULES.near_mi, settings.BEHIND_DEG)
     if load is None:
         return _no_load(truck, track, stores, usual, told, last, lines, now)
     order, ahead = load
     # a stop told on another load (or with none) is judged on this load's road like any (_told_now): it stands while it
     # is on his way, so a load put right in Datatruck doesn't bring a second message for the same fill
-    fresh =truck.fuel_at and now - truck.fuel_at <= timedelta(minutes=config.GAUGE_FRESH_MIN)
+    fresh =truck.fuel_at and now - truck.fuel_at <= timedelta(minutes=settings.GAUGE_FRESH_MIN)
     if not fresh:
         return _save(truck, "no fresh gauge", last, now)
     fuel_pct = _steady_fuel(truck, now)
@@ -92,8 +92,8 @@ def _look(truck: Truck, orders: list[Order], stores: list[Store], usual: UsualLe
     road = _road(truck, order, ahead, last, now)
     _keep_trip(truck, order, road.line if road.new else None, now)
     route_mi = geo.along(road.line)[-1]
-    near = geo.stores_along(road.line, stores, config.NEARBY_MI, config.ROUTE_STEP_MI)
-    candidates, off_road = recommend.split_by_road(near, config.CORRIDOR_MI, config.DETOUR_ROAD_FACTOR)
+    near = geo.stores_along(road.line, stores, settings.NEARBY_MI, settings.ROUTE_STEP_MI)
+    candidates, off_road = recommend.split_by_road(near, settings.CORRIDOR_MI, settings.DETOUR_ROAD_FACTOR)
     live, used = _live_mpg(truck, order, ahead, track, factor, now)
     here = _here(truck, fuel_pct, road.mile, used, usual)
     stop_mi = _stop_mile(road, ahead)
@@ -103,7 +103,7 @@ def _look(truck: Truck, orders: list[Order], stores: list[Store], usual: UsualLe
             _settle(told, ended, now)
             told = None
     decision = recommend.decide(here, candidates, route_mi, RULES, off_road)
-    parked = recommend.parked(track, position, now - timedelta(minutes=config.PARKED_MIN), config.PARKED_MI)
+    parked = recommend.parked(track, position, now - timedelta(minutes=settings.PARKED_MIN), settings.PARKED_MI)
     regions = tuple(recommend.regions(here, candidates, route_mi, RULES))
     if _against(road, stop_mi, position, toward) or (decision.stop and _behind(decision.stop, stop_mi, position, toward)):
         # he drives away from this road (a load he isn't driving, or the road the wrong way): never a Love's behind
@@ -127,7 +127,7 @@ def _no_load(truck: Truck, track: list[TrackPoint], stores: list[Store], usual: 
     if told and told.order_id != NO_LOAD_ORDER and told.reason not in BY_WAY:
         _settle(told, "load ended", now)
         told = None
-    if not (truck.fuel_at and now - truck.fuel_at <= timedelta(minutes=config.GAUGE_FRESH_MIN)):
+    if not (truck.fuel_at and now - truck.fuel_at <= timedelta(minutes=settings.GAUGE_FRESH_MIN)):
         return _save(truck, "no fresh gauge", _without_road(truck, last, now), now)
     fuel_pct = _steady_fuel(truck, now)
     filling = _filling(last, fuel_pct)
@@ -137,10 +137,10 @@ def _no_load(truck: Truck, track: list[TrackPoint], stores: list[Store], usual: 
         told = None
     here = _here(truck, fuel_pct, 0.0, None, usual)  # its average MPG: an empty truck's live MPG says little of later
     position = (truck.lat, truck.lng)
-    parked = recommend.parked(track, position, now - timedelta(minutes=config.PARKED_MIN), config.PARKED_MI)
+    parked = recommend.parked(track, position, now - timedelta(minutes=settings.PARKED_MIN), settings.PARKED_MI)
     toward = _toward(track, position, now, truck.gps_at)
     if told:
-        ended = no_load.told_now(told, position, toward, here, RULES, config.DETOUR_ROAD_FACTOR)
+        ended = no_load.told_now(told, position, toward, here, RULES, settings.DETOUR_ROAD_FACTOR)
         if ended:
             _settle(told, ended, now)
             told = None
@@ -160,11 +160,11 @@ def _without_road(truck: Truck, last: TruckWatch | None, now: datetime) -> Truck
 # load). The track reaches back to the earliest load's first GPS visit that counts, and at least LIVE_MPG_HOURS for
 # the live MPG.
 def _load(truck: Truck, orders: list[Order], now: datetime) -> tuple[list[TrackPoint], list[tuple[Order, list[Stop]]]]:
-    orders = loads.under_way(orders, timedelta(days=config.LOAD_MAX_DAYS), now)
-    window = timedelta(hours=config.VISIT_WINDOW_H)
-    since = min((loads.visits_from(o, window, now) for o in orders), default=now - timedelta(hours=config.LIVE_MPG_HOURS))
-    track = _track(truck, min(since, now - timedelta(hours=config.LIVE_MPG_HOURS)), now)
-    return track, loads.loads_ahead(orders, track, config.STOP_REACHED_MI, window, now) if orders else []
+    orders = loads.under_way(orders, timedelta(days=settings.LOAD_MAX_DAYS), now)
+    window = timedelta(hours=settings.VISIT_WINDOW_H)
+    since = min((loads.visits_from(o, window, now) for o in orders), default=now - timedelta(hours=settings.LIVE_MPG_HOURS))
+    track = _track(truck, min(since, now - timedelta(hours=settings.LIVE_MPG_HOURS)), now)
+    return track, loads.loads_ahead(orders, track, settings.STOP_REACHED_MI, window, now) if orders else []
 
 
 # The direction the truck drives (compass degrees), by its last HEADING_MI of GPS driven within HEADING_MAX_MIN and
@@ -173,11 +173,11 @@ def _load(truck: Truck, orders: list[Order], now: datetime) -> tuple[list[TrackP
 # runs past the position (read once a pass, the track fresh at each look: 208033's was 27 min behind, 2026-11-22).
 def _toward(track: list[TrackPoint], position: geo.Point, now: datetime, seen_at: datetime | None = None) -> float | None:
     track = [p for p in track if seen_at is None or p.at <= seen_at]
-    if recommend.parked(track, position, now - timedelta(minutes=config.PARKED_MIN), config.PARKED_MI):
+    if recommend.parked(track, position, now - timedelta(minutes=settings.PARKED_MIN), settings.PARKED_MI):
         return None
-    since = now - timedelta(minutes=config.HEADING_MAX_MIN)
-    left = no_load.set_off(track, config.PARKED_MI, timedelta(minutes=config.PARKED_MIN))
-    return no_load.heading(track, position, config.HEADING_MI, max(since, left) if left else since)
+    since = now - timedelta(minutes=settings.HEADING_MAX_MIN)
+    left = no_load.set_off(track, settings.PARKED_MI, timedelta(minutes=settings.PARKED_MIN))
+    return no_load.heading(track, position, settings.HEADING_MI, max(since, left) if left else since)
 
 
 # The road's mile at the load's next stop: there the road may turn back (a pickup, then the way to the delivery), so
@@ -190,29 +190,29 @@ def _stop_mile(road: Road, ahead: list[Stop]) -> float:
 # nearer) lies behind the way he drives (a road made for a load he isn't driving starts with a U-turn; a road driven
 # the wrong way). False while his way isn't known.
 def _against(road: Road, stop_mi: float, position: geo.Point, toward: float | None) -> bool:
-    ahead = geo.point_at(road.line, min(road.mile + config.ROAD_AHEAD_MI, stop_mi))
-    return geo.behind(position, toward, ahead, RULES.near_mi, config.BEHIND_DEG)
+    ahead = geo.point_at(road.line, min(road.mile + settings.ROAD_AHEAD_MI, stop_mi))
+    return geo.behind(position, toward, ahead, RULES.near_mi, settings.BEHIND_DEG)
 
 
 # True when a Love's on the road before the load's next stop lies behind the truck going `toward` (one past that stop
 # may rightly be behind him: the road turns back there).
 def _behind(stop: StoreOnRoute, stop_mi: float, position: geo.Point, toward: float | None) -> bool:
     return stop.miles < stop_mi and geo.behind(position, toward, (stop.store.lat, stop.store.lng), RULES.near_mi,
-                                               config.BEHIND_DEG)
+                                               settings.BEHIND_DEG)
 
 
 # The nearest Love's ahead in the truck's direction, once its fuel is down to the driver's usual level (features/engine/no_load):
 # for a truck with no load, and for one driving away from its load's road (`label` and `reason` say which).
 def _by_way(here: TruckNow, position: geo.Point, toward: float | None, stores: list[Store],
             label: str = "off its road", reason: str = "heading") -> Decision:
-    ahead = [] if toward is None else no_load.loves_ahead(position, toward, stores, config.AHEAD_CONE_DEG,
-                                                          config.DETOUR_ROAD_FACTOR)
+    ahead = [] if toward is None else no_load.loves_ahead(position, toward, stores, settings.AHEAD_CONE_DEG,
+                                                          settings.DETOUR_ROAD_FACTOR)
     return no_load.decide(here, toward, ahead, RULES, label, reason)
 
 
 # True when the gauge rose like a fill since the last look: the truck is fueling, told or not.
 def _filling(last: TruckWatch | None, fuel_pct: float) -> bool:
-    return bool(last and last.fuel_pct is not None and fuel_pct - last.fuel_pct >= config.FILL_RISE_PCT)
+    return bool(last and last.fuel_pct is not None and fuel_pct - last.fuel_pct >= settings.FILL_RISE_PCT)
 
 
 # How the truck runs now (see _live), and that same figure again when the rules may count on it: not while the truck
@@ -220,13 +220,13 @@ def _filling(last: TruckWatch | None, fuel_pct: float) -> bool:
 def _live_mpg(truck: Truck, order: Order, ahead: list[Stop], track: list[TrackPoint], factor: float | None,
               now: datetime) -> tuple[float | None, float | None]:
     live = _live(truck, factor, track, now)
-    empty = loads.empty_lately(order, ahead, track, config.STOP_REACHED_MI, timedelta(hours=config.LIVE_MPG_HOURS), now)
+    empty = loads.empty_lately(order, ahead, track, settings.STOP_REACHED_MI, timedelta(hours=settings.LIVE_MPG_HOURS), now)
     return live, None if empty else live
 
 
 # The truck as the rules see it now: the MPG expected and the cautious MPG from its average and its `live` MPG, if any.
 def _here(truck: Truck, fuel_pct: float, mile: float, live: float | None, usual: UsualLevel | None) -> TruckNow:
-    average = truck.mpg or config.DEFAULT_MPG
+    average = truck.mpg or settings.DEFAULT_MPG
     return truck_now(fuel_pct, mile, truck.tank_gal, burn.forecast_mpg(average, live),
                      burn.cautious_mpg(average, live, RULES.worse), usual)
 
@@ -237,24 +237,24 @@ def _here(truck: Truck, fuel_pct: float, mile: float, live: float | None, usual:
 def _told_now(told: Recommendation, candidates: list[StoreOnRoute], road: Road, stop_mi: float, here: TruckNow,
               position: geo.Point, toward: float | None) -> str | None:
     if told.reason in BY_WAY:
-        return no_load.told_now(told, position, toward, replace(here, mile=0.0), RULES, config.DETOUR_ROAD_FACTOR)
-    stop = recommend.told_stop(told, candidates, road.line, road.mile, config.TRUCK_STOP_OFF_MI, config.ROUTE_STEP_MI)
+        return no_load.told_now(told, position, toward, replace(here, mile=0.0), RULES, settings.DETOUR_ROAD_FACTOR)
+    stop = recommend.told_stop(told, candidates, road.line, road.mile, settings.TRUCK_STOP_OFF_MI, settings.ROUTE_STEP_MI)
     before_stop = stop is None or stop.miles < stop_mi
     if before_stop and told.lat is not None and geo.behind(position, toward, (told.lat, told.lng), RULES.near_mi,
-                                                           config.BEHIND_DEG):
+                                                           settings.BEHIND_DEG):
         return "passed"
     return recommend.told_now(told, stop, here, road.new, RULES)
 
 
 # Acts on the rules' decision when no stop told stands: a stop or an emergency is told, unless now is the wrong moment
 # for it (features/engine/recommend.quiet; "parked" or "skipped" while that is why). An emergency is only shown as the truck's
-# state while the low-fuel message is switched off (config.LOW_FUEL_ALARM). Returns the truck's state. A truck with no
+# state while the low-fuel message is switched off (settings.LOW_FUEL_ALARM). Returns the truck's state. A truck with no
 # load has no `order`, stops `ahead` or road `line`.
 def _act(truck: Truck, order: Order | None, ahead: list[Stop], here: TruckNow, d: Decision, line: list[geo.Point],
          fueled_at: datetime | None, parked: bool, lines: list[FuelLine], now: datetime) -> str:
     if d.kind not in ("stop", "urgent"):
         return d.kind
-    if d.kind == "urgent" and not config.LOW_FUEL_ALARM:
+    if d.kind == "urgent" and not settings.LOW_FUEL_ALARM:
         return "urgent"
     passed = _passed(truck, fueled_at, lines, now)
     if recommend.quiet(here, d, fueled_at, now, RULES, parked, passed):
@@ -278,7 +278,7 @@ def _keep_trip(truck: Truck, order: Order, line: list[geo.Point] | None, now: da
     stops = tuple((s.kind, s.city, s.state, s.lat, s.lng) for s in order.stops)
     with db.connect() as conn:
         db.save_trip(conn, Trip(truck.unit, order.order_id, order.load_id, stops, now, now,
-                                geo.thin(line, config.MAP_STEP_MI) if line else None))
+                                geo.thin(line, settings.MAP_STEP_MI) if line else None))
 
 
 # The truck's GPS track from `since` to now: the one kept from earlier looks, topped up with only the points since its
@@ -290,7 +290,7 @@ def _track(truck: Truck, since: datetime, now: datetime) -> list[TrackPoint]:
         track = kept + [p for p in new if p.at > kept[-1].at]
     else:
         track = samsara.gps_history(truck.samsara_id, since, now)
-    track = geo.thin_track([p for p in track if p.at >= since], config.LINE_STEP_MI)
+    track = geo.thin_track([p for p in track if p.at >= since], settings.LINE_STEP_MI)
     _tracks[truck.unit] = (since, track)
     return track
 
@@ -305,25 +305,25 @@ def _road(truck: Truck, order: Order, ahead: list[Stop], last: TruckWatch | None
         line = list(last.line)
         # near the road ahead of the truck, not the miles behind it: driven back along them, it has gone another way
         # (its mile can't go back, 9606 was told "11 mi" for a Love's 88 mi off, 2026-11-16)
-        from_mi = (last.mile or 0.0) - config.OFF_ROAD_MI
-        on_road = min(geo.miles(p, position) for p, m in zip(line, geo.along(line)) if m >= from_mi) <= config.OFF_ROAD_MI
+        from_mi = (last.mile or 0.0) - settings.OFF_ROAD_MI
+        on_road = min(geo.miles(p, position) for p, m in zip(line, geo.along(line)) if m >= from_mi) <= settings.OFF_ROAD_MI
         if not loads.same_stops(stops, made_for):
             log.info("Unit %s: the load's stops ahead changed in Datatruck, new road", truck.unit)
-        elif on_road or now - last.road_made_at < timedelta(minutes=config.REROUTE_MIN):
+        elif on_road or now - last.road_made_at < timedelta(minutes=settings.REROUTE_MIN):
             return Road(line, last.road_made_at, geo.mile_on(line, position, last.mile or 0.0), made_for, new=False)
     line = google.route([position, *stops])
-    return Road(geo.thin(line, config.LINE_STEP_MI), now, 0.0, stops, new=True)
+    return Road(geo.thin(line, settings.LINE_STEP_MI), now, 0.0, stops, new=True)
 
 
 # The fuel now, calmed (features/engine/burn); just the newest reading when the history can't be had.
 def _steady_fuel(truck: Truck, now: datetime) -> float:
-    span, lookback = timedelta(minutes=config.GAUGE_STEADY_MIN), timedelta(minutes=config.GAUGE_LOOKBACK_MIN)
+    span, lookback = timedelta(minutes=settings.GAUGE_STEADY_MIN), timedelta(minutes=settings.GAUGE_LOOKBACK_MIN)
     try:
         readings = samsara.fuel_history(truck.samsara_id, now - lookback, now)
     except Exception as error:
         log.warning("No gauge history for unit %s: %r", truck.unit, error)
         return truck.fuel_pct
-    steady = burn.steady_gauge(readings, now, span, lookback, config.GAUGE_MIN_READINGS, config.FILL_RISE_PCT)
+    steady = burn.steady_gauge(readings, now, span, lookback, settings.GAUGE_MIN_READINGS, settings.FILL_RISE_PCT)
     return truck.fuel_pct if steady is None else steady
 
 
@@ -331,7 +331,7 @@ def _steady_fuel(truck: Truck, now: datetime) -> float:
 def _live(truck: Truck, factor: float | None, track: list[TrackPoint], now: datetime) -> float | None:
     if not factor:
         return None
-    start = now - timedelta(hours=config.LIVE_MPG_HOURS)
+    start = now - timedelta(hours=settings.LIVE_MPG_HOURS)
     recent = [(p.lat, p.lng) for p in track if p.at >= start]
     if len(recent) < 2:
         return None
@@ -340,7 +340,7 @@ def _live(truck: Truck, factor: float | None, track: list[TrackPoint], now: date
     except Exception as error:
         log.warning("No engine data for unit %s: %r", truck.unit, error)
         return None
-    return burn.live_mpg(burn.meter(history), factor, geo.along(recent)[-1], start, now, config.LIVE_MIN_MILES, config.MPG_RANGE)
+    return burn.live_mpg(burn.meter(history), factor, geo.along(recent)[-1], start, now, settings.LIVE_MIN_MILES, config.MPG_RANGE)
 
 
 # Records what the driver is told now, sends it to their group if the truck is live, and copies it to the test group.
@@ -376,7 +376,7 @@ def send_to_driver(truck: Truck, body: str) -> bool:
 # The link of a message: from the phone through the fuel stop to the load's last stop (the load's other stops on the way).
 def _link(d: Decision, ahead: list[Stop], line: list[geo.Point], mile: float) -> str | None:
     load = [(geo.mile_on(line, (s.lat, s.lng), mile), (s.lat, s.lng)) for s in ahead if s.lat is not None]
-    return message.road_link(message.link_points([s for s in (d.stop, d.then) if s], load, config.LINK_MAX_VIA))
+    return message.road_link(message.link_points([s for s in (d.stop, d.then) if s], load, settings.LINK_MAX_VIA))
 
 
 # Sends a copy of a recommendation to the test group, and only there: never when that chat is a truck's own group. A send
@@ -401,7 +401,7 @@ def _with_backup(here: TruckNow, d: Decision, line: list[geo.Point]) -> Decision
     if len(ahead) < 2:
         return d
     try:
-        found = geo.stores_along(ahead, google.truck_stops_along(ahead), config.TRUCK_STOP_OFF_MI, config.ROUTE_STEP_MI)
+        found = geo.stores_along(ahead, google.truck_stops_along(ahead), settings.TRUCK_STOP_OFF_MI, settings.ROUTE_STEP_MI)
     except Exception as error:
         log.warning("Truck stop search failed: %r", error)
         return d

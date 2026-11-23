@@ -7,7 +7,7 @@ import pytest
 from base import config
 from base.models import FuelLine, Recommendation, Region, Store, SyncedTruck, TruckWatch, UsualLevel
 from base.store import db
-from features.dashboard import dashboard
+from features.dashboard import dashboard, settings as dashboard_settings
 
 AT = datetime(2026, 11, 2, 12, 0, tzinfo=timezone.utc)
 LINE = [(30.0 + k * 0.1, -97.0) for k in range(40)]  # about 270 miles due north
@@ -69,7 +69,7 @@ def test_told_stop_stands(monkeypatch):
 # The plans on the Live view: a message sent and followed counts its fill's discount, one called off by us is marked so;
 # the live trucks' Love's share counts their fills after their first message, the whole fleet's every fill.
 def test_messages_sent(monkeypatch):
-    monkeypatch.setattr(config, "LIVE_FROM", "2026-11-02")
+    monkeypatch.setattr(dashboard_settings, "LIVE_FROM", "2026-11-02")
 
     def line(at: str, store: str, unit: str) -> FuelLine:
         return FuelLine(int(store), at, "fuel", "ULSD", 100, 600, 550, 0.0, False, f"LOVES #{store} TRAVEL STOP", "Near", "TX", "TTL",

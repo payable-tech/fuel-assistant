@@ -4,9 +4,9 @@
 import logging
 import time
 
-from base import config
 from base.sources import loves
 from base.store import db
+from features.engine import settings
 
 log = logging.getLogger(__name__)
 MAX_FAILS = 5  # this many pages in a row that can't be read: the site is down or changed, the rest waits for the next run
@@ -30,7 +30,7 @@ def run() -> int:
             with db.connect() as conn:
                 db.save_store_exit(conn, store_no, way)
             kept += 1
-        time.sleep(config.EXITS_PAUSE_SEC)
+        time.sleep(settings.EXITS_PAUSE_SEC)
     if todo:
         log.info("Love's exits read: %d of %d stores", kept, len(todo))
     return kept

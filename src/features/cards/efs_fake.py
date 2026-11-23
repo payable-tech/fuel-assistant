@@ -4,13 +4,13 @@
 from dataclasses import replace
 from datetime import datetime, timezone
 
-from base import config
 from base.models import DatatruckDriver, EfsCard, EfsCardRow, Truck
+from features.cards import settings
 
 UNIT = "TEST-1"
 NOW = datetime.now(timezone.utc)
 TRUCK = Truck(UNIT, "", "", f"Unit {UNIT}", "Alex Testov", 6.8, 14.0, NOW, 32.01, -97.13, "I-35, Hillsboro, TX (test)",
-              NOW, 150.0, "manual", None, config.AGENT_TEST_CHAT_ID, "manual", None, False)
+              NOW, 150.0, "manual", None, settings.AGENT_TEST_CHAT_ID, "manual", None, False)
 DRIVERS = [DatatruckDriver(999999, "ALEX TESTOV (test)", "company_driver", "active", "TEST", UNIT)]
 ROW = EfsCardRow("test-0001", "700000******0001", "T", UNIT, "0000", "ALEX TESTOV", "", "ACTIVE")
 _FRESH = EfsCard("test-0001", "ACTIVE", "POLICY", "CARD", "POLICY", "T", "", "Jan 1, 2030", "", False,

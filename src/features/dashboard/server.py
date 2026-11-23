@@ -9,8 +9,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from ipaddress import ip_address, ip_network
 from urllib.parse import parse_qs
 
-from base import config
-from features.dashboard import dashboard
+from features.dashboard import dashboard, settings
 
 log = logging.getLogger(__name__)
 
@@ -85,14 +84,14 @@ class Handler(SimpleHTTPRequestHandler):
 # DASHBOARD_HOST allows) until stopped with Ctrl+C. `start_jobs`: what starts the automatic jobs, called once the
 # server is set up (None: only show the data).
 def serve(port: int, start_jobs=None) -> None:
-    server = ThreadingHTTPServer((config.DASHBOARD_HOST, port), partial(Handler, directory=str(config.WEB_DIR)))
+    server = ThreadingHTTPServer((settings.DASHBOARD_HOST, port), partial(Handler, directory=str(settings.WEB_DIR)))
     _stay_awake()
     _no_click_pause()
     if start_jobs:
         start_jobs()
         log.info("Automatic refreshes are on (see the Data tab for their last runs)")
     log.info("Dashboard running at http://127.0.0.1:%d  (Ctrl+C to stop)", port)
-    if config.DASHBOARD_HOST != "127.0.0.1":  # the PC's office address: its name can resolve to the Radmin VPN first
+    if settings.DASHBOARD_HOST != "127.0.0.1":  # the PC's office address: its name can resolve to the Radmin VPN first
         office = [a for a in socket.gethostbyname_ex(socket.gethostname())[2] if allowed(a) and not a.startswith("127.")]
         log.info("Other PCs on the office network: %s", ", ".join(f"http://{a}:{port}" for a in office) or "none found")
     try:
@@ -106,14 +105,14 @@ def serve(port: int, start_jobs=None) -> None:
 # The page's version: when its newest file in web/ (the vendored libraries aside) last changed. An open page asks
 # for it every minute and reloads itself when it differs, so it never runs old code against new numbers.
 def web_version() -> str:
-    web = config.WEB_DIR
+    web = settings.WEB_DIR
     files = [p for p in web.rglob("*") if p.is_file() and "vendor" not in p.relative_to(web).parts]
     return str(max((p.stat().st_mtime_ns for p in files), default=0))
 
 
 # True when a visitor's address is this PC or on one of the office networks (DASHBOARD_NETWORKS).
 def allowed(address: str) -> bool:
-    return any(ip_address(address) in ip_network(net) for net in config.DASHBOARD_NETWORKS)
+    return any(ip_address(address) in ip_network(net) for net in settings.DASHBOARD_NETWORKS)
 
 
 # Asks Windows not to put the PC to sleep while this program runs, so the data keeps refreshing overnight. The screen

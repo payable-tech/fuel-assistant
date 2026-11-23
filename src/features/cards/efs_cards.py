@@ -5,9 +5,8 @@ import html as markup
 import re
 from urllib.parse import quote
 
-from base import config
 from base.models import EfsCard, EfsCardRow
-from features.cards import efs_web
+from features.cards import efs_web, settings
 from features.cards.efs_chrome import EfsError
 from features.cards.efs_page import Page
 
@@ -32,7 +31,7 @@ VALUE_BOXES = ("cardInfo.matchValue", "cardInfo.reportValue")
 # One account's cards ("ALIF", "DT"), found the way Card Lookup finds them. "all" looks up each policy in turn.
 def cards(account: str, by: str = "all", text: str = "") -> list[EfsCardRow]:
     if by == "all":
-        return [row for policy in config.EMANAGER_POLICIES[account] for row in cards(account, "policy", policy)]
+        return [row for policy in settings.EMANAGER_POLICIES[account] for row in cards(account, "policy", policy)]
     if by not in LOOKUPS:
         raise EfsError(f"Card Lookup cannot search by {by!r}; choose all or one of: {', '.join(LOOKUPS)}")
     if not text.strip():

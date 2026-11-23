@@ -6,7 +6,7 @@ from base import config
 from base.models import Store
 from base.sources import loves
 from base.store import db
-from features.engine import store_exits
+from features.engine import settings as engine_settings, store_exits
 
 # A store page's heading as Love's site sends it: its words split by empty comments.
 PAGE = ('<h1 class="x">Love\'s Travel Stop<!-- --> #<!-- -->563</h1><h2>Belmont<!-- -->, <!-- -->OH<!-- --> | '
@@ -17,7 +17,7 @@ PAGE = ('<h1 class="x">Love\'s Travel Stop<!-- --> #<!-- -->563</h1><h2>Belmont<
 @pytest.fixture(autouse=True)
 def temp_db(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "test.db")
-    monkeypatch.setattr(config, "EXITS_PAUSE_SEC", 0)
+    monkeypatch.setattr(engine_settings, "EXITS_PAUSE_SEC", 0)
 
 
 # The heading "Exit 208/OH-149 on I-70" becomes "I-70 (Exit 208)"; a heading without an exit gives none; a page that
