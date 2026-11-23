@@ -94,3 +94,23 @@ def test_held_after_two_passed_unless_low():
     assert recommend.quiet(truck(20), d, None, AT, RULES, passed=2)
     low = replace(d, worst_pct=8.0)
     assert not recommend.quiet(truck(20), low, None, AT, RULES, passed=2)
+
+
+# Its way counts only the miles driven lately: a truck that drove in from the west hours ago and has just left going back
+# west has no way yet (the old miles would say east).
+def test_heading_ignores_the_miles_before_a_stop():
+    came = [TrackPoint(AT - timedelta(hours=3, minutes=k), HERE[0], HERE[1] - k / 57) for k in range(30, -1, -1)]
+    left = [TrackPoint(AT - timedelta(minutes=k), HERE[0], HERE[1] - (3 - k) / 57) for k in range(3, -1, -1)]
+    now_at = (left[-1].lat, left[-1].lng)
+    assert round(no_load.heading(came + left, now_at, 10)) == 90                   # with no limit: east, the wrong way
+    assert no_load.heading(came + left, now_at, 10, AT - timedelta(minutes=30)) is None
+
+
+# When the truck last set off after a stop: the newest point of the last stretch it stayed near for the stop's length;
+# a truck that kept driving made no stop.
+def test_set_off_after_a_stop():
+    stop_at = [TrackPoint(AT - timedelta(minutes=40 - k), HERE[0], HERE[1]) for k in range(0, 21)]       # 20 min still
+    drive = [TrackPoint(AT - timedelta(minutes=19 - k), HERE[0], HERE[1] + (k + 1) / 57) for k in range(20)]
+    assert no_load.set_off(stop_at + drive, 1, timedelta(minutes=15)) == AT - timedelta(minutes=20)
+    assert no_load.set_off(track_east(HERE, 60), 1, timedelta(minutes=15)) is None
+    assert no_load.set_off([], 1, timedelta(minutes=15)) is None

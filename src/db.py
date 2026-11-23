@@ -359,8 +359,9 @@ CREATE TABLE IF NOT EXISTS job_runs (
     error       TEXT
 );
 
--- Writer: every source refresh (jobs/mirror). One row per source: when it was last tried, last worked, and why the last
--- try failed (NULL when it worked). A failed refresh keeps the old copy, so this is where a failure shows.
+-- Writers: every source refresh (jobs/mirror), and the heartbeat for Google Maps, which it asks itself (jobs/heartbeat).
+-- One row per source: when it was last tried, last worked, and why the last try failed (NULL when it worked). A failed
+-- refresh keeps the old copy, so this is where a failure shows.
 CREATE TABLE IF NOT EXISTS source_health (
     name        TEXT PRIMARY KEY,
     last_try_at TEXT NOT NULL,
@@ -375,6 +376,22 @@ CREATE TABLE IF NOT EXISTS health_alerts (
     text      TEXT NOT NULL,
     since     TEXT,
     told      INTEGER NOT NULL DEFAULT 0
+);
+
+-- Writer: the card agent (jobs/card_agent). One row per message that woke it: the truck of that group, what it decided,
+-- the tools it used, and the card it opened. Kept: the audit of every card it changed, and its cooldown.
+CREATE TABLE IF NOT EXISTS agent_runs (
+    chat_id     INTEGER NOT NULL,
+    message_id  INTEGER NOT NULL,
+    unit        TEXT,
+    woke_at     TEXT NOT NULL,
+    text        TEXT,
+    outcome     TEXT,
+    steps       TEXT,
+    opened_card TEXT,
+    opened_at   TEXT,
+    error       TEXT,
+    PRIMARY KEY (chat_id, message_id)
 );
 """
 
@@ -540,6 +557,40 @@ def _dt(text: str | None) -> datetime | None:
 # Returns the current time as stored UTC text.
 def now() -> str:
     return _ts(datetime.now(timezone.utc))
+
+
+# Claims a message that woke the card agent, so each is handled once (a restart or a repeat event finds it taken).
+# True when it was new.
+def claim_agent_run(conn: sqlite3.Connection, chat_id: int, message_id: int, unit: str | None, at: datetime,
+                    text: str) -> bool:
+    return conn.execute("INSERT OR IGNORE INTO agent_runs (chat_id, message_id, unit, woke_at, text) VALUES (?, ?, ?, ?, ?)",
+                        (chat_id, message_id, unit, _ts(at), text)).rowcount == 1
+
+
+# Records how a card agent run ended: its outcome, the tools it used (JSON), the card it opened and when, or its error.
+def finish_agent_run(conn: sqlite3.Connection, chat_id: int, message_id: int, outcome: str, steps: str,
+                     opened_card: str | None, opened_at: datetime | None, error: str | None) -> None:
+    conn.execute("UPDATE agent_runs SET outcome = ?, steps = ?, opened_card = ?, opened_at = ?, error = ? "
+                 "WHERE chat_id = ? AND message_id = ?",
+                 (outcome, steps, opened_card, _ts(opened_at) if opened_at else None, error, chat_id, message_id))
+
+
+# True when the card agent took a request in this chat since a moment (a bare tag right after joins that one).
+def agent_run_since(conn: sqlite3.Connection, chat_id: int, since: datetime) -> bool:
+    return conn.execute("SELECT 1 FROM agent_runs WHERE chat_id = ? AND woke_at >= ? LIMIT 1",
+                        (chat_id, _ts(since))).fetchone() is not None
+
+
+# Records a card the card agent opened, the moment eManager confirmed it.
+def record_agent_open(conn: sqlite3.Connection, chat_id: int, message_id: int, card_id: str, at: datetime) -> None:
+    conn.execute("UPDATE agent_runs SET opened_card = ?, opened_at = ? WHERE chat_id = ? AND message_id = ?",
+                 (card_id, _ts(at), chat_id, message_id))
+
+
+# When the card agent last opened a card (eManager's card id); None when it never did.
+def agent_last_opened(conn: sqlite3.Connection, card_id: str) -> datetime | None:
+    row = conn.execute("SELECT MAX(opened_at) FROM agent_runs WHERE opened_card = ?", (card_id,)).fetchone()
+    return _dt(row[0])
 
 
 # Turns a model into a table row: datetimes become stored text; `skip` drops a field kept in another table.

@@ -28,6 +28,8 @@ BREAKDOWN_WEEKS = 4        # recent full weeks the breakdown tables cover
 # Files
 DB_PATH = DATA_DIR / "fuel.db"
 PRICES_DIR = DATA_DIR / "love's"
+TG_PRICES_CHAT_ID = -5551908421                    # Telegram group "Love's Daily Prices": one Love's sheet a day (user, 2026-11-20)
+TG_PRICES_DIR = PRICES_DIR / "telegram"            # its sheets, pulled by the prices job as tg-<message id>.xlsx
 STATEMENTS_DIR = DATA_DIR / "efs"                  # EFS weekly statement PDFs, saved here by hand (one per account per week)
 # Each EFS account (its name on page 1 of its statements) and the Datatruck companies whose cards are on it. The user,
 # 2026-11-19: fuel is paid only through EFS, on these two accounts. The Accounting view looks for Datatruck lines of
@@ -36,12 +38,43 @@ EFS_ACCOUNTS = {
     "ALIF UZ CORP": ("TAYLOR TRANSPORTS LLC", "VKL TRUCKING INC", "ALIF UZ CORP"),
     "DT NATIONAL TRANSPORTATION LLC": ("DT National Transportation LLC",),
 }
+# eManager, the EFS website, for fuel cards (sources/efs_*.py, the way bob-agent reaches it). It runs in its own Chrome
+# window, since its bot check lets only a real browser through.
+EMANAGER_CHROME_PORT = 9224                 # Chrome listens on this local port only
+EMANAGER_PROFILE = DATA_DIR / "efs-chrome"  # that window's own Chrome profile, apart from anyone's own Chrome
+EMANAGER_HEARTBEAT_SECONDS = 240            # eManager logs out after 90 idle minutes; every login ends after 24 hours
+# The eManager user that acts for each account; one login switches between them. Bob's login: card work moved here
+# from bob-agent, which no longer uses it (the user, 2026-11-22).
+EMANAGER_USERS = {"ALIF": "Bobalif", "DT": "BOB_DT"}
+# Each account's card policies. Listing every card is one lookup per policy: eManager's "All Cards" finds nothing.
+EMANAGER_POLICIES = {"ALIF": ("1", "2"), "DT": ("1",)}
 LOG_PATH = DATA_DIR / "fuel.log"
 LOG_MAX_MB = 20        # fuel.log starts afresh at this size, the old one kept as fuel.log.1 (a normal day writes ~0.2 MB)
 LOG_FILES_KEPT = 4     # old files kept (fuel.log.1 to .4, newest first): at most ~100 MB of log in all
 TG_SESSION_PATH = DATA_DIR / "telegram.session"    # the assistant's account (TG_PHONE): sends the messages (test group, live trucks)
 TG_GROUPS_SESSION_PATH = DATA_DIR / "bob.session"  # Bob's account: lists the driver groups for linking trucks, until
                                                    # the assistant's account is in them all (then point this above)
+
+# The card agent (jobs/card_agent, the user's go 2026-11-23): wakes when the assistant's account is tagged in a driver
+# group, reads the chat, and when the driver needs his fuel card opened, opens it for one fill and tells him to try
+# again, the way Bob does. Its own Telegram login on the same account, apart from the engine's (one login file can't be
+# opened twice); `main.py agent-login` makes it once.
+# Which account it is: its login file, and the phone its login code goes to. The assistant's account (TG_PHONE) when
+# unset; the user, 2026-11-23: test on Bob's account first (AGENT_SESSION=agent-bob.session), switch to Migo later.
+AGENT_SESSION_PATH = DATA_DIR / (os.getenv("AGENT_SESSION", "").strip() or "agent.session")
+AGENT_PHONE = os.getenv("AGENT_PHONE", "").strip() or None
+AGENT_MODEL = "claude-opus-5-5"
+AGENT_EFFORT = "medium"
+AGENT_ACT = True           # False: it decides and reports to the office, but opens no card and answers no driver
+AGENT_HISTORY = 10         # messages of the chat it reads, the one that tagged it included
+AGENT_MAX_PHOTOS = 3       # the newest photos among them it looks at (a declined receipt, a pump screen)
+AGENT_OPEN_FILLS = 1       # an opening lasts this many transactions, always All Locations (sources/efs_cards)
+AGENT_REOPEN_HOURS = 6     # a card it opened isn't opened again by it sooner: the office decides then
+AGENT_OFFICE_CHAT_ID = int(os.getenv("AGENT_OFFICE_CHAT_ID", "").strip() or 0) or None  # its reports; the test group when unset
+# A group that plays a truck's group with a fabricated truck, driver and card (sources/efs_fake): nothing real is read
+# or changed for it. AGENT_TEST_ONLY=1 makes the agent ignore every other group (and skip the eManager window).
+AGENT_TEST_CHAT_ID = int(os.getenv("AGENT_TEST_CHAT_ID", "").strip() or 0) or None
+AGENT_TEST_ONLY = os.getenv("AGENT_TEST_ONLY", "").strip() == "1"
 
 # Data freshness
 ACTIVE_HOURS = 24          # a truck counts as active (for the holes report) if GPS reported within this
@@ -98,6 +131,13 @@ DETOUR_ROAD_FACTOR = 1.3   # the road to a Love's off the road is about this muc
 # A truck with no load (core/no_load, the user's go 2026-11-18): once its fuel is down to the driver's usual level, the
 # nearest Love's ahead in the direction it is going is told, like any stop (within LOOK_MI, held while parked)
 HEADING_MI = 10            # its direction: from where its GPS was this many miles back to where it is now
+HEADING_MAX_MIN = 30       # ...driven within this many minutes: the miles before a stop say nothing of the way after it
+# Never a Love's behind the driver (the user's go, 2026-11-22: 1767 told Love's he had passed, down to 4% on I-30). The
+# stops told Nov 15-22 that lay behind the truck were 151-180 degrees off its way; of 331 good ones, 3 were over 135.
+BEHIND_DEG = 135           # a place more than this off the truck's way lies behind it
+ROAD_AHEAD_MI = 20         # the load's road this far on from the truck shows where it goes: behind him, the road is wrong
+                           # (a load in Datatruck he isn't driving makes a road that starts with a U-turn), and the
+                           # nearest Love's ahead in his direction is told instead, as for a truck with no load
 AHEAD_CONE_DEG = 45        # a Love's counts as ahead when it lies within this many degrees of that direction, either side.
                            # Replay on 251 no-load Love's fills made while driving (Oct 1-Nov 17): from 30 mi before the
                            # Love's he used, our nearest ahead was that one 66% of the time (15 mi / 30 degrees: 57%)

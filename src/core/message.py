@@ -31,7 +31,7 @@ def _words(truck: TruckNow, d: Decision, clean, named) -> str:
         return clean(f"{_low(truck)}\n\nFind the nearest truck stop now.")
     s = d.stop
     off = f", about {s.off_mi:.0f} mi off your road" if d.reason == "detour" else ""
-    miles = f"About {_miles(truck, s)} mi ahead" if d.reason == "no_load" else f"In {_miles(truck, s)} mi{off}"
+    miles = f"About {_miles(truck, s)} mi ahead" if d.reason in ("no_load", "heading") else f"In {_miles(truck, s)} mi{off}"
     where = f"📍 {miles}" + (clean(f", {s.store.way}") if s.store.way else "")
     lines = [clean(_head(truck, d)), "", named(s) + _price(s), "", where, clean(f"🛢 {_todo(d)}"),
              f"🪫 Arrive with about {_level(truck, max(arrive_pct(truck, s.miles), 0))}"]

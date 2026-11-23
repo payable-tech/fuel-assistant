@@ -8,6 +8,7 @@ import { STATES, storeName } from './labels.js';
 const REASONS = {
   range: 'in the fuel zone, saves the most', hard_stop: 'last before the reserve', tight: "under the reserve, nearest Love's",
   last: "last Love's in reach", low: "no Love's in reach", no_load: "no load: nearest Love's ahead",
+  heading: "off the load's road: nearest Love's ahead",
 };
 
 // How it played out, newest first: each message and what the driver did, and the fills no message asked for. `now` (the

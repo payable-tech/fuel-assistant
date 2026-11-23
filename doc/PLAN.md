@@ -107,6 +107,8 @@ Fuel Assistent project/
 │  ├─ rules.py                the recommendation's settings from config.py, shared by the engine and the dashboard
 │  ├─ sources/  samsara.py · datatruck_web.py · datatruck.py (orders) · loves.py · eia.py · telegram.py · google_routes.py
 │  │            · google_places.py (truck stops, the urgent backup) · efs_statement.py (EFS statement PDFs in data/efs)
+│  │            · eManager, the EFS website, for fuel cards (§5.7): efs_chrome.py (its Chrome window) · efs_page.py
+│  │              (reading a page) · efs_web.py (login, account switch, allowed buttons) · efs_cards.py (the card tools)
 │  ├─ core/     linking.py · fuel.py (fuel figures) · market.py (EIA yardstick) · tank.py (tank helper) · loads.py (current load)
 │  │            · geo.py (route, Love's along it) · habits.py (driver habits) · nearby.py (cheapest Love's near a fill)
 │  │            · burn.py (engine as a fuel meter, live MPG) · recommend.py (where to fuel, how much)
@@ -139,7 +141,7 @@ they never run in the day (a night missed waits for the next one):
 | Job | Every | Does |
 |---|---|---|
 | `sync_registry` | night | Refresh Samsara, Datatruck and Telegram copies, then relink `trucks` |
-| `load_prices` | 30 min | Sheets not read before → `price_history`; the newest price date → `stores` |
+| `load_prices` | 30 min | New sheets posted in the Telegram group "Love's Daily Prices" → data/love's/telegram (Bob's login); sheets not read before → `price_history`; the newest price date → `stores` |
 | `read_statements` | 30 min | EFS statement PDFs in `data/efs` not read before → `efs_statements` / `efs_lines` (~8 s per statement) |
 | `statement_evidence` | 15 min | Per statement, every Samsara truck's engine fuel used, miles and gauge → `statement_burn` (4 calls); per diesel fill, the gauge's biggest rise and the truck's place → `fill_evidence` (two small calls per fill, 10 trucks per run). Both kept |
 | `refresh_orders` | 15 min | Active Datatruck orders + stops → `dt_orders` / `dt_stops` |
@@ -286,6 +288,49 @@ default.
   and their counts, all trucks and on duty), one square per truck in clusters by status, colored by the picked bar;
   a group clicked lists its trucks.
 
+### 5.7 Fuel cards in eManager (`sources/efs_*.py`, copied from bob-agent 2026-11-22)
+- **No API: a real browser.** eManager's bot check lets only a browser through, so it runs in its own Chrome window
+  (profile `data/efs-chrome`, port `EMANAGER_CHROME_PORT`), and every request is sent from inside its tab. `efs-login`
+  opens it; a person logs in by hand. eManager logs out after 90 idle minutes (the heartbeat every 4 minutes
+  prevents that) and ends every login after 24 hours regardless.
+- **Two accounts, one login:** `EMANAGER_USERS` names the user that acts for ALIF and for DT; the session switches
+  before every card call. "All cards" is one lookup per policy (`EMANAGER_POLICIES`). Pick a card by its id: last
+  four digits are not unique.
+- **The tools** (`efs_cards.py`): `cards` (look up), `card` (read one), `set_status` (ACTIVE / INACTIVE / HOLD),
+  `set_override` (1-9 transactions, always All Locations (the user, 2026-11-22), hand enter; never Product/Limit Override, which opens
+  a limits page first, not recorded), `remove_override`,
+  `set_prompt` (unit, driver ID or driver name). No one-station override: overrides are always All Locations.
+- **Prompts** (recorded 2026-11-22, `data/efs/har/`): Card Lookup's unit, driver ID and driver name are the card's
+  prompts. Unit and Driver ID are Exact Match: the driver types them at the pump. Each prompt row has its own Edit
+  form; its value box is `cardInfo.matchValue` (Exact Match) or `cardInfo.reportValue` (Report Only). A name is
+  kept as typed; Card Lookup prints it in capitals, so names are compared without case.
+- **Override:** eManager shows no page with the number of transactions afterwards (checked live 2026-11-22), so a
+  change confirms only that the card is in override mode.
+- **Safety:** only Look Up, Save, Override, Remove Override, a prompt's Edit and Update are ever pressed (delete card,
+  delete prompt, transfer, reset PIN and cancel are refused in code). Every change sends the card's other settings back as its page showed them, then opens
+  the card again and stops if anything is not as asked. A card in override mode is locked until the override is off.
+
+### 5.8 The card agent (`jobs/card_agent.py`, `core/card_agent.py`, `sources/claude.py`, `sources/telegram_agent.py`; the user's go 2026-11-23)
+Built the way bob-agent's Telegram agent works (`D:/bob-agent/src/agent`, `src/workers/fuel_cards`).
+- **Claude** runs through the Claude Agent SDK on this PC's Claude Code login (the plan, not API billing), `AGENT_MODEL`,
+  with none of Claude Code's own tools or settings: only four tools (`declined_card`, `look_up_card`, `reply_to_driver`,
+  `hand_to_office`), at most 12 turns or $2 a run.
+- **Wakes** when the assistant's account is tagged in a truck's group (or answered with card words); never in its office
+  or test chat or a group with no truck; each message once; a bare tag within 10 min of a request there joins it.
+  Reads the last `AGENT_HISTORY` messages and up to `AGENT_MAX_PHOTOS` photos, plus the truck's facts (drivers, fuel,
+  place, nearest Love's, last fills; never a driver ID). eManager logged out: the office is told, Claude isn't asked.
+- **A declined card is the owner's rule in code** (bob-agent's, owner 2026-10-11), Claude only passes its line on: whose
+  card is the group's truck's driver (a team: the one writing, by name); his card is the one on the unit in his name, in
+  ALIF or DT; ACTIVE and not open: opened for `AGENT_OPEN_FILLS` fill, all locations, now; HOLD or INACTIVE: to the
+  office (activating is a person's yes); anything else, or opened by the agent within `AGENT_REOPEN_HOURS`: to the office.
+  Every opening is posted to the office (`AGENT_OFFICE_CHAT_ID`, else the test group; last four digits only) and
+  written to `agent_runs` the moment eManager confirms it.
+- **The driver** gets one short line, as a dispatcher writes ("Card is ready, try again now."): never a long number,
+  never "ready"/"open" unless a card was opened. `AGENT_ACT = False` makes it watch-only.
+- **Runs** as its own program (`card-agent`, `run_agent.bat`); it opens the eManager window and keeps its login alive
+  (log in there by hand, every 24 hours). Not done yet: approvals for activating a card (bob-agent asks an approver),
+  closing an override nobody used.
+
 ### 5.2 Commands (`.venv\Scripts\python.exe src\main.py <command>`)
 
 | Command | Does |
@@ -313,6 +358,11 @@ default.
 | `set-chat <unit> <chat_id\|none>` | Your Telegram group for a pilot truck (beats auto) |
 | `set-tank <unit> <gallons\|none>` | Your tank size for a pilot truck (beats the tank helper) |
 | `init-db` | Create the empty database |
+| `efs-login` | Open the eManager window and keep its login alive until Ctrl+C (§5.7) |
+| `efs-cards <ALIF\|DT> [--by unit\|driver\|driver-id\|card\|xref\|policy] [text]` | List cards, read only; one card found also shows its page |
+| `efs-card <ALIF\|DT> [--by unit] <text> --status S \| --override N [--hand-enter] \| --remove-override \| --set unit\|driver-id\|driver VALUE [--send]` | Change exactly one card; without `--send` it only shows the card and the change |
+| `agent-login` | Log the card agent's own Telegram login in, once (the assistant's account, a second login: `data/agent.session`) |
+| `card-agent` | Run the card agent (§5.8) until stopped; `run_agent.bat` restarts it. Log: `data/agent.log` |
 
 Dashboard rule: it shows numbers so patterns are visible (related series stacked over the same weeks, rolling
 comparisons). No takeaway sentences, no answers to one-off questions, no fixed "then vs now" anchors; captions only say
@@ -452,6 +502,24 @@ Settings from a replay on 251 no-load Love's fills made while driving: with the 
 30 / 45 mi before the Love's he used, our nearest ahead was that one 80% / 66% / 54% of the time (15 mi and ±30°: 70% /
 57% / 48%).
 
+**Never a Love's behind him** (`geo.behind`, `jobs/recommend._against`/`_by_way`/`_told_now`, `loads.pick`; the user's go,
+2026-11-22, after 1767 was told Love's he had already passed and got down to 4% on I-30). His way is the direction of
+his last `HEADING_MI` of GPS, driven within `HEADING_MAX_MIN` and since his last stop (`no_load.set_off`: a pickup or a
+delivery can turn him around; no load uses the same); a place more than `NEAR_STOP_MI` away and more than `BEHIND_DEG`
+off it is behind him. The road may rightly turn back at the load's next stop (268331 arriving at his Reynoldsburg pickup,
+then west to California), so only the road up to that stop, and the Love's before it, are judged by his way. On a load:
+when the road `ROAD_AHEAD_MI` on from his mile lies behind him (a load in Datatruck he isn't driving makes a road that
+starts with a U-turn: 1767's said Kansas City, he drove to Texas), or the road's stop does, he is told the nearest Love's
+ahead in his direction as with no load, reason `heading`, state "off its road", kept under the load; the road is kept,
+so Google isn't asked again before `REROUTE_MIN`. A stop told on the road that lies behind him is passed. A stop told by
+his way (`no_load`, `heading`) is judged by his way whatever load comes, and a stop told on another load is judged on
+this load's road (it stands while it is on it), so a load put right never brings a second message for the same fill.
+Datatruck putting it right: changed stops or a closed load make a new road at once; an added load takes over from the
+one still "in transit" when the old one's next stop lies behind him (`loads.pick`; 1767's Kansas City was ~125° off, so
+there the road check did it). The road is kept only near its part ahead of his mile: driven back along it, he left it
+(his mile can't go back: 9606 was told "11 mi" for a Love's 88 mi off). Why `BEHIND_DEG` 135: GPS of the 433 messages of
+Nov 15-22: 14 told a Love's already behind him (151-180° off), 331 were driven toward; of those, 3 were over 135°.
+
 **Regions** (`recommend.regions`) are the same forecast further down the road, starting from the stop told: how many stops
 the load needs, roughly where, and where a much cheaper Love's lies past one. Near, they follow the hard stop's rule; far
 down the road its margin hides every Love's, so there the forecast alone says where. Shown on the tab; they change silently. In the replay they added no
@@ -565,6 +633,7 @@ drawn so the scope of each figure shows without asking (the user, 2026-11-03):
 | `PART_MIN_GAL` / `PART_MARGIN_GAL` | 30 / 25 | how much to buy at a truck stop before a Love's |
 | `MAX_PASSED` | 2 | stops told and driven past on one tank before plain stops go quiet |
 | `HEADING_MI` / `AHEAD_CONE_DEG` | 10 / 45 | no load: its direction from where its GPS was this far back / a Love's within this many degrees of it, either side, is ahead |
+| `HEADING_MAX_MIN` / `BEHIND_DEG` / `ROAD_AHEAD_MI` | 30 / 135 / 20 | its direction only from miles driven this lately / a place more than this off it is behind him / the road this far on shows where it goes |
 | `GAUGE_STEADY_MIN` | 10 | the fuel now is the middle of the gauge readings of this many minutes. On October's readings: half the jumps of the newest reading, false rises 6.6% to 1.0%, reads only 0.3 points high while driving (20 min: 0.6) |
 | `LAST_PCT` | 3 | a Love's reached with less than this in the worst case is out of reach |
 | `URGENT_PCT` | 25 | with no Love's in reach, the truck stop backup starts at this gauge level |

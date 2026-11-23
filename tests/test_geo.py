@@ -88,3 +88,20 @@ def test_thin_track():
     track = [TrackPoint(at + timedelta(minutes=k), 30.0, -97.0) for k in range(5)] + [TrackPoint(at + timedelta(minutes=9), 30.1, -97.0)]
     kept = geo.thin_track(track, 0.1)
     assert [p.at for p in kept] == [at, at + timedelta(minutes=9)]
+
+
+# A place lies behind a truck when it is more than the angle off its way and farther than `near_mi`; never while its
+# way isn't known.
+def test_behind():
+    here = (30.0, -97.0)
+    assert geo.behind(here, 90, (30.0, -97.5), 2, 135)            # west of a truck going east
+    assert not geo.behind(here, 90, (30.0, -96.5), 2, 135)        # east: ahead
+    assert not geo.behind(here, 90, (30.5, -97.0), 2, 135)        # north: beside its way, not behind
+    assert not geo.behind(here, 90, (30.0, -97.01), 2, 135)       # half a mile back: he is there
+    assert not geo.behind(here, None, (30.0, -97.5), 2, 135)      # parked: no way to be behind
+
+
+# The point of a line some miles from its start; its last point past the end.
+def test_point_at():
+    line = [(30.0, -97.0 + k / 58) for k in range(11)]            # a point about every mile, going east
+    assert geo.point_at(line, 0) == line[0] and geo.point_at(line, 4.5) == line[5] and geo.point_at(line, 50) == line[-1]

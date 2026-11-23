@@ -12,16 +12,28 @@ def current_order(orders: list[Order]) -> Order | None:
     return min(orders, key=_priority, default=None)
 
 
-# The load the truck is working on and its stops still ahead: the first of its loads (in transit first, then by pickup)
-# with a stop ahead, GPS points from `window` before each one's pickup counting. None when nothing is ahead.
-def next_load(orders: list[Order], track: list[TrackPoint], reached_mi: float, window: timedelta,
-              now: datetime) -> tuple[Order, list[Stop]] | None:
-    for order in sorted(orders, key=_priority):  # a finished load Datatruck still shows as active doesn't hide the next
+# The truck's loads that still have a stop ahead, with those stops: in transit first, then by pickup, GPS points from
+# `window` before each one's pickup counting. A finished load Datatruck still shows as active has none: it drops out.
+def loads_ahead(orders: list[Order], track: list[TrackPoint], reached_mi: float, window: timedelta,
+                now: datetime) -> list[tuple[Order, list[Stop]]]:
+    found = []
+    for order in sorted(orders, key=_priority):
         since = visits_from(order, window, now)
         ahead = stops_ahead(order, [(p.lat, p.lng) for p in track if p.at >= since], reached_mi)
         if ahead:
+            found.append((order, ahead))
+    return found
+
+
+# The load the truck is working on, of those with stops ahead (`loads_ahead`, in their order): the first whose next stop
+# doesn't lie behind the truck at `position` going `toward`, else the first. So when Datatruck adds the load the driver
+# really drives while the old one still shows in transit, the new one takes over. None when no load has a stop ahead.
+def pick(found: list[tuple[Order, list[Stop]]], position: geo.Point, toward: float | None, near_mi: float,
+         behind_deg: float) -> tuple[Order, list[Stop]] | None:
+    for order, ahead in found:
+        if not geo.behind(position, toward, (ahead[0].lat, ahead[0].lng), near_mi, behind_deg):
             return order, ahead
-    return None
+    return found[0] if found else None
 
 
 # The loads that can still be under way: one picked up more than `max_age` ago is over, whatever Datatruck still says

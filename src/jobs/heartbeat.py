@@ -2,6 +2,8 @@
 # part of the program (core/health) and alerts once in Telegram when one breaks and once when it works again. On start it
 # also tells if the program itself was down (a crash, a power cut). What it finds is kept in `health_alerts`, which the
 # dashboard shows. The user's go, 2026-11-19, after the Datatruck login ran out overnight and nobody knew.
+# It also asks Google itself at every check (sources/google_reach) and records the answer in `source_health` like a
+# source refresh: nothing else would show Google out of reach (the office network refused it unseen, 2026-11-22).
 import logging
 import time
 from datetime import datetime, timedelta, timezone
@@ -10,10 +12,11 @@ import config
 import db
 from core import health
 from models import Problem
-from sources import telegram
+from sources import google_reach, telegram
 
 log = logging.getLogger(__name__)
 NAME = "Heartbeat"  # its runs are recorded in job_runs under this name; the Data tab lists it with the refreshes
+GOOGLE = "Google Maps"  # the Routes and Places APIs in source_health: one row, so one alert when Google is out of reach
 
 
 # Forever: tells if the program was down before this start, then checks every HEARTBEAT_MIN. `schedule`: each
@@ -28,10 +31,12 @@ def loop(schedule: dict[str, int | None]) -> None:
         time.sleep(config.HEARTBEAT_MIN * 60)
 
 
-# One check: finds what is down, alerts on what started or ended, and keeps the rest for the dashboard.
+# One check: asks Google, finds what is down, alerts on what started or ended, and keeps the rest for the dashboard.
 def run(schedule: dict[str, int | None], now: datetime) -> list[Problem]:
     started = db.now()
+    google_error = google_reach.unreachable()  # asked before the database is opened: a slow network mustn't hold it
     with db.connect() as conn:
+        db.record_source(conn, GOOGLE, now, google_error)
         found = _problems(conn, schedule, now)
         kept, ended = health.changes(found, db.health_alerts(conn))
     for p in ended:

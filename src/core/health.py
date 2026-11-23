@@ -1,6 +1,6 @@
 # The heartbeat's rules (pure): what counts as a part being down, which problems are new or fixed since the last look,
-# and the words of the alerts. The parts: each source copy, each scheduled job, the data itself (Samsara positions,
-# fuel purchases, the Love's price sheet) and Telegram sending.
+# and the words of the alerts. The parts: each source copy, Google Maps (asked by the heartbeat itself), each scheduled
+# job, the data itself (Samsara positions, fuel purchases, the Love's price sheet) and Telegram sending.
 from dataclasses import replace
 from datetime import datetime, timedelta
 
@@ -10,7 +10,7 @@ from models import Problem, SourceHealth
 NIGHT_LATE = timedelta(hours=26)  # a nightly job not started this long: last night's run was missed
 
 
-# Sources whose refreshes have failed for `down_min` or more: one failed try is a blip, the copy is kept meanwhile.
+# Sources whose tries have failed for `down_min` or more: one failed try is a blip (a source's copy is kept meanwhile).
 def source_problems(sources: list[SourceHealth], now: datetime, down_min: float) -> list[Problem]:
     found = []
     for s in sources:
@@ -18,7 +18,7 @@ def source_problems(sources: list[SourceHealth], now: datetime, down_min: float)
             continue
         since = s.last_ok_at or s.last_try_at
         if s.last_ok_at is None or now - s.last_ok_at >= timedelta(minutes=down_min):
-            found.append(Problem(s.name, f"not refreshing, the last good copy is from {_clock(since)}: {s.error[:200]}", since))
+            found.append(Problem(s.name, f"failing, last good at {_clock(since)}: {s.error[:200]}", since))
     return found
 
 

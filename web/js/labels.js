@@ -53,6 +53,7 @@ export const WHY = [
   { key: 'tight', label: "Under the reserve, nearest Love's", rule: 'Already under the 10% reserve in the worst case.' },
   { key: 'detour', label: "Love's a short detour off the road", rule: "No Love's on the road was in reach." },
   { key: 'no_load', label: "No load, nearest Love's ahead", rule: "No load: the nearest Love's in the direction it drives." },
+  { key: 'heading', label: "Off the load's road, nearest Love's ahead", rule: "Drives away from its load's road: the nearest Love's in the direction it drives." },
   { key: 'low', label: "No Love's in reach, low fuel", rule: 'A truck stop that is not a Love\'s. Switched off since Nov 13.' },
 ];
 
@@ -62,6 +63,8 @@ export const STATES = {
   told: 'Stop told', parked: 'Parked: its stop is told once it moves', 'no fresh gauge': 'No fresh gauge reading',
   'no load': "No load, fuel above the driver's usual level", 'no load, parked': "No load, at the driver's level: told once it moves",
   "no load, no Love's ahead": "No load, at the driver's level: no Love's in reach ahead",
+  'off its road': "Drives away from its load's road, fuel above the driver's usual level",
+  "off its road, no Love's ahead": "Drives away from its load's road, at the driver's level: no Love's in reach ahead",
   skipped: "Drove past 2 stops: quiet until the last Love's or low fuel",
 };
 

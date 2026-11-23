@@ -67,13 +67,15 @@ def test_alert_texts():
     assert "(42 min)" in health.gap_text(NOW - timedelta(minutes=42), NOW)
 
 
-# A temporary database for each test, and every Telegram send caught (a False in `fail` makes the next sends fail).
+# A temporary database for each test, every Telegram send caught (a False in `fail` makes the next sends fail), and
+# Google in reach without asking it (a text in `google_error` makes the next checks find it out of reach).
 @pytest.fixture
 def sent(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "t.db")
     monkeypatch.setattr(config, "TEST_CHAT_ID", -100)
     monkeypatch.setattr(config, "ALERT_CHAT_ID", None)
     calls = Calls()
+    monkeypatch.setattr(heartbeat.google_reach, "unreachable", lambda: calls.google_error)
 
     def send(chat, text):
         if calls.fail:
@@ -84,11 +86,13 @@ def sent(tmp_path, monkeypatch):
     return calls
 
 
-# The sends caught by the fixture, and `fail`: while it holds anything, sending fails.
+# The sends caught by the fixture; `fail`: while it holds anything, sending fails; `google_error`: what the check of
+# Google finds (None: in reach).
 class Calls(list):
     def __init__(self):
         super().__init__()
         self.fail = []
+        self.google_error = None
 
 
 # Every refresh is recorded: a failed one keeps the last good time and its error, a good one clears the error.
@@ -119,11 +123,26 @@ def test_alert_once_down_once_up(sent):
     assert len(sent) == 1                                    # told once
     with db.connect() as conn:
         db.record_source(conn, "Datatruck fuel lines", NOW + timedelta(minutes=8), None)
-        assert list(db.health_alerts(conn)) == ["Datatruck fuel lines"]
+        assert list(db.health_alerts(conn)) == ["Datatruck fuel lines"]  # kept until a check sees it working
     heartbeat.run({}, NOW + timedelta(minutes=10))
     assert len(sent) == 2 and "working again" in sent[1][1]
     with db.connect() as conn:
         assert db.health_alerts(conn) == {}
+
+
+# Google out of reach: a blip of a few minutes is not told; half an hour of it is told once, naming the address; once
+# it answers again, one "working again".
+def test_google_out_of_reach_is_told(sent):
+    heartbeat.run({}, NOW)                                   # in reach: recorded as working
+    sent.google_error = "routes.googleapis.com: ConnectError: refused"
+    heartbeat.run({}, NOW + timedelta(minutes=5))
+    assert sent == []                                        # a blip
+    heartbeat.run({}, NOW + timedelta(minutes=35))
+    heartbeat.run({}, NOW + timedelta(minutes=40))
+    assert len(sent) == 1 and "🔴" in sent[0][1] and "Google Maps" in sent[0][1] and "routes.googleapis.com" in sent[0][1]
+    sent.google_error = None
+    heartbeat.run({}, NOW + timedelta(minutes=45))
+    assert len(sent) == 2 and "working again" in sent[1][1]
 
 
 # On start, a heartbeat silent for longer than DOWN_GAP_MIN means the program was down: that is told once.

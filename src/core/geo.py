@@ -31,6 +31,20 @@ def turn(a: float, b: float) -> float:
     return abs((a - b + 180) % 360 - 180)
 
 
+# True when a place lies behind a truck at `position` going `toward` (compass degrees): farther than `near_mi` and more
+# than `behind_deg` off its way. Never while its way isn't known (`toward` None).
+def behind(position: Point, toward: float | None, place: Point, near_mi: float, behind_deg: float) -> bool:
+    return toward is not None and miles(position, place) > near_mi and turn(bearing(position, place), toward) > behind_deg
+
+
+# The point of a line `mile` miles from its start; its last point when the line is shorter.
+def point_at(line: list[Point], mile: float) -> Point:
+    for point, mark in zip(line, along(line)):
+        if mark >= mile:
+            return point
+    return line[-1]
+
+
 # Miles from the start of a line to each of its points.
 def along(line: list[Point]) -> list[float]:
     total, result = 0.0, [0.0]

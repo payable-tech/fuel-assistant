@@ -158,6 +158,35 @@ class FuelCard:
     active: bool
 
 
+# A fuel card as eManager's Card Lookup lists it (sources/efs_cards). Last four digits are not unique: pick by card_id.
+@dataclass(frozen=True)
+class EfsCardRow:
+    card_id: str                    # eManager's own id for the card
+    number: str                     # as eManager shows it, masked: "556748******0806"
+    policy: str
+    unit: str
+    driver_id: str
+    driver_name: str
+    xref: str
+    status: str                     # "ACTIVE", "INACTIVE", "HOLD"
+
+
+# A fuel card's own page in eManager: its settings, whether it is in override mode, and its prompts.
+@dataclass(frozen=True)
+class EfsCard:
+    card_id: str
+    status: str                     # "ACTIVE", "INACTIVE", "HOLD"
+    hand_enter: str                 # "ALLOW", "DISALLOW", "POLICY"
+    info_source: str                # where its prompts come from: "CARD", "POLICY", "BOTH"
+    mobile: str                     # mobile transactions: "ALLOW", "DISALLOW", "POLICY"
+    policy: str
+    xref: str
+    expires: str                    # as the page prints it: "Oct 1, 2029"
+    last_used: str                  # as the page prints it; "" when never used
+    override: bool                  # in override mode: locked until the override is removed
+    prompts: tuple[tuple[str, str, str], ...]  # (prompt, validation, value): ("Unit Number", "Exact Match", "3189")
+
+
 # A group Bob's Telegram account is in. A row of `tg_groups`.
 @dataclass(frozen=True)
 class TelegramGroup:
@@ -519,8 +548,9 @@ class Picture:
     zones: tuple[Zone, ...] = ()
 
 
-# How a source copy's last refresh went (one row per source of `source_health`): when it was last tried, when it last
-# worked, and the error of the last try when that failed (None when it worked).
+# How a source copy's last refresh went (one row per source of `source_health`; also Google Maps, which the heartbeat
+# asks itself): when it was last tried, when it last worked, and the error of the last try when that failed (None when
+# it worked).
 @dataclass(frozen=True)
 class SourceHealth:
     name: str
@@ -537,3 +567,15 @@ class Problem:
     text: str
     since: datetime | None = None
     told: bool = False
+
+
+# One message of a driver group as the card agent reads it (sources/telegram_agent): when, who wrote it, whether it is
+# the agent's own account, its text, and its photo as JPEG bytes when it has one and the photo was fetched.
+@dataclass(frozen=True)
+class ChatLine:
+    message_id: int
+    at: datetime
+    sender: str
+    ours: bool
+    text: str
+    photo: bytes | None = None

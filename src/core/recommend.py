@@ -216,9 +216,9 @@ def _truck_stop(told: Recommendation, line: list[geo.Point], mile: float, off_mi
 # reserve still kept waits like any stop, but is told however many he drove past.
 def quiet(here: TruckNow, d: Decision, fueled_at: datetime | None, now: datetime, rules: FuelRules,
           parked: bool = False, passed: int = 0) -> bool:
-    if d.kind != "stop" or d.reason not in ("range", "hard_stop", "detour", "last", "no_load"):
+    if d.kind != "stop" or d.reason not in ("range", "hard_stop", "detour", "last", "no_load", "heading"):
         return False
-    if d.reason in ("last", "no_load") and (d.worst_pct is None or d.worst_pct < rules.reserve_pct):
+    if d.reason in ("last", "no_load", "heading") and (d.worst_pct is None or d.worst_pct < rules.reserve_pct):
         return False
     # the fill may still be going on: 14755 got its stop again at the pump, 2026-11-04
     just_fueled = fueled_at is not None and now - fueled_at < timedelta(minutes=rules.hold_min)
@@ -226,10 +226,11 @@ def quiet(here: TruckNow, d: Decision, fueled_at: datetime | None, now: datetime
 
 
 # True when a plain fuel stop comes after the driver drove past `passed` stops told on this tank, and that is the limit:
-# one more is noise (of 23 third-or-later messages, 1 was followed; the user's go, 2026-11-11). A no-load truck's nearest
-# Love's is a plain stop too. The last Love's in reach, a detour, low fuel and the emergency are not: those are still told.
+# one more is noise (of 23 third-or-later messages, 1 was followed; the user's go, 2026-11-11). The nearest Love's ahead
+# (no load, or off the load's road) is a plain stop too. The last Love's in reach, a detour, low fuel and the emergency
+# are not: those are still told.
 def skipped(d: Decision, passed: int, rules: FuelRules) -> bool:
-    return d.kind == "stop" and d.reason in ("range", "hard_stop", "no_load") and passed >= rules.max_passed
+    return d.kind == "stop" and d.reason in ("range", "hard_stop", "no_load", "heading") and passed >= rules.max_passed
 
 
 # True when the truck moved less than `moved_mi` from where its GPS had it at `since` to `position` now: parked (a

@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta, timezone
 
 from core import loads
-from core.loads import current_order, next_load, stops_ahead
+from core.loads import current_order, loads_ahead, pick, stops_ahead
 from models import Order, Stop, TrackPoint
 
 
@@ -63,26 +63,26 @@ def seen(place, day: int) -> TrackPoint:
 
 
 # A finished load still "in transit" in Datatruck is skipped: the next load, not yet picked up, is the one ahead.
-def test_next_load_skips_finished():
+def test_loads_ahead_skip_finished():
     done, coming = load(1, "in_transit", 17, DALLAS, ATLANTA), load(2, "dispatched", 19, HOUSTON, DALLAS)
-    order, ahead = next_load([done, coming], [seen(DALLAS, 17), seen(ATLANTA, 18)], 1.0, timedelta(hours=24),
-                             datetime(2026, 10, 18, 13, tzinfo=timezone.utc))
+    (order, ahead), = loads_ahead([done, coming], [seen(DALLAS, 17), seen(ATLANTA, 18)], 1.0, timedelta(hours=24),
+                                  datetime(2026, 10, 18, 13, tzinfo=timezone.utc))
     assert order.order_id == 2 and [s.stop_id for s in ahead] == [20, 21]  # Dallas on the 17th was the earlier load
 
 
 # A visit days before a load's pickup (an earlier load at the same shipper) doesn't count as its pickup.
 def test_old_visit_not_counted():
     coming = load(2, "dispatched", 19, ATLANTA, HOUSTON)
-    order, ahead = next_load([coming], [seen(ATLANTA, 15)], 1.0, timedelta(hours=24),
-                             datetime(2026, 10, 19, 13, tzinfo=timezone.utc))
+    (order, ahead), = loads_ahead([coming], [seen(ATLANTA, 15)], 1.0, timedelta(hours=24),
+                                  datetime(2026, 10, 19, 13, tzinfo=timezone.utc))
     assert [s.stop_id for s in ahead] == [20, 21]
 
 
 # Every load finished: nothing ahead.
-def test_next_load_none():
+def test_loads_ahead_none():
     done = load(1, "in_transit", 17, DALLAS, ATLANTA)
-    assert next_load([done], [seen(DALLAS, 17), seen(ATLANTA, 18)], 1.0, timedelta(hours=24),
-                     datetime(2026, 10, 18, 13, tzinfo=timezone.utc)) is None
+    assert loads_ahead([done], [seen(DALLAS, 17), seen(ATLANTA, 18)], 1.0, timedelta(hours=24),
+                       datetime(2026, 10, 18, 13, tzinfo=timezone.utc)) == []
 
 
 # Live MPG doesn't count while the truck runs empty: a pickup still ahead, or at its pickup less than `settle` ago.
@@ -114,3 +114,16 @@ def test_under_way():
     now = datetime(2026, 11, 5, tzinfo=timezone.utc)
     old, recent, unknown = order(1, "in_transit", 6), order(2, "in_transit", 30), order(3, "assigned", None)
     assert [o.order_id for o in loads.under_way([old, recent, unknown], timedelta(days=10), now)] == [2, 3]
+
+
+# The load to judge by is the first whose next stop isn't behind the truck: Datatruck still shows the old load in transit
+# (its delivery behind him) while the one he drives was added (ahead): that one takes over. With his way unknown, or
+# one load only, the first (the road check takes it from there).
+def test_pick_prefers_a_load_ahead():
+    here, west, east = (30.0, -97.0), (30.0, -99.0), (30.0, -95.0)
+    old = (load(1, "in_transit", 17, DALLAS, west), [Stop(11, 1, 2, "delivery", *west, "B", "TX")])
+    new = (load(2, "dispatched", 19, DALLAS, east), [Stop(21, 2, 2, "delivery", *east, "B", "TX")])
+    assert pick([old, new], here, 90, 2, 135)[0].order_id == 2       # driving east: the load ahead
+    assert pick([old, new], here, None, 2, 135)[0].order_id == 1     # way unknown: the one in transit
+    assert pick([old], here, 90, 2, 135)[0].order_id == 1
+    assert pick([], here, 90, 2, 135) is None
