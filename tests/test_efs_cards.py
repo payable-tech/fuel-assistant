@@ -6,8 +6,8 @@ from urllib.parse import parse_qsl, urlsplit
 import pytest
 
 import main
-from models import EfsCardRow
-from sources import efs_cards, efs_chrome, efs_page, efs_web
+from base.models import EfsCardRow
+from features.cards import efs_cards, efs_chrome, efs_page, efs_web
 
 TOKENS = '<input type="hidden" name="_sourcePage" value="sp" /><input type="hidden" name="__fp" value="fp" />'
 ROW = EfsCardRow("1000091368925", "556748******0806", "2", "3189", "3189", "JEAN Z", "", "INACTIVE")

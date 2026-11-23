@@ -1,6 +1,6 @@
 # Tests route geometry: distances, cutting a line into short pieces, and finding the stores along a route.
-from core import geo
-from models import Store
+from base import geo
+from base.models import Store
 
 
 # A store at a point, with a price.
@@ -74,7 +74,7 @@ def test_polyline():
 # The track point nearest a moment, before or after it; none on an empty track.
 def test_where_at():
     from datetime import datetime, timedelta, timezone
-    from models import TrackPoint
+    from base.models import TrackPoint
     at = datetime(2026, 11, 5, tzinfo=timezone.utc)
     track = [TrackPoint(at - timedelta(minutes=9), 30.0, -97.0), TrackPoint(at + timedelta(minutes=4), 30.1, -97.0)]
     assert geo.where_at(track, at) == track[1] and geo.where_at([], at) is None
@@ -83,7 +83,7 @@ def test_where_at():
 # A thinned track keeps its first and last points and those at least the step apart, with their times.
 def test_thin_track():
     from datetime import datetime, timedelta, timezone
-    from models import TrackPoint
+    from base.models import TrackPoint
     at = datetime(2026, 11, 5, tzinfo=timezone.utc)
     track = [TrackPoint(at + timedelta(minutes=k), 30.0, -97.0) for k in range(5)] + [TrackPoint(at + timedelta(minutes=9), 30.1, -97.0)]
     kept = geo.thin_track(track, 0.1)

@@ -6,11 +6,10 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-import config
-import db
-from core import message
-from jobs import recommend as job
-from models import Decision, FuelLine, Order, Recommendation, Stop, SyncedTruck, Trip, Truck, TruckWatch
+from base import config
+from base.models import Decision, FuelLine, Order, Recommendation, Stop, SyncedTruck, Trip, Truck, TruckWatch
+from base.store import db
+from features.engine import job, message
 
 TEST_GROUP = -5383830098
 AT = datetime(2026, 11, 2, 12, 0, tzinfo=timezone.utc)
@@ -41,7 +40,7 @@ def test_failures_are_logged_and_each_truck_ticks(sent, monkeypatch, caplog):
     monkeypatch.setattr(job, "_look", look)
     monkeypatch.setattr(job.progress, "tick", lambda: ticks.append(1))
     assert job.run() == 2
-    network, fault = [r for r in caplog.records if r.name == "jobs.recommend"]
+    network, fault = [r for r in caplog.records if r.name == "features.engine.job"]
     assert network.exc_info is None and "unit 340" in network.getMessage() and "ConnectError" in network.getMessage()
     assert fault.exc_info is not None and "unit 341" in fault.getMessage()
     assert len(ticks) == 2
@@ -246,7 +245,7 @@ def test_old_look_still_loads(sent):
 # The GPS is kept between looks: the first fetches from `since`, later ones only after the last point kept; a look that
 # needs an earlier start fetches it whole again; points before `since` drop off (2026-11-05: looks took minutes).
 def test_track_kept_between_looks(monkeypatch):
-    from models import TrackPoint
+    from base.models import TrackPoint
     calls = []
 
     def fetch(samsara_id, start, end):
@@ -267,7 +266,7 @@ def test_track_kept_between_looks(monkeypatch):
 # A truck with no load, its gauge at the driver's usual level, driving east: the nearest Love's east is told to its
 # driver and kept under no load; the next look finds it told; once the truck is past it, it was passed.
 def test_no_load_truck_is_told_the_loves_ahead(sent, monkeypatch):
-    from models import NO_LOAD_ORDER, Store, TrackPoint
+    from base.models import NO_LOAD_ORDER, Store, TrackPoint
     monkeypatch.setattr(config, "LIVE_UNITS", ("340",))
     monkeypatch.setattr(job, "_steady_fuel", lambda truck, now: truck.fuel_pct)
     east = Store("7", "Seguin", "TX", 30.0, -96.7, 6.0, 5.5, "2026-11-18", way="I-10 (Exit 610)")
@@ -305,7 +304,7 @@ def test_no_load_truck_is_told_the_loves_ahead(sent, monkeypatch):
 
 # A stop told on a load ends with that load once the truck has none; a parked truck at its level waits for its way.
 def test_no_load_ends_a_loads_stop_and_waits_while_parked(sent, monkeypatch):
-    from models import TrackPoint
+    from base.models import TrackPoint
     monkeypatch.setattr(job, "_steady_fuel", lambda truck, now: truck.fuel_pct)
     with db.connect() as conn:
         db.add_recommendation(conn, replace(REC, rec_id=None))

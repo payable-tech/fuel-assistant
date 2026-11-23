@@ -1,7 +1,7 @@
 # Tests how raw Samsara stats become our objects: a missing GPS point or fuel gauge becomes None, not an error.
 from datetime import datetime, timezone
 
-from sources import samsara
+from base.sources import samsara
 
 RAW = {"id": "281", "name": "Unit 340",
        "gps": {"time": "2026-10-19T17:58:42Z", "latitude": 32.7, "longitude": -96.8,

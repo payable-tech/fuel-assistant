@@ -2,8 +2,8 @@
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
-from core import outcomes
-from models import FuelLine, FuelStop, Recommendation, TrackPoint
+from base.models import FuelLine, FuelStop, Recommendation, TrackPoint
+from features.engine import outcomes
 
 
 # What became of a recommendation: the first diesel stop after it, and what going there would have saved.

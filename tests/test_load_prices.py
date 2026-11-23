@@ -1,8 +1,8 @@
 # Tests pulling Love's sheets from Telegram in the prices job: it asks only for what is newer than the newest sheet
 # already saved, and Telegram failing never stops the job.
-import config
-from jobs import load_prices
-from sources import telegram
+from base import config
+from base.fleet import load_prices
+from base.sources import telegram
 
 
 # The newest message id in the folder's file names is where the next pull starts; an empty folder starts from 0.

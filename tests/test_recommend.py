@@ -3,8 +3,9 @@
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
-from core import geo, message, recommend
-from models import Decision, FuelRules, Order, Recommendation, Store, StoreOnRoute, Truck, TruckNow, UsualLevel
+from base import geo
+from base.models import Decision, FuelRules, Order, Recommendation, Store, StoreOnRoute, Truck, TruckNow, UsualLevel
+from features.engine import message, recommend
 
 RULES = FuelRules(reserve_pct=10, worse=0.8, above_usual=5, look_mi=150, part_gap=0.50, part_reach_mi=500, part_min_gal=30,
                   part_margin_gal=25, low_penalty=5, urgent_pct=25, hold_min=60, near_mi=2, max_passed=2, last_pct=3)
@@ -470,7 +471,7 @@ def test_picture_shows_the_detour():
 
 # Parked: moved under a mile since then; on its way otherwise; can't tell (no track that far back): not parked.
 def test_parked():
-    from models import TrackPoint
+    from base.models import TrackPoint
     then = NOV2 - timedelta(minutes=20)
     track = [TrackPoint(then - timedelta(hours=1), 39.50, -87.38), TrackPoint(then, 39.507, -87.385)]
     assert recommend.parked(track, (39.5068, -87.3844), NOV2 - timedelta(minutes=15), 1.0)   # Terre Haute, 08:00 to 10:00

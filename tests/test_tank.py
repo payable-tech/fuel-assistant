@@ -1,8 +1,9 @@
 # Tests the tank helper: Central times to UTC, purchases at one stop counted once, and the estimate from the gauge.
 from datetime import datetime, timedelta, timezone
 
-from core import fuel, tank
-from models import FuelLine, FuelReading, TankEstimate
+from base import fuel
+from base.models import FuelLine, FuelReading, TankEstimate
+from features.engine import tank
 
 WINDOW = timedelta(hours=2)
 

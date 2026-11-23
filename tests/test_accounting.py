@@ -4,11 +4,11 @@ from dataclasses import replace
 
 import pytest
 
-import config
-import dashboard
-import db
-from core import accounting, fill_checks
-from models import EfsLine, EfsStatement, FuelLine
+from base import config
+from base.models import EfsLine, EfsStatement, FuelLine
+from base.store import db
+from features.accounting import accounting, fill_checks
+from features.dashboard import dashboard
 
 
 # A statement line; only what a test cares about is given.

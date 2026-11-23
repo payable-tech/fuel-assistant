@@ -1,8 +1,8 @@
 # Tests Samsara's evidence for a statement: the gauge's biggest rise, each fill's verdict, and bought vs burned per truck.
 from datetime import datetime, timedelta, timezone
 
-from core import evidence
-from models import EfsLine, FillEvidence, FuelLine, FuelReading, TruckBurn
+from base.models import EfsLine, FillEvidence, FuelLine, FuelReading, TruckBurn
+from features.accounting import evidence
 
 T0 = datetime(2026, 11, 10, 12, 0, tzinfo=timezone.utc)
 STORE = (35.0, -97.0)  # Love's #1

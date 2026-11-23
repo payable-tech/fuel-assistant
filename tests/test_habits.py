@@ -1,8 +1,8 @@
 # Tests driver habits: stops lined up with the gauge, and each driver's habit.
 from datetime import datetime, timedelta, timezone
 
-from core import habits
-from models import FuelLine, FuelReading, FuelStop
+from base.models import FuelLine, FuelReading, FuelStop
+from features.engine import habits
 
 WINDOW = timedelta(hours=2)
 

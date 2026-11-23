@@ -2,8 +2,8 @@
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
-from core import fleet_status
-from models import FleetTruck
+from base.models import FleetTruck
+from features.dashboard import fleet_status
 
 NOW = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)
 DAY = timedelta(hours=24)

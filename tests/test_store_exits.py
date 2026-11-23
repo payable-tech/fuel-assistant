@@ -2,11 +2,11 @@
 # reads each store once and gives up for the night when the site doesn't answer.
 import pytest
 
-import config
-import db
-from jobs import store_exits
-from models import Store
-from sources import loves_web
+from base import config
+from base.models import Store
+from base.sources import loves_web
+from base.store import db
+from features.engine import store_exits
 
 # A store page's heading as Love's site sends it: its words split by empty comments.
 PAGE = ('<h1 class="x">Love\'s Travel Stop<!-- --> #<!-- -->563</h1><h2>Belmont<!-- -->, <!-- -->OH<!-- --> | '

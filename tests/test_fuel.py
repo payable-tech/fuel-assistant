@@ -2,8 +2,8 @@
 from datetime import date
 from itertools import count
 
-from core import fuel
-from models import FuelLine
+from base import fuel
+from base.models import FuelLine
 
 _ids = count(1)
 

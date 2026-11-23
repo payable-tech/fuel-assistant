@@ -2,8 +2,8 @@
 # and which Love's are near enough.
 from itertools import count
 
-from core import nearby
-from models import FillLookup, FuelLine, Store
+from base.models import FillLookup, FuelLine, Store
+from features.dashboard import nearby
 
 _ids = count(1)
 # Love's #2 is ~21 mi north of #1 and cheaper; #3 is far away and cheapest

@@ -3,8 +3,8 @@
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
-from core import message, no_load, recommend
-from models import Decision, FuelRules, Recommendation, Store, TrackPoint, TruckNow, UsualLevel
+from base.models import Decision, FuelRules, Recommendation, Store, TrackPoint, TruckNow, UsualLevel
+from features.engine import message, no_load, recommend
 
 RULES = FuelRules(reserve_pct=10, worse=0.8, above_usual=1, look_mi=60, part_gap=0.50, part_reach_mi=500, part_min_gal=30,
                   part_margin_gal=25, low_penalty=5, urgent_pct=25, hold_min=60, near_mi=2, max_passed=2, last_pct=3)

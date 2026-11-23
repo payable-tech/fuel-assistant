@@ -1,8 +1,8 @@
 # Tests the linking rules: VIN pairing, and Telegram group matching (unit number + driver name) that never guesses.
 from datetime import datetime, timezone
 
-from core.linking import link_by_vin, match_chats
-from models import DatatruckDriver, DatatruckTruck, SamsaraVehicle, TelegramGroup
+from base.fleet.linking import link_by_vin, match_chats
+from base.models import DatatruckDriver, DatatruckTruck, SamsaraVehicle, TelegramGroup
 
 
 # Builds a Samsara vehicle with only the fields linking uses; `gps_day` is the October day of its last GPS.

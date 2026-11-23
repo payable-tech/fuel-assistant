@@ -1,5 +1,5 @@
 # Tests how raw Datatruck web records become our objects: times kept as written, card numbers dropped.
-from sources import datatruck_web
+from base.sources import datatruck_web
 
 RAW_LINE = {
     "id": 9, "date": "2026-10-18T09:38:00Z", "transaction_type": "fuel", "product": "ULSD", "quantity": 120.5,

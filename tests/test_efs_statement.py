@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from models import EfsStatement
-from sources import efs_statement
+from base.models import EfsStatement
+from features.accounting import efs_statement
 
 PAGE_1 = """Customer Number
 ALIF UZ CORP 0006702400100

@@ -2,8 +2,8 @@
 # page's version that tells an open page to reload itself.
 import os
 
-import config
-import server
+from base import config
+from features.dashboard import server
 
 
 # This PC and the office network are let in; a Radmin VPN address (26.x) and a public one are not.

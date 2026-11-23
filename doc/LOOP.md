@@ -1,7 +1,7 @@
 # How the loop works
 
 What runs on this PC and in what order. Numbers in `CAPS` are settings in
-`src/config.py`; the rest of the design is in [PLAN.md](PLAN.md).
+`src/base/config.py`; the rest of the design is in [PLAN.md](PLAN.md).
 
 ## 1. One program, two parts
 

@@ -4,10 +4,10 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-import config
-import dashboard
-import db
-from models import FuelLine, Recommendation, Region, Store, SyncedTruck, TruckWatch, UsualLevel
+from base import config
+from base.models import FuelLine, Recommendation, Region, Store, SyncedTruck, TruckWatch, UsualLevel
+from base.store import db
+from features.dashboard import dashboard
 
 AT = datetime(2026, 11, 2, 12, 0, tzinfo=timezone.utc)
 LINE = [(30.0 + k * 0.1, -97.0) for k in range(40)]  # about 270 miles due north
@@ -91,7 +91,7 @@ def test_messages_sent(monkeypatch):
 
 # The list of trucks says where each one is, for the map of all trucks; nowhere until Samsara has its position.
 def test_truck_list_has_positions():
-    from models import SamsaraLive
+    from base.models import SamsaraLive
     assert dashboard.recommend_payload()["trucks"][0]["where"] is None
     with db.connect() as conn:
         db.replace_samsara_live(conn, [SamsaraLive("1", 30.2, -97.1, "Austin, TX", AT, 40.0, AT)])
@@ -102,8 +102,8 @@ def test_truck_list_has_positions():
 # The fleet status has every Datatruck truck, linked to Samsara or not: a driven truck that reports, one whose only
 # card sits on a driver who left but that bought fuel yesterday, and one in the shop that Samsara names under another VIN.
 def test_fleet_status():
-    from core.fuel import CENTRAL
-    from models import DatatruckDriver, DatatruckTruck, FuelCard, SamsaraLive, SamsaraVehicle
+    from base.fuel import CENTRAL
+    from base.models import DatatruckDriver, DatatruckTruck, FuelCard, SamsaraLive, SamsaraVehicle
     now = datetime.now(timezone.utc)
     bought = FuelLine(1, f"{now.astimezone(CENTRAL) - timedelta(days=1):%Y-%m-%d %H:%M}", "fuel", "ULSD", 100, 600, 550, 0.0, False,
                       "LOVES #7 TRAVEL STOP", "Near", "TX", "TTL", "900", "company", 8, "Gone", "lease", 2)

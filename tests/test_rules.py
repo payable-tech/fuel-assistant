@@ -1,6 +1,6 @@
 # Tests the recommendation's settings as the rules take them, and a truck as the rules see it.
-import config
-import rules
+from base import config
+from features.engine import settings as rules
 
 
 # The rules carry config's numbers, the same ones for the engine and the dashboard.

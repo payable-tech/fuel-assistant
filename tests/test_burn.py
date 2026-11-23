@@ -1,8 +1,8 @@
 # Tests live MPG: the engine as a fuel meter, calibrated against the gauge, and the two MPGs the rules use.
 from datetime import datetime, timedelta, timezone
 
-from core import burn
-from models import EngineHistory, FuelReading, Sample
+from base.models import EngineHistory, FuelReading, Sample
+from features.engine import burn
 
 T0 = datetime(2026, 10, 19, tzinfo=timezone.utc)
 

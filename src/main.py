@@ -8,15 +8,16 @@ from datetime import datetime, timezone
 from itertools import groupby
 from logging.handlers import RotatingFileHandler
 
-import config
-import db
-import server
-from core import loads
-from jobs import (driver_habits, estimate_burn, estimate_tanks, fill_lookups, load_prices, read_statements, refresh_fuel,
-                  refresh_live, refresh_market, refresh_orders, statement_evidence, store_exits, sync_registry)
-from models import EfsCard, EfsCardRow, Order
-from sources import efs_cards, efs_chrome, efs_web, telegram
-from sources.efs_chrome import EfsError
+from base import config
+from base.fleet import load_prices, refresh_fuel, refresh_live, refresh_market, refresh_orders, sync_registry
+from base.models import EfsCard, EfsCardRow, Order
+from base.sources import telegram
+from base.store import db
+from features.accounting import read_statements, statement_evidence
+from features.cards import efs_cards, efs_chrome, efs_web
+from features.cards.efs_chrome import EfsError
+from features.dashboard import fill_lookups, server
+from features.engine import driver_habits, estimate_burn, estimate_tanks, loads, store_exits
 
 HOLES_SHOWN = 10    # items listed per hole unless --all
 
@@ -270,14 +271,14 @@ def efs_login_status() -> tuple[bool, str]:
 # Logs the card agent's own Telegram login in, once (the same account as the assistant, a second login): you type the
 # code Telegram sends to the account's app.
 def cmd_agent_login(args) -> None:
-    from sources import telegram_agent
+    from features.cards import telegram_agent
     print(f"Card agent logged in as {telegram_agent.login()}.")
 
 
-# Runs the card agent until stopped (jobs/card_agent), with its own log file data/agent.log (only `serve` writes
+# Runs the card agent until stopped (features/cards/job), with its own log file data/agent.log (only `serve` writes
 # fuel.log). run_agent.bat starts it again if it stops.
 def cmd_card_agent(args) -> None:
-    from jobs import card_agent
+    from features.cards import job as card_agent
     handler = RotatingFileHandler(config.DATA_DIR / "agent.log", maxBytes=config.LOG_MAX_MB * 1024 * 1024,
                                   backupCount=config.LOG_FILES_KEPT, encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))

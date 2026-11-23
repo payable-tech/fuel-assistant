@@ -5,11 +5,11 @@ import contextlib
 import openpyxl
 import pytest
 
-import config
-import db
-from jobs import mirror
-from models import TelegramGroup
-from sources import datatruck, loves
+from base import config
+from base.fleet import mirror
+from base.models import TelegramGroup
+from base.sources import datatruck, loves
+from base.store import db
 
 
 # An order that came on two pages (the list shifted while it was read) is kept once.

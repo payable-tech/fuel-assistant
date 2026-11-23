@@ -8,12 +8,11 @@ from types import SimpleNamespace
 
 import pytest
 
-import config
-import db
-from core import card_agent as rules
-from core.card_agent import NeedsPerson
-from jobs import card_agent as job
-from models import ChatLine, DatatruckDriver, EfsCard, EfsCardRow, Store, Truck
+from base import config
+from base.models import ChatLine, DatatruckDriver, EfsCard, EfsCardRow, Store, Truck
+from base.store import db
+from features.cards import job, rules
+from features.cards.rules import NeedsPerson
 
 NOW = datetime(2026, 11, 23, 15, 0, tzinfo=timezone.utc)
 JOHN = DatatruckDriver(1, "JOHN DOE (CD team)", "company_driver", "active", "DT", "3189")
@@ -171,7 +170,7 @@ def test_reply_guards(world):
 # How Claude is called: this PC's Claude Code login (no key), none of Claude Code's own tools or settings, only these
 # four tools by their server names, the model and limits from config, the photos as pictures before the text.
 def test_claude_call(world, monkeypatch, tmp_path):
-    from sources import claude
+    from features.cards import claude
     seen = {}
 
     async def fake_query(prompt, options):

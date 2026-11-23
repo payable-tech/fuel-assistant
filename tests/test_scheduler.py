@@ -1,9 +1,9 @@
 # Tests the scheduler's rules: when a job is due (by its interval, or once a night) and when the loop counts as stuck.
 from datetime import datetime, timedelta, timezone
 
-import config
-import db
-from jobs import progress, scheduler
+from base import config
+from base.runner import progress, scheduler
+from base.store import db
 
 
 # A long job (10 min) isn't stuck; no progress for over half an hour is.

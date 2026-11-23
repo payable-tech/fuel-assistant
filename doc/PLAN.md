@@ -49,37 +49,45 @@ since 2026-11-03 (the user's "mix": three trucks that buy most outside Love's, t
 
 ## 4. Architecture
 
-Three layers, one direction of dependency:
+A base that everything needs, and the features on top of it (the user's choice, 2026-11-23: one folder per feature):
 
 ```
-            ┌──────────────── jobs/  (glue, runs on a schedule) ────────────────┐
-            │ sync_registry   refresh_*   estimate_tanks   driver_habits        │
-            └───────┬──────────────────┬──────────────────────┬─────────────────┘
-                    │                  │                      │
-        ┌───────────▼──────────┐ ┌─────▼───────────────┐ ┌────▼─────┐
-        │ sources/  (I/O only) │ │ core/  (pure logic) │ │ db.py    │
-        │ samsara   datatruck  │ │ linking  tank  fuel │ │ SQLite   │
-        │ loves     google     │ │ loads    geo   burn │ │          │
-        │ telegram  eia        │ │ habits   nearby     │ │          │
-        │                      │ │ recommend  message  │ │          │
-        │                      │ │ outcomes   market   │ │          │
-        └──────────────────────┘ └─────────────────────┘ └──────────┘
-                    all layers share:  models.py (dataclasses) · config.py (settings)
+        ┌──────────────────────────── features/ ────────────────────────────┐
+        │  engine/        dashboard/        accounting/        cards/       │
+        │  fuel messages  the page's        EFS statements     the card     │
+        │                 numbers                              agent        │
+        └───────────────────────────────┬────────────────────────────────────┘
+                                        │ a feature uses the base, never the other way
+        ┌───────────────────────────────▼──────────────── base/ ────────────┐
+        │  sources/          store/        fleet/             runner/       │
+        │  outside services  the database  the copies, one    scheduler,    │
+        │                                  row per truck      heartbeat     │
+        │  + config.py (settings) · models.py (dataclasses) · fuel.py · geo.py
+        └────────────────────────────────────────────────────────────────────┘
 ```
 
-`dashboard.py` is glue too, run when the page asks rather than on a schedule: it reads the DB (and Samsara for what a
-truck really did) and leaves the figures to `core/`. `rules.py` builds the recommendation's settings from `config.py`
-once, so the engine and the dashboard judge a truck by the same rules (`core/` never reads `config.py`).
+Two rules of dependency:
 
-| Layer | Does | Never does |
+- A feature may use the base; the base never uses a feature. The one exception is `base/runner/scheduler.py`, whose
+  timetable lists every feature's jobs.
+- Features don't use each other, except `dashboard/`, which reads `engine/` and `accounting/` to show them.
+
+Inside every folder the kinds of file keep their old rule:
+
+| Kind of file | Does | Never does |
 |---|---|---|
-| `sources/` | Talks to one outside system, returns `models` objects | Decide anything, touch the DB |
-| `core/` | Pure calculations: same input → same output | Network, DB, clock, files |
-| `db.py` | Read/write SQLite | Business logic |
-| `jobs/`, `dashboard.py` | Wires sources → core → db. One job = one schedule; the dashboard answers the page | Calculations of its own |
+| A source (`base/sources/`, eManager and Claude in `cards/`, the statement PDFs in `accounting/`) | Talks to one outside system, returns `models` objects | Decide anything, touch the DB |
+| Pure rules (marked "(pure)" in their first line) | Pure calculations: same input → same output | Network, DB, clock, files |
+| `base/store/db.py` | Read/write SQLite | Business logic |
+| A job (it has a `run()`), `dashboard.py` | Wires sources → rules → db. One job = one schedule; the dashboard answers the page | Calculations of its own |
 
-Why this shape: `core/` holds every decision and has no I/O, so it is fully unit-testable.
-Bugs in API calls stay in `sources/`; bugs in logic stay in `core/`.
+`features/dashboard/dashboard.py` is glue, run when the page asks rather than on a schedule: it reads the DB (and
+Samsara for what a truck really did) and leaves the figures to the pure files. `features/engine/settings.py` builds the
+recommendation's settings from `config.py` once, so the engine and the dashboard judge a truck by the same rules (the
+pure files never read `config.py`).
+
+Why this shape: the pure files hold every decision and have no I/O, so they are fully unit-testable. Bugs in API calls
+stay in the sources; bugs in logic stay in the pure files. And one feature can be read, or removed, as one folder.
 
 ### Folder layout
 
@@ -88,7 +96,7 @@ Fuel Assistent project/
 ├─ .env                       secrets (never share)
 ├─ run.bat                    runs `serve` and restarts it if it stops; opened at logon by the Startup-folder shortcut
 ├─ requirements.txt
-├─ pytest.ini                 lets tests import from src/
+├─ pytest.ini                 lets tests import from src/ (e.g. `from base import geo`)
 ├─ .venv/                     Python + libraries for this project
 ├─ data/
 │  ├─ love's/**/*.xlsx        Love's price sheets, any name, subfolders allowed (archive/, downloads-2026-10-20/)
@@ -99,26 +107,34 @@ Fuel Assistent project/
 ├─ doc/PLAN.md                this file
 ├─ src/
 │  ├─ main.py                 command line (see section 5.2)
-│  ├─ config.py               settings + secrets from .env
-│  ├─ models.py               dataclasses shared by all layers
-│  ├─ db.py                   schema, views, queries
-│  ├─ server.py               dashboard server (web/ files + /api/...), open to PCs on the same network (DASHBOARD_HOST)
-│  ├─ dashboard.py            each view's numbers for the page (reads the DB and Samsara; the figures come from core/)
-│  ├─ rules.py                the recommendation's settings from config.py, shared by the engine and the dashboard
-│  ├─ sources/  samsara.py · datatruck_web.py · datatruck.py (orders) · loves.py · eia.py · telegram.py · google_routes.py
-│  │            · google_places.py (truck stops, the urgent backup) · efs_statement.py (EFS statement PDFs in data/efs)
-│  │            · eManager, the EFS website, for fuel cards (§5.7): efs_chrome.py (its Chrome window) · efs_page.py
-│  │              (reading a page) · efs_web.py (login, account switch, allowed buttons) · efs_cards.py (the card tools)
-│  ├─ core/     linking.py · fuel.py (fuel figures) · market.py (EIA yardstick) · tank.py (tank helper) · loads.py (current load)
-│  │            · geo.py (route, Love's along it) · habits.py (driver habits) · nearby.py (cheapest Love's near a fill)
-│  │            · burn.py (engine as a fuel meter, live MPG) · recommend.py (where to fuel, how much)
-│  │            · message.py (what the driver is told, its links) · outcomes.py (what came of each message)
-│  │            · accounting.py (an EFS statement as a tree: page 1's rows, then lines joined to Datatruck)
-│  │            · fill_checks.py (checks on a statement's fills: the statement in numbers, Love's promised vs charged)
-│  │            · evidence.py (Samsara's evidence: per fill gauge rise and truck at the station; per truck bought vs burned)
-│  └─ jobs/     mirror.py · sync_registry.py · refresh_fuel.py · load_prices.py · refresh_market.py · refresh_orders.py
-│               · refresh_live.py · estimate_tanks.py · estimate_burn.py · driver_habits.py · fill_lookups.py · recommend.py
-│               · read_statements.py · statement_evidence.py · scheduler.py
+│  ├─ base/                   what every feature needs
+│  │  ├─ config.py            settings + secrets from .env
+│  │  ├─ models.py            dataclasses shared by everything
+│  │  ├─ fuel.py              fuel purchases in figures (pure): diesel, Love's, stops, weeks, the Trends and Live totals
+│  │  ├─ geo.py               route geometry (pure): distances, the Love's along a route
+│  │  ├─ sources/             the outside services: samsara.py · datatruck_web.py · datatruck.py (orders) · loves.py
+│  │  │                       · loves_web.py (store pages) · eia.py · telegram.py · google_routes.py
+│  │  │                       · google_places.py (truck stops, the urgent backup) · google_reach.py (can Google be reached)
+│  │  ├─ store/db.py          schema, views, queries
+│  │  ├─ fleet/               the copies: mirror.py · sync_registry.py · linking.py (pure) · refresh_fuel.py
+│  │  │                       · refresh_orders.py · refresh_live.py · refresh_market.py · load_prices.py
+│  │  └─ runner/              scheduler.py · progress.py (the watchdog's clock) · heartbeat.py · health.py (pure)
+│  └─ features/
+│     ├─ engine/              the fuel messages: job.py (one look per truck) · settings.py (the rules' settings from
+│     │                       config.py) · pure: recommend.py (where to fuel) · no_load.py · loads.py (current load)
+│     │                       · burn.py (live MPG) · tank.py · habits.py · message.py (what the driver is told)
+│     │                       · outcomes.py (what came of each message) · helper jobs: estimate_tanks.py
+│     │                       · estimate_burn.py · driver_habits.py · store_exits.py
+│     ├─ dashboard/           server.py (web/ files + /api/..., open to PCs on the same network) · dashboard.py (each
+│     │                       view's numbers) · fill_lookups.py (job) · pure: nearby.py (cheapest Love's near a fill)
+│     │                       · fleet_status.py · market.py (EIA yardstick)
+│     ├─ accounting/          efs_statement.py (the EFS statement PDFs in data/efs) · read_statements.py (job)
+│     │                       · statement_evidence.py (job) · pure: accounting.py (a statement as a tree)
+│     │                       · fill_checks.py (Love's promised vs charged) · evidence.py (Samsara's evidence)
+│     └─ cards/               job.py (the card agent) · rules.py (the owner's card rule, pure) · claude.py
+│                             · telegram_agent.py · eManager (§5.7): efs_chrome.py (its Chrome window) · efs_page.py
+│                             (reading a page) · efs_web.py (login, account switch, allowed buttons)
+│                             · efs_cards.py (the card tools) · efs_fake.py (a pretend eManager for the test group)
 ├─ web/                       live dashboard (always dark): index.html · css/app.css · vendor/ (Apache ECharts 5.5.1, IBM Plex
 │                             Sans) served locally, no build step · js/: app.js (tabs, refresh) · api.js (talks to the server)
 │                             · one file per view: live.js · trends.js · drivers.js · data.js · recommend.js (+ rec-map.js
@@ -155,7 +171,7 @@ they never run in the day (a night missed waits for the next one):
 | `estimate_burn` | 24 h | Each pilot truck's engine calibrated as a fuel meter → `burn_factors` |
 | `fill_lookups` | 15 min | Each new diesel fill outside Love's: where the truck was and the gauge before → `fill_lookups` |
 
-`serve` runs these through `jobs/scheduler.py` (one background thread, one job at a time; each run recorded in
+`serve` runs these through `base/runner/scheduler.py` (one background thread, one job at a time; each run recorded in
 `job_runs` and shown on the Data tab). `serve --no-refresh` only shows the data. The database runs in WAL mode so
 the dashboard keeps reading while a refresh writes.
 
@@ -167,7 +183,7 @@ looked at) for `STUCK_MIN` (30 min), so a hang is restarted like a crash. After 
 automatic login on this PC; LOOP.md section 5).
 
 Errors: a failing job is logged and retried on its next run; one truck failing doesn't stop the others.
-A refresh that fails **or returns nothing** keeps the previous copy (`jobs/mirror.py`), so an API hiccup
+A refresh that fails **or returns nothing** keeps the previous copy (`base/fleet/mirror.py`), so an API hiccup
 can never wipe a table.
 
 ## 5. Database (SQLite, `data/fuel.db`)
@@ -222,7 +238,7 @@ Views (no data, recreated on every start so they always match the code):
 helper writes only its own table; yours always wins in `fleet`; a value with neither source is a hole, never a
 default.
 
-### 5.1 Linking rules (`core/linking.py`)
+### 5.1 Linking rules (`base/fleet/linking.py`)
 - **Samsara ↔ Datatruck** by VIN (trimmed, upper-case). When Samsara has several records for one VIN (an old
   one and a new one), the record with the **latest GPS** is the real truck: the old one went silent when its
   device moved. In live data, never more than one record of a pair was active. Ties (for example, neither
@@ -247,7 +263,7 @@ default.
   the auto-match can't decide (typo in a title, two groups for the same driver).
 - `fleet` lists every truck with its chat and whether the link is `manual`, `auto`, or missing.
 
-### 5.4 Tank helper (`core/tank.py`)
+### 5.4 Tank helper (`features/engine/tank.py`)
 - Each diesel purchase's Central time is converted to UTC (daylight saving included). Purchases less than 2 h
   apart are one stop (two pumps, a split payment), because their gauge windows would overlap.
 - Per stop, two measurements (gauge: lowest reading in the 2 h before, highest in the 2 h after; stops whose gauge
@@ -264,7 +280,7 @@ default.
 - **Careful:** right after a one-side fill the gauge reads full while the other tank isn't; the two
   tanks level out while driving. A fuel % taken just after a stop can overstate what is on board.
 
-### 5.5 Driver habits (`core/habits.py`)
+### 5.5 Driver habits (`features/engine/habits.py`)
 - **Stops:** each driver's diesel purchases grouped by stop (as the tank helper does), with their truck's Samsara
   gauge just before (lowest reading in the 2 h before) and just after (highest in the 2 h after).
 - **Habit** (worked out when asked, from the last 30 days): middle gauge level when stopping and after filling,
@@ -272,7 +288,7 @@ default.
   ("top-offs"), share of gallons at Love's, billed $/gal, and how much more per gallon they pay outside Love's.
   First look (12 trucks, 270 stops, 2026-10-20): stop at ~20%, fill to ~95%; 1 stop in 4 began below 10%.
 
-### 5.6 Fleet status (`core/fleet_status.py`, top of the Drivers tab)
+### 5.6 Fleet status (`features/dashboard/fleet_status.py`, top of the Drivers tab)
 - **One row per Datatruck truck** (`db.fleet_status`, read when the page asks; no table of its own). It starts from
   `dt_trucks`, not from the `fleet` view, so the trucks with no Samsara link are in: they are the ones to look at.
 - **On duty:** in transit or available, with an active driver. The page draws these apart from the rest.
@@ -288,7 +304,7 @@ default.
   and their counts, all trucks and on duty), one square per truck in clusters by status, colored by the picked bar;
   a group clicked lists its trucks.
 
-### 5.7 Fuel cards in eManager (`sources/efs_*.py`, copied from bob-agent 2026-11-22)
+### 5.7 Fuel cards in eManager (`features/cards/efs_*.py`, copied from bob-agent 2026-11-22)
 - **No API: a real browser.** eManager's bot check lets only a browser through, so it runs in its own Chrome window
   (profile `data/efs-chrome`, port `EMANAGER_CHROME_PORT`), and every request is sent from inside its tab. `efs-login`
   opens it; a person logs in by hand. eManager logs out after 90 idle minutes (the heartbeat every 4 minutes
@@ -310,7 +326,7 @@ default.
   delete prompt, transfer, reset PIN and cancel are refused in code). Every change sends the card's other settings back as its page showed them, then opens
   the card again and stops if anything is not as asked. A card in override mode is locked until the override is off.
 
-### 5.8 The card agent (`jobs/card_agent.py`, `core/card_agent.py`, `sources/claude.py`, `sources/telegram_agent.py`; the user's go 2026-11-23)
+### 5.8 The card agent (`features/cards/job.py`, `features/cards/rules.py`, `features/cards/claude.py`, `features/cards/telegram_agent.py`; the user's go 2026-11-23)
 Built the way bob-agent's Telegram agent works (`D:/bob-agent/src/agent`, `src/workers/fuel_cards`).
 - **Claude** runs through the Claude Agent SDK on this PC's Claude Code login (the plan, not API billing), `AGENT_MODEL`,
   with none of Claude Code's own tools or settings: only four tools (`declined_card`, `look_up_card`, `reply_to_driver`,
@@ -407,9 +423,9 @@ the outside fills are compared with Love's fills elsewhere that week, not at the
 - 18 trucks have 2+ orders *in transit* at once, so the destination is ambiguous (see 6).
 - 7 Datatruck units contain dots/letters (`..101`, `555..`, `02A`), probably old or duplicate entries.
 
-## 6. Which load, and which stops are ahead (`core/loads.py`)
+## 6. Which load, and which stops are ahead (`features/engine/loads.py`)
 
-Kept from the old engine because the problem stays: `jobs/recommend` uses it.
+Kept from the old engine because the problem stays: `features/engine/job` uses it.
 - Current load: the one in transit, else the earliest pickup. 2+ in transit: the earliest pickup among them.
 - Stops still ahead: those after the last stop the truck's **Samsara GPS track** came within **1 mi** of, counting
   only visits from 24 h before the pickup appointment on (not earlier loads at the same place). Datatruck can't
@@ -419,12 +435,12 @@ Kept from the old engine because the problem stays: `jobs/recommend` uses it.
   the load's pickup was Rumford, ME, the truck never within 50 mi of it, and its road went back to Maine). Stops
   without coordinates are left out.
 
-**Paid above the cheapest Love's nearby** (Live's "Outside Love's this week"; `core/nearby.py`,
+**Paid above the cheapest Love's nearby** (Live's "Outside Love's this week"; `features/dashboard/nearby.py`,
 `fuel.outside_by_driver`): per fill outside Love's, billed minus gallons × the lowest Love's price within `NEAR_MI`
 (25 mi, straight line) on that day's sheet (newest sheet ≤ `SHEET_MAX_AGE_DAYS` old). A fill counts once its lookup has
 a place (≤ ~30 min) and a Love's is that close. The circle is a ceiling: it isn't along the route.
 
-## 6.1 The fuel recommendation (`core/recommend.py`, `core/message.py`, `core/burn.py`, `jobs/recommend.py`)
+## 6.1 The fuel recommendation (`features/engine/recommend.py`, `features/engine/message.py`, `features/engine/burn.py`, `features/engine/job.py`)
 
 Every 5 min, for each pilot truck. Road: Google Routes from the truck through the load's stops ahead (one call per load,
 again as soon as the load's stops ahead change in Datatruck (added, moved or dropped; reached ones just fall off), or if
@@ -480,12 +496,12 @@ part fill ("Buy about N gal, don't fill up"): worth ~7¢/gal on paper, but of 12
 (3 stopped there and filled up anyway). Only a truck stop standing in for a Love's out of reach still asks for part of a tank.
 
 **Two stops driven past, then quiet** (`recommend.skipped`, `MAX_PASSED`; the user's go, 2026-11-11): once the driver drove
-past two stops told on one tank (since its last fill-up, by the gauge or a purchase; `jobs/recommend._passed`), no further
+past two stops told on one tank (since its last fill-up, by the gauge or a purchase; `features/engine/job._passed`), no further
 plain stop is told: the truck shows as "skipped". The last Love's in reach, a detour, low fuel and the emergency are still
 told. Why: the first and the second message each ended at our stop ~42% of the time, the third and later 1 time in 23
 (50779 got 7 in one day); on the messages of Nov 3-10 the rule would have held 11 of 117, none of which was followed.
 
-**No load** (`core/no_load.py`, `jobs/recommend._no_load`; the user's go, 2026-11-18, "pass to the fueling level, find
+**No load** (`features/engine/no_load.py`, `features/engine/job._no_load`; the user's go, 2026-11-18, "pass to the fueling level, find
 the Love's on the direction the unit is going"): a truck with no load ahead (none in Datatruck, or its stops all reached)
 has no road. Once its fuel is down to the driver's usual level, it is told the nearest Love's ahead in the direction it
 is going: the direction from where its GPS was `HEADING_MI` back to where it is now; ahead = within `AHEAD_CONE_DEG` of
@@ -502,7 +518,7 @@ Settings from a replay on 251 no-load Love's fills made while driving: with the 
 30 / 45 mi before the Love's he used, our nearest ahead was that one 80% / 66% / 54% of the time (15 mi and ±30°: 70% /
 57% / 48%).
 
-**Never a Love's behind him** (`geo.behind`, `jobs/recommend._against`/`_by_way`/`_told_now`, `loads.pick`; the user's go,
+**Never a Love's behind him** (`geo.behind`, `features/engine/job._against`/`_by_way`/`_told_now`, `loads.pick`; the user's go,
 2026-11-22, after 1767 was told Love's he had already passed and got down to 4% on I-30). His way is the direction of
 his last `HEADING_MI` of GPS, driven within `HEADING_MAX_MIN` and since his last stop (`no_load.set_off`: a pickup or a
 delivery can turn him around; no load uses the same); a place more than `NEAR_STOP_MI` away and more than `BEHIND_DEG`
@@ -527,7 +543,7 @@ money by themselves over one stop at a time.
 
 **The message** must always be true: "cheaper" is only ever said of the pump price the driver sees (company prices decide,
 but many drivers are charged the pump price, so a stop can look dearer to him). Truck stops only as a backup
-(`sources/google_places.py`).
+(`base/sources/google_places.py`).
 
 **Expect**, from the fairest replay (real gauges, same-day prices, 153 fill-ups, 24 trucks, Oct 14-27): about 6¢/gal if
 every driver follows (0.3-12¢), plus the part fills' ~7¢. The rule picked the driver's real place 18% of the time; stops
@@ -536,7 +552,7 @@ hours, appointments, weight limits, how hard a station is to reach. A truck's ow
 a setting yet: only his usual fill level is used.
 
 **Past trips** (the user's ask, 2026-11-05): every load the engine looks at is kept in `trips` (one row per truck per
-load: stops, first and last look, the latest road planned; `jobs/recommend._keep_trip`). Under the truck's title a picker
+load: stops, first and last look, the latest road planned; `features/engine/job._keep_trip`). Under the truck's title a picker
 lists them; a past trip (`/api/recommend/past`) shows its road planned, the road driven and fill-ups and the gauge over the
 trip (Samsara), and its messages with what came of them, and hides the Love's-ahead table (it belongs to the plan now).
 Loads before Nov 5 were rebuilt from their messages: no stops, no road planned. The current trip's map starts at the last
@@ -561,7 +577,7 @@ arrives with as "8% (12 gal)" (the gauge's percent, and gallons from the tank si
 (2026-11-02), honest even when a stop passed was cheaper for him.
 
 **The highway and exit** (the user's ask, 2026-11-11): after the miles, "📍 In 34 mi, I-90 (Exit 34)". From Love's own
-store pages, the one source (`sources/loves_web`: `loves.com/locations/<store no>`, heading "Belmont, OH | Exit 208/OH-149
+store pages, the one source (`base/sources/loves_web`: `loves.com/locations/<store no>`, heading "Belmont, OH | Exit 208/OH-149
 on I-70"): each store's page is read once and kept in `store_exits` (job "Love's exits", nightly for new stores; `main.py
 exits` by hand), and `db.stores` hands it to the message as `Store.way`. The price sheets have no exits. A Love's whose
 page names no exit, and a truck stop that isn't a Love's, go out without one. A version from Google's driving directions
@@ -572,7 +588,7 @@ fuel stop (and the fill-up after a part fill, and pickups still ahead, in road o
 the load's last stop. Google's docs say up to 3 stops on mobile browsers, that navigation starts when the origin is left out,
 and that some products may ignore stops: check on a phone before going live. Maps routes like a car, not a truck.
 
-**When a fuel stop is not told** (`core/recommend.quiet`, the user's go, 2026-11-04): for `FUEL_HOLD_MIN` (60) after the
+**When a fuel stop is not told** (`features/engine/recommend.quiet`, the user's go, 2026-11-04): for `FUEL_HOLD_MIN` (60) after the
 gauge rose like a fill (`truck_watch.fueled_at`), because the fill may still be going on: 14755 was told Tolleson again at
 the pump, its gauge half way up, which looked to this driver like his usual level; and when the stop is under
 `NEAR_STOP_MI` (2) away, because the driver is already there (0226 Piedmont, 0.8 mi); and while the truck is parked
@@ -582,7 +598,7 @@ under the reserve (the last Love's in reach then too). The last Love's in reach 
 any stop. Messages that did go out again by mistake are marked `status = "repeat"`
 by hand (0226's second Inman, 14755's second Tolleson): they own no purchase and the Live tab leaves them out.
 
-**Sending:** for a truck in `LIVE_UNITS`, `jobs/recommend.send_to_driver` sends the message from the assistant's account
+**Sending:** for a truck in `LIVE_UNITS`, `features/engine/job.send_to_driver` sends the message from the assistant's account
 (Migo) to the truck's own group and stamps `sent_at`; a failed send is logged and the message stays "not sent". Every
 message is also copied to "Test fuel" (`TEST_CHAT_ID`), headed "📨 Sent to the driver" or "🧪 Test"; that copy refuses if
 the chat is ever a truck's own group. On the dashboard (`web/js/notes.js`, the user's ask 2026-11-04) a bell in the top
@@ -598,7 +614,7 @@ the session scratchpad), each checked for a group Migo is in (50779 wasn't: skip
 chosen silently has that silent message set "replaced" on going live, so the driver gets it (19727, Greenville).
 More trucks only on the user's go. The Recommend tab marks live trucks and each message as sent or not, with where the truck fueled.
 
-**Fuel plans on the Live tab** (`core/outcomes.messages_sent`, from `LIVE_FROM` 00:00 Central to the newest purchase),
+**Fuel plans on the Live tab** (`features/engine/outcomes.messages_sent`, from `LIVE_FROM` 00:00 Central to the newest purchase),
 drawn so the scope of each figure shows without asking (the user, 2026-11-03):
 - *Messages sent to drivers* (`web/js/messages.js`, redone 2026-11-18 on the user's ask: "how many messages, from
   when, and why?"): full width, one square per message colored by what became of it. Filled = ended and counted

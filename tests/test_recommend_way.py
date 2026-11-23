@@ -7,11 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
-import config
-import db
-from core import geo
-from jobs import recommend as job
-from models import Order, Recommendation, Stop, Store, TrackPoint, Truck, UsualLevel
+from base import config, geo
+from base.models import Order, Recommendation, Stop, Store, TrackPoint, Truck, UsualLevel
+from base.store import db
+from features.engine import job
 
 AT = datetime(2026, 11, 22, 12, 0, tzinfo=timezone.utc)
 AHEAD = Store("7", "Seguin", "TX", 30.0, -96.6, 6.0, 5.5, "2026-11-22")      # ~24 mi east of the truck at -97.0

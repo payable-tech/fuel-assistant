@@ -1,9 +1,9 @@
 # Tests the market yardstick: reading the EIA file, states to regions, and pricing a purchase between two Mondays.
 import pytest
 
-from core import market
-from models import FuelLine, MarketPrice
-from sources import eia
+from base.models import FuelLine, MarketPrice
+from base.sources import eia
+from features.dashboard import market
 
 MONDAY_OCT_12 = 46307.0  # how Excel stores 2026-10-12 (days since 1899-12-30)
 

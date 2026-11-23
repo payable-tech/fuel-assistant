@@ -5,11 +5,10 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-import config
-import db
-
-from models import (BurnFactor, DatatruckDriver, DatatruckTruck, FuelLine, FuelStop, Order, Recommendation, Region, SamsaraLive, TruckWatch,
-                    Stop, Store, SyncedTruck, TankEstimate, TelegramGroup, FillLookup)
+from base import config
+from base.models import (BurnFactor, DatatruckDriver, DatatruckTruck, FuelLine, FuelStop, Order, Recommendation, Region,
+                         SamsaraLive, TruckWatch, Stop, Store, SyncedTruck, TankEstimate, TelegramGroup, FillLookup)
+from base.store import db
 
 
 # Points the database at a temporary file so tests never touch data/fuel.db.

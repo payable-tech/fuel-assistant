@@ -1,15 +1,15 @@
-# Tests the heartbeat: its rules (core/health), that every source refresh is recorded (jobs/mirror), and that an alert
-# goes out once when a part breaks and once when it works again (jobs/heartbeat).
+# Tests the heartbeat: its rules (base/runner/health), that every source refresh is recorded (base/fleet/mirror), and that an alert
+# goes out once when a part breaks and once when it works again (base/runner/heartbeat).
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
-import config
-import db
-from core import health
-from core.fuel import CENTRAL
-from jobs import heartbeat, mirror
-from models import Problem, SourceHealth
+from base import config
+from base.fleet import mirror
+from base.fuel import CENTRAL
+from base.models import Problem, SourceHealth
+from base.runner import health, heartbeat
+from base.store import db
 
 NOW = datetime(2026, 11, 19, 16, 0, tzinfo=timezone.utc)  # Thursday 10:00 Central
 
