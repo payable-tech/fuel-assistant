@@ -158,7 +158,7 @@ class FuelCard:
     active: bool
 
 
-# A fuel card as eManager's Card Lookup lists it (features/cards/efs_cards). Last four digits are not unique: pick by card_id.
+# A fuel card as eManager's Card Lookup lists it (features/cards/emanager/fuel_cards). Last four digits are not unique: pick by card_id.
 @dataclass(frozen=True)
 class EfsCardRow:
     card_id: str                    # eManager's own id for the card

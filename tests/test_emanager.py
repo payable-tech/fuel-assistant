@@ -7,7 +7,7 @@ import pytest
 
 import main
 from base.models import EfsCardRow
-from features.cards import efs_cards, efs_chrome, efs_page, efs_web
+from features.cards.emanager import fuel_cards, page as pages, site as real_site, window
 
 TOKENS = '<input type="hidden" name="_sourcePage" value="sp" /><input type="hidden" name="__fp" value="fp" />'
 ROW = EfsCardRow("1000091368925", "556748******0806", "2", "3189", "3189", "JEAN Z", "", "INACTIVE")
@@ -138,11 +138,11 @@ class Site:
             self.user = query["selectedUserId"]
         if url.path.endswith("CardLookup.action"):
             row = ("556748******0806", ROW.card_id, "3189", "JEAN Z", self.status.title())
-            return efs_page.parse(path, lookup_page(self.user, [row]))
+            return pages.parse(path, lookup_page(self.user, [row]))
         if not url.path.endswith("CardPromptManagement.action"):
-            return efs_page.parse(path, header(self.user))
+            return pages.parse(path, header(self.user))
         if query.get("overrideCard"):
-            return efs_page.parse(path, override_page(self.user, ROW.card_id))
+            return pages.parse(path, override_page(self.user, ROW.card_id))
         if "saveCardInformation" in fields:
             self.status = fields["card.header.status"]
             self.hand_enter = self.saves_hand_enter or fields["card.header.handEnter"]
@@ -152,13 +152,13 @@ class Site:
             self.override = False
         if "editInformation" in fields:
             index = int(fields["infoIndex"])
-            return efs_page.parse(path, edit_page(self.user, ROW.card_id, index, self.prompts[index - 1], self.status))
+            return pages.parse(path, edit_page(self.user, ROW.card_id, index, self.prompts[index - 1], self.status))
         if "updateCardPrompt" in fields:
             prompt = self.prompts[int(fields["infoIndex"]) - 1]
             value = fields.get("cardInfo.matchValue") or fields.get("cardInfo.reportValue")
             # a name read back in another case than sent still counts (Card Lookup prints capitals anyway)
             prompt[3] = value.title() if prompt[0] == "NAME" else value
-        return efs_page.parse(path, card_page(self.user, ROW.card_id, self.status, self.hand_enter, self.override,
+        return pages.parse(path, card_page(self.user, ROW.card_id, self.status, self.hand_enter, self.override,
                                               [tuple(prompt) for prompt in self.prompts]))
 
     # The forms sent with a button pressed.
@@ -170,20 +170,20 @@ class Site:
 @pytest.fixture
 def site(monkeypatch):
     site = Site()
-    monkeypatch.setattr(efs_web, "fetch", site.fetch)
+    monkeypatch.setattr(real_site, "fetch", site.fetch)
     return site
 
 
 # The pretend eManager with an active card, maybe in override mode.
 def active(monkeypatch, override=False):
     site = Site(status="ACTIVE", override=override)
-    monkeypatch.setattr(efs_web, "fetch", site.fetch)
+    monkeypatch.setattr(real_site, "fetch", site.fetch)
     return site
 
 
 # Card Lookup searches by what was asked and reads each card with its status.
 def test_card_lookup_reads_each_card_and_its_status(site):
-    assert efs_cards.cards("ALIF", "unit", "3189") == [ROW]
+    assert fuel_cards.cards("ALIF", "unit", "3189") == [ROW]
     (fields,) = site.posted("searchCard")
     assert fields["lookupInfoRadio"] == "UNIT" and fields["cardSearchTxt"] == "3189"
     assert fields["searchCard"] == "Look Up Cards" and "resetSearch" not in fields
@@ -191,14 +191,14 @@ def test_card_lookup_reads_each_card_and_its_status(site):
 
 # "All cards" looks up each policy in turn, because eManager's own "All Cards" finds nothing.
 def test_all_cards_looks_up_each_policy(site):
-    efs_cards.cards("ALIF")
+    fuel_cards.cards("ALIF")
     assert [(f["lookupInfoRadio"], f["cardSearchTxt"]) for f in site.posted("searchCard")] == [("POLICY", "1"),
                                                                                                ("POLICY", "2")]
 
 
 # A card page gives its settings, whether it is in override mode, and its prompts.
 def test_a_card_page_gives_its_settings_override_mode_and_prompts(site):
-    card = efs_cards.card("ALIF", ROW)
+    card = fuel_cards.card("ALIF", ROW)
     assert (card.status, card.hand_enter, card.policy, card.expires, card.last_used, card.override) == (
         "INACTIVE", "DISALLOW", "2", "Oct 1, 2029", "Jan 24, 2026", False)
     assert card.prompts == (("Driver ID", "Exact Match", "3189"), ("Driver Name", "Report Only", "Jean Z"),
@@ -207,7 +207,7 @@ def test_a_card_page_gives_its_settings_override_mode_and_prompts(site):
 
 # A status change sends every other setting unchanged, and the card is opened again afterwards.
 def test_a_status_change_sends_every_other_setting_unchanged_and_opens_the_card_again(site):
-    assert efs_cards.set_status("ALIF", ROW, "ACTIVE").status == "ACTIVE"
+    assert fuel_cards.set_status("ALIF", ROW, "ACTIVE").status == "ACTIVE"
     (fields,) = site.posted("saveCardInformation")
     assert not site.sent[-1][1], "the card is opened again after the save"
     assert fields["card.header.status"] == "ACTIVE" and fields["card.header.handEnter"] == "DISALLOW"
@@ -217,7 +217,7 @@ def test_a_status_change_sends_every_other_setting_unchanged_and_opens_the_card_
 
 # A card already in the status asked for is left alone: nothing is sent.
 def test_a_card_already_in_that_status_is_not_sent(site):
-    efs_cards.set_status("ALIF", ROW, "INACTIVE")
+    fuel_cards.set_status("ALIF", ROW, "INACTIVE")
     assert not any(fields for _, fields in site.sent)
 
 
@@ -228,31 +228,31 @@ def test_a_save_eManager_ignored_stops_and_says_the_card_is_unchanged(monkeypatc
     # eManager answers the save with some other page and keeps the card as it was
     def ignores_saves(path, fields=None):
         if fields and "saveCardInformation" in fields:
-            return efs_page.parse(path, header("Bobalif"))
+            return pages.parse(path, header("Bobalif"))
         return site.fetch(path, fields)
 
-    monkeypatch.setattr(efs_web, "fetch", ignores_saves)
-    with pytest.raises(efs_web.EfsError, match="'card.header.status': 'INACTIVE'"):
-        efs_cards.set_status("ALIF", ROW, "ACTIVE")
+    monkeypatch.setattr(real_site, "fetch", ignores_saves)
+    with pytest.raises(real_site.EfsError, match="'card.header.status': 'INACTIVE'"):
+        fuel_cards.set_status("ALIF", ROW, "ACTIVE")
 
 
 # A save that also changed another setting stops and says to check the card.
 def test_a_save_that_changed_another_setting_stops(monkeypatch):
-    monkeypatch.setattr(efs_web, "fetch", Site(saves_hand_enter="ALLOW").fetch)
-    with pytest.raises(efs_web.EfsError, match="Check the card in eManager"):
-        efs_cards.set_status("ALIF", ROW, "ACTIVE")
+    monkeypatch.setattr(real_site, "fetch", Site(saves_hand_enter="ALLOW").fetch)
+    with pytest.raises(real_site.EfsError, match="Check the card in eManager"):
+        fuel_cards.set_status("ALIF", ROW, "ACTIVE")
 
 
 # Only ACTIVE, INACTIVE and HOLD can be set.
 def test_only_active_inactive_and_hold_can_be_set(site):
-    with pytest.raises(efs_web.EfsError, match="ACTIVE, INACTIVE, HOLD"):
-        efs_cards.set_status("ALIF", ROW, "DELETED")
+    with pytest.raises(real_site.EfsError, match="ACTIVE, INACTIVE, HOLD"):
+        fuel_cards.set_status("ALIF", ROW, "DELETED")
 
 
 # An override sends the times and where, and the card is then in override mode.
 def test_an_override_sends_the_times_and_where(monkeypatch):
     site = active(monkeypatch)
-    assert efs_cards.set_override("ALIF", ROW, 1).override
+    assert fuel_cards.set_override("ALIF", ROW, 1).override
     (fields,) = site.posted("overrideCard")
     assert fields["cardOverride"] == "1" and fields["locationOverrideRadio"] == "ALL"
     assert "locationId" not in fields, "the website switches the one-location box off for All Locations"
@@ -262,7 +262,7 @@ def test_an_override_sends_the_times_and_where(monkeypatch):
 # Hand enter is ticked only when asked; product/limit never (it opens a limits page first).
 def test_an_override_ticks_hand_enter_only_when_asked_and_never_product_limits(monkeypatch):
     site = active(monkeypatch)
-    efs_cards.set_override("ALIF", ROW, 3, hand_enter=True)
+    fuel_cards.set_override("ALIF", ROW, 3, hand_enter=True)
     (fields,) = site.posted("overrideCard")
     assert (fields["cardOverride"], fields["locationOverrideRadio"]) == ("3", "ALL")
     assert fields["handOverride"] == "true" and "promptOverride" not in fields
@@ -270,56 +270,56 @@ def test_an_override_ticks_hand_enter_only_when_asked_and_never_product_limits(m
 
 # Only an active card without an override can be overridden.
 def test_only_an_active_card_without_an_override_can_be_overridden(monkeypatch, site):
-    with pytest.raises(efs_web.EfsError, match="Only an active card"):
-        efs_cards.set_override("ALIF", ROW, 1)
+    with pytest.raises(real_site.EfsError, match="Only an active card"):
+        fuel_cards.set_override("ALIF", ROW, 1)
     active(monkeypatch, override=True)
-    with pytest.raises(efs_web.EfsError, match="already in override mode"):
-        efs_cards.set_override("ALIF", ROW, 1)
+    with pytest.raises(real_site.EfsError, match="already in override mode"):
+        fuel_cards.set_override("ALIF", ROW, 1)
 
 
 # An override lasts 1 to 9 transactions.
 def test_an_override_lasts_one_to_nine_transactions(site):
     for times in (0, 10):
-        with pytest.raises(efs_web.EfsError, match="1 to 9"):
-            efs_cards.set_override("ALIF", ROW, times)
+        with pytest.raises(real_site.EfsError, match="1 to 9"):
+            fuel_cards.set_override("ALIF", ROW, times)
 
 
 # Removing an override sends what the website sends, and the card is out of override mode.
 def test_removing_an_override_sends_what_the_website_sends(monkeypatch):
     site = active(monkeypatch, override=True)
-    assert not efs_cards.remove_override("ALIF", ROW).override
+    assert not fuel_cards.remove_override("ALIF", ROW).override
     (fields,) = site.posted("deleteCardOverride")
     assert fields["deleteCardOverride"] == "Remove Override"
-    assert not set(efs_cards.NOT_SENT_ON_REMOVE) & set(fields)
+    assert not set(fuel_cards.NOT_SENT_ON_REMOVE) & set(fields)
 
 
 # A card in override mode keeps its status until the override is removed.
 def test_a_card_in_override_mode_keeps_its_status(monkeypatch):
     active(monkeypatch, override=True)
-    with pytest.raises(efs_web.EfsError, match="remove the override"):
-        efs_cards.set_status("ALIF", ROW, "INACTIVE")
+    with pytest.raises(real_site.EfsError, match="remove the override"):
+        fuel_cards.set_status("ALIF", ROW, "INACTIVE")
 
 
 # Delete, reset PIN and cancel are never pressed.
 def test_delete_reset_pin_and_cancel_are_never_pressed():
-    form = efs_page.parse("u", card_page("Bobalif", ROW.card_id, "ACTIVE")).form_with("saveCardInformation")
+    form = pages.parse("u", card_page("Bobalif", ROW.card_id, "ACTIVE")).form_with("saveCardInformation")
     for button in ("deleteThisCard", "resetPin"):
-        with pytest.raises(efs_web.EfsError, match="does not press"):
-            efs_web.send(form, form.fields, button)
-    form = efs_page.parse("u", override_page("Bobalif", ROW.card_id)).form_with("overrideCard")
-    with pytest.raises(efs_web.EfsError, match="does not press"):
-        efs_web.send(form, form.fields, "cancelVelocityOverride")
-    form = efs_page.parse("u", card_page("Bobalif", ROW.card_id, "ACTIVE")).form_with("deleteCardPrompt")
-    with pytest.raises(efs_web.EfsError, match="does not press"):
-        efs_web.send(form, form.fields, "deleteCardPrompt")
-    form = efs_page.parse("u", edit_page("Bobalif", ROW.card_id, 3, PROMPTS[2], "ACTIVE")).form_with("updateCardPrompt")
-    with pytest.raises(efs_web.EfsError, match="does not press"):
-        efs_web.send(form, form.fields, "cancel")
+        with pytest.raises(real_site.EfsError, match="does not press"):
+            real_site.send(form, form.fields, button)
+    form = pages.parse("u", override_page("Bobalif", ROW.card_id)).form_with("overrideCard")
+    with pytest.raises(real_site.EfsError, match="does not press"):
+        real_site.send(form, form.fields, "cancelVelocityOverride")
+    form = pages.parse("u", card_page("Bobalif", ROW.card_id, "ACTIVE")).form_with("deleteCardPrompt")
+    with pytest.raises(real_site.EfsError, match="does not press"):
+        real_site.send(form, form.fields, "deleteCardPrompt")
+    form = pages.parse("u", edit_page("Bobalif", ROW.card_id, 3, PROMPTS[2], "ACTIVE")).form_with("updateCardPrompt")
+    with pytest.raises(real_site.EfsError, match="does not press"):
+        real_site.send(form, form.fields, "cancel")
 
 
 # A prompt edit opens that prompt's own row form, then sends the new value with everything else as the form had it.
 def test_a_prompt_edit_opens_that_rows_form_and_sends_the_new_value(site):
-    after = efs_cards.set_prompt("ALIF", ROW, "unit", "99999")
+    after = fuel_cards.set_prompt("ALIF", ROW, "unit", "99999")
     assert ("Unit Number", "Exact Match", "99999") in after.prompts
     (opened,) = site.posted("editInformation")
     assert (opened["infoIndex"], opened["card.cardId"]) == ("3", ROW.card_id)
@@ -331,7 +331,7 @@ def test_a_prompt_edit_opens_that_rows_form_and_sends_the_new_value(site):
 
 # A driver name goes in the Report Only box, and the name read back in another case counts as done.
 def test_the_driver_name_goes_in_the_report_box_and_eManagers_case_is_accepted(site):
-    after = efs_cards.set_prompt("ALIF", ROW, "driver", "ALIF UZ CORP")
+    after = fuel_cards.set_prompt("ALIF", ROW, "driver", "ALIF UZ CORP")
     assert ("Driver Name", "Report Only", "Alif Uz Corp") in after.prompts
     (update,) = site.posted("updateCardPrompt")
     assert update["cardInfo.reportValue"] == "ALIF UZ CORP" and "cardInfo.matchValue" not in update
@@ -339,16 +339,16 @@ def test_the_driver_name_goes_in_the_report_box_and_eManagers_case_is_accepted(s
 
 # A prompt already at that value is left alone: nothing is sent.
 def test_a_prompt_already_set_is_not_sent(site):
-    efs_cards.set_prompt("ALIF", ROW, "driver", "JEAN Z")
+    fuel_cards.set_prompt("ALIF", ROW, "driver", "JEAN Z")
     assert not site.posted("editInformation")
 
 
 # A card without that prompt says so, and nothing is sent.
 def test_a_card_without_that_prompt_says_so(monkeypatch):
     site = Site(prompts=PROMPTS[:1])
-    monkeypatch.setattr(efs_web, "fetch", site.fetch)
-    with pytest.raises(efs_web.EfsError, match="has no Unit Number prompt"):
-        efs_cards.set_prompt("ALIF", ROW, "unit", "99999")
+    monkeypatch.setattr(real_site, "fetch", site.fetch)
+    with pytest.raises(real_site.EfsError, match="has no Unit Number prompt"):
+        fuel_cards.set_prompt("ALIF", ROW, "unit", "99999")
     assert not site.posted("editInformation")
 
 
@@ -362,33 +362,33 @@ def test_a_prompt_edit_eManager_ignored_stops(monkeypatch):
             return site.fetch(path, {name: value for name, value in fields.items() if name != "updateCardPrompt"})
         return site.fetch(path, fields)
 
-    monkeypatch.setattr(efs_web, "fetch", ignores_updates)
-    with pytest.raises(efs_web.EfsError, match="Unit Number did not change as asked"):
-        efs_cards.set_prompt("ALIF", ROW, "unit", "99999")
+    monkeypatch.setattr(real_site, "fetch", ignores_updates)
+    with pytest.raises(real_site.EfsError, match="Unit Number did not change as asked"):
+        fuel_cards.set_prompt("ALIF", ROW, "unit", "99999")
 
 
 # The session switches account only when it is on the other one.
 def test_the_session_switches_account_only_when_it_is_on_the_other_one(site):
-    efs_cards.cards("ALIF", "unit", "3189")
+    fuel_cards.cards("ALIF", "unit", "3189")
     assert not any("OWISSOLogon" in path for path, _ in site.sent)
-    efs_cards.cards("DT", "unit", "3189")
+    fuel_cards.cards("DT", "unit", "3189")
     assert any("selectedUserId=BOB_DT" in path for path, _ in site.sent)
 
 
 # A logged-out session says to log in.
 def test_a_logged_out_session_says_to_log_in(monkeypatch):
     page = {"url": "https://emgr.efsllc.com/security/logon.jsp", "status": 200, "html": header("")}
-    monkeypatch.setattr(efs_chrome, "run", lambda script: page)
-    with pytest.raises(efs_web.EfsError, match="not logged in"):
-        efs_web.fetch("/cards/Index.action")
+    monkeypatch.setattr(window, "run", lambda script: page)
+    with pytest.raises(real_site.EfsError, match="not logged in"):
+        real_site.fetch("/cards/Index.action")
 
 
 # The bot check page says to reload the tab.
 def test_the_bot_check_page_says_to_reload_the_tab(monkeypatch):
     page = {"url": "https://emgr.efsllc.com/", "status": 200, "html": "<script src='/_Incapsula_Resource?x=1'>"}
-    monkeypatch.setattr(efs_chrome, "run", lambda script: page)
-    with pytest.raises(efs_web.EfsError, match="bot check"):
-        efs_web.fetch("/cards/Index.action")
+    monkeypatch.setattr(window, "run", lambda script: page)
+    with pytest.raises(real_site.EfsError, match="bot check"):
+        real_site.fetch("/cards/Index.action")
 
 
 # Runs one command line of main.py.

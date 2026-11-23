@@ -1,5 +1,5 @@
 # A pretend eManager for the card agent's test group (AGENT_TEST_CHAT_ID): one fabricated truck, driver and fuel card,
-# kept in memory. Nothing real is read or changed; it answers the way features/cards/efs_cards does, so the agent's rules and
+# kept in memory. Nothing real is read or changed; it answers the way features/cards/emanager/fuel_cards does, so the agent's rules and
 # Claude's part can be tried end to end in Telegram (the user, 2026-11-23).
 from dataclasses import replace
 from datetime import datetime, timezone

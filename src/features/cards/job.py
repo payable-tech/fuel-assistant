@@ -13,9 +13,10 @@ from base import config
 from base.fuel import is_diesel
 from base.models import ChatLine, DatatruckDriver, EfsCardRow, Truck
 from base.store import db
-from features.cards import claude, efs_cards, efs_chrome, efs_fake, efs_web, rules, settings, telegram_agent
+from features.cards import claude, rules, settings, telegram_agent
+from features.cards.emanager import fake_cards, fuel_cards, site, window
 from features.cards.claude import Tool, answer
-from features.cards.efs_chrome import EfsError
+from features.cards.emanager.window import EfsError
 from features.cards.rules import NeedsPerson
 
 log = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ _efs = asyncio.Lock()                     # one eManager window: one call at a t
 # Forever: opens the eManager window, keeps its login alive, and answers every tag in the truck groups.
 def run() -> None:
     if not settings.AGENT_TEST_ONLY:  # the test group's card is a pretend one: no eManager needed
-        efs_chrome.start()
+        window.start()
     asyncio.run(_main())
 
 
@@ -105,7 +106,7 @@ def prompt(task: "Task", chat: list[ChatLine]) -> str:
 # The truck whose group this is, and its active drivers in Datatruck; (None, []) for a group linked to no truck.
 def _truck_of(chat_id: int) -> tuple[Truck | None, list[DatatruckDriver]]:
     if chat_id == settings.AGENT_TEST_CHAT_ID:
-        return efs_fake.TRUCK, efs_fake.DRIVERS
+        return fake_cards.TRUCK, fake_cards.DRIVERS
     with db.connect() as conn:
         truck = next((t for t in db.fleet(conn) if t.chat_id == chat_id), None)
         drivers = [d for d in db.dt_drivers(conn) if truck and d.unit == truck.unit and d.employee_status == "active"]
@@ -116,7 +117,7 @@ def _truck_of(chat_id: int) -> tuple[Truck | None, list[DatatruckDriver]]:
 async def _emanager_alive() -> bool:
     try:
         async with _efs:
-            return await asyncio.to_thread(efs_web.heartbeat)
+            return await asyncio.to_thread(site.heartbeat)
     except Exception:
         return False
 
@@ -144,7 +145,7 @@ class Task:
         self.client, self.chat_id, self.message_id, self.text, self.sender = client, chat_id, message_id, text, sender
         self.truck, self.drivers, self.unit = truck, drivers, truck.unit
         self.test = chat_id == settings.AGENT_TEST_CHAT_ID
-        self.efs = efs_fake if self.test else efs_cards  # the test group's card is a pretend one
+        self.efs = fake_cards if self.test else fuel_cards  # the test group's card is a pretend one
         self.steps: list[str] = []
         self.opened: str | None = None
         self.opened_at: datetime | None = None

@@ -39,9 +39,9 @@ def world(tmp_path, monkeypatch):
     w = SimpleNamespace(cards={}, opened=[], writes=[])
     for c in (card("c10001", "3189", "JOHN DOE"), card("c20002", "3189", "MARY ROE"), card("c30003", "31890", "JOHN DOE")):
         w.cards[c[0].card_id] = c
-    monkeypatch.setattr(job.efs_cards, "cards", lambda account, by, text:
+    monkeypatch.setattr(job.fuel_cards, "cards", lambda account, by, text:
                         [r for r, _ in w.cards.values() if account == "DT" and r.unit.startswith(text)])
-    monkeypatch.setattr(job.efs_cards, "card", lambda account, row: w.cards[row.card_id][1])
+    monkeypatch.setattr(job.fuel_cards, "card", lambda account, row: w.cards[row.card_id][1])
 
     def override(account, row, times):
         w.opened.append((account, row.card_id, times))
@@ -51,7 +51,7 @@ def world(tmp_path, monkeypatch):
         w.writes.append((chat, text, reply_to))
         return 1
 
-    monkeypatch.setattr(job.efs_cards, "set_override", override)
+    monkeypatch.setattr(job.fuel_cards, "set_override", override)
     monkeypatch.setattr(job.telegram_agent, "write", write)
     return w
 

@@ -3,9 +3,10 @@
 import json
 from urllib.parse import quote, urlencode
 
-from features.cards import efs_chrome, settings
-from features.cards.efs_chrome import EfsError
-from features.cards.efs_page import Form, Page, parse
+from features.cards import settings
+from features.cards.emanager import window
+from features.cards.emanager.window import EfsError
+from features.cards.emanager.page import Form, Page, parse
 
 BASE = "https://emgr.efsllc.com"
 # The call eManager's own page makes while a person is active; it resets the 90-minute idle logout.
@@ -19,7 +20,7 @@ BUTTONS = {"searchCard", "saveCardInformation", "overrideCard", "deleteCardOverr
 # Keeps the login alive. True when eManager still has someone logged in.
 def heartbeat() -> bool:
     # the page's own session manager also restarts the tab's logout countdown, when the tab has one
-    text = efs_chrome.run(f"window.efsllcSessionMgr && efsllcSessionMgr.sendHeartBeat();"
+    text = window.run(f"window.efsllcSessionMgr && efsllcSessionMgr.sendHeartBeat();"
                           f"fetch({json.dumps(BASE + HEARTBEAT)}, {{credentials: 'same-origin'}}).then(r => r.text())")
     return "success" in (text or "")
 
@@ -58,7 +59,7 @@ def fetch(path: str, fields: dict[str, str] | None = None) -> Page:
     if fields is not None:
         options |= {"method": "POST", "body": urlencode(fields),
                     "headers": {"Content-Type": "application/x-www-form-urlencoded"}}
-    got = efs_chrome.run(f"fetch({json.dumps(BASE + path)}, {json.dumps(options)})"
+    got = window.run(f"fetch({json.dumps(BASE + path)}, {json.dumps(options)})"
                          ".then(async r => ({url: r.url, status: r.status, html: await r.text()}))")
     page = parse(got["url"], got["html"])
     if "_Incapsula_Resource" in page.html and not page.user:

@@ -3,7 +3,7 @@ import re
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 
-from features.cards.efs_chrome import EfsError
+from features.cards.emanager.window import EfsError
 
 
 # One form on a page: what the browser would send, and the buttons it offers.

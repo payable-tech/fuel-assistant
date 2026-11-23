@@ -4,7 +4,7 @@ import os
 
 from base import config
 
-# eManager, the EFS website, for fuel cards (features/cards/efs_*.py, the way bob-agent reaches it). It runs in its own Chrome
+# eManager, the EFS website, for fuel cards (features/cards/emanager/, the way bob-agent reaches it). It runs in its own Chrome
 # window, since its bot check lets only a real browser through.
 EMANAGER_CHROME_PORT = 9224                 # Chrome listens on this local port only
 EMANAGER_PROFILE = config.DATA_DIR / "efs-chrome"  # that window's own Chrome profile, apart from anyone's own Chrome
@@ -28,10 +28,10 @@ AGENT_EFFORT = "medium"
 AGENT_ACT = True           # False: it decides and reports to the office, but opens no card and answers no driver
 AGENT_HISTORY = 10         # messages of the chat it reads, the one that tagged it included
 AGENT_MAX_PHOTOS = 3       # the newest photos among them it looks at (a declined receipt, a pump screen)
-AGENT_OPEN_FILLS = 1       # an opening lasts this many transactions, always All Locations (features/cards/efs_cards)
+AGENT_OPEN_FILLS = 1       # an opening lasts this many transactions, always All Locations (features/cards/emanager/fuel_cards)
 AGENT_REOPEN_HOURS = 6     # a card it opened isn't opened again by it sooner: the office decides then
 AGENT_OFFICE_CHAT_ID = int(os.getenv("AGENT_OFFICE_CHAT_ID", "").strip() or 0) or None  # its reports; the test group when unset
-# A group that plays a truck's group with a fabricated truck, driver and card (features/cards/efs_fake): nothing real is read
+# A group that plays a truck's group with a fabricated truck, driver and card (features/cards/emanager/fake_cards): nothing real is read
 # or changed for it. AGENT_TEST_ONLY=1 makes the agent ignore every other group (and skip the eManager window).
 AGENT_TEST_CHAT_ID = int(os.getenv("AGENT_TEST_CHAT_ID", "").strip() or 0) or None
 AGENT_TEST_ONLY = os.getenv("AGENT_TEST_ONLY", "").strip() == "1"

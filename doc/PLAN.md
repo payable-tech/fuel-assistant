@@ -135,9 +135,10 @@ Fuel Assistent project/
 │     │                       · statement_evidence.py (job) · pure: accounting.py (a statement as a tree)
 │     │                       · fill_checks.py (Love's promised vs charged) · evidence.py (Samsara's evidence)
 │     └─ cards/               job.py (the card agent) · rules.py (the owner's card rule, pure) · claude.py
-│                             · telegram_agent.py · eManager (§5.7): efs_chrome.py (its Chrome window) · efs_page.py
-│                             (reading a page) · efs_web.py (login, account switch, allowed buttons)
-│                             · efs_cards.py (the card tools) · efs_fake.py (a pretend eManager for the test group)
+│                             · telegram_agent.py · commands.py (the card commands of main.py) · emanager/ (§5.7):
+│                             window.py (its Chrome window) · page.py (reading a page) · site.py (login, account switch,
+│                             allowed buttons) · fuel_cards.py (the card tools) · fake_cards.py (a pretend eManager for
+│                             the test group)
 ├─ web/                       live dashboard (always dark): index.html · css/app.css · vendor/ (Apache ECharts 5.5.1, IBM Plex
 │                             Sans) served locally, no build step · js/: app.js (tabs, refresh) · api.js (talks to the server)
 │                             · one file per view: live.js · trends.js · drivers.js · data.js · recommend.js (+ rec-map.js
@@ -305,7 +306,7 @@ default.
   and their counts, all trucks and on duty), one square per truck in clusters by status, colored by the picked bar;
   a group clicked lists its trucks.
 
-### 5.7 Fuel cards in eManager (`features/cards/efs_*.py`, copied from bob-agent 2026-11-22)
+### 5.7 Fuel cards in eManager (`features/cards/emanager/`, copied from bob-agent 2026-11-22)
 - **No API: a real browser.** eManager's bot check lets only a browser through, so it runs in its own Chrome window
   (profile `data/efs-chrome`, port `EMANAGER_CHROME_PORT`), and every request is sent from inside its tab. `efs-login`
   opens it; a person logs in by hand. eManager logs out after 90 idle minutes (the heartbeat every 4 minutes
@@ -313,7 +314,7 @@ default.
 - **Two accounts, one login:** `EMANAGER_USERS` names the user that acts for ALIF and for DT; the session switches
   before every card call. "All cards" is one lookup per policy (`EMANAGER_POLICIES`). Pick a card by its id: last
   four digits are not unique.
-- **The tools** (`efs_cards.py`): `cards` (look up), `card` (read one), `set_status` (ACTIVE / INACTIVE / HOLD),
+- **The tools** (`fuel_cards.py`): `cards` (look up), `card` (read one), `set_status` (ACTIVE / INACTIVE / HOLD),
   `set_override` (1-9 transactions, always All Locations (the user, 2026-11-22), hand enter; never Product/Limit Override, which opens
   a limits page first, not recorded), `remove_override`,
   `set_prompt` (unit, driver ID or driver name). No one-station override: overrides are always All Locations.
