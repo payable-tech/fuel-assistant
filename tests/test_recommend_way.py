@@ -28,7 +28,7 @@ def world(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "TEST_CHAT_ID", None)
     monkeypatch.setattr(config, "LIVE_UNITS", ("340",))
     monkeypatch.setattr(job.telegram, "send", lambda chat, text: w.sends.append(text))
-    monkeypatch.setattr(job.google_routes, "route", lambda points: w.routes.append(points) or straight(points))
+    monkeypatch.setattr(job.google, "route", lambda points: w.routes.append(points) or straight(points))
     monkeypatch.setattr(job, "_track", lambda truck, since, now: w.track)
     monkeypatch.setattr(job, "_steady_fuel", lambda truck, now: truck.fuel_pct)
     return w

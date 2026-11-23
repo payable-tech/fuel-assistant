@@ -40,7 +40,6 @@ since 2026-11-03 (the user's "mix": three trucks that buy most outside Love's, t
 | Datatruck web API | fuel lines (all history), fuel cards, trucks (VIN, ownership), drivers (type, status) | The API Datatruck's own website uses, mapped from a HAR capture. Login: AWS Cognito, 1-hour token renewed from `.env` `DT_WEB_REFRESH_TOKEN` (dies if Bob signs out of Datatruck in the browser) |
 | Datatruck Open API | active loads → stop coordinates | API key; max 20 calls/min, 25 rows/page |
 | Love's xlsx | 609 stores: number, city, state, lat/lng, retail + discounted price, date | You drop each day's sheet in. 2026-10-20: 228 sheets, 189 days from 2025-03-14 to 2026-10-20 (gaps on some days) |
-| U.S. EIA | weekly average retail diesel price, US + 8 regions, since 1994 | Public file, no login (`psw18vwall.xls`); a new week every Monday afternoon. The market yardstick: where our drivers fuel can't move it |
 | Google Routes | road line through a list of points | One call per load. Traffic-unaware (cheapest tier); car routing, no truck restrictions |
 | Google Places | real truck stops along a stretch of road | Only when no Love's can be counted on (the urgent backup) |
 | Telegram | list Bob's groups; send the fuel messages from the assistant's account | One-time login code to each account's phone |
@@ -112,12 +111,12 @@ Fuel Assistent project/
 │  │  ├─ models.py            dataclasses shared by everything
 │  │  ├─ fuel.py              fuel purchases in figures (pure): diesel, Love's, stops, weeks, the Trends and Live totals
 │  │  ├─ geo.py               route geometry (pure): distances, the Love's along a route
-│  │  ├─ sources/             the outside services: samsara.py · datatruck_web.py · datatruck.py (orders) · loves.py
-│  │  │                       · loves_web.py (store pages) · eia.py · telegram.py · google_routes.py
-│  │  │                       · google_places.py (truck stops, the urgent backup) · google_reach.py (can Google be reached)
+│  │  ├─ sources/             the outside services: samsara.py · datatruck_web.py · datatruck.py (orders) · loves.py (price sheets, store pages)
+│  │  │                       · telegram.py · google.py (roads, truck stops as the urgent
+│  │  │                       backup, can Google be reached)
 │  │  ├─ store/db.py          schema, views, queries
 │  │  ├─ fleet/               the copies: mirror.py · sync_registry.py · linking.py (pure) · refresh_fuel.py
-│  │  │                       · refresh_orders.py · refresh_live.py · refresh_market.py · load_prices.py
+│  │  │                       · refresh_orders.py · refresh_live.py · load_prices.py
 │  │  └─ runner/              scheduler.py · progress.py (the watchdog's clock) · heartbeat.py · health.py (pure)
 │  └─ features/
 │     ├─ engine/              the fuel messages: job.py (one look per truck) · settings.py (the rules' settings from
@@ -127,7 +126,7 @@ Fuel Assistent project/
 │     │                       · estimate_burn.py · driver_habits.py · store_exits.py
 │     ├─ dashboard/           server.py (web/ files + /api/..., open to PCs on the same network) · dashboard.py (each
 │     │                       view's numbers) · fill_lookups.py (job) · pure: nearby.py (cheapest Love's near a fill)
-│     │                       · fleet_status.py · market.py (EIA yardstick)
+│     │                       · fleet_status.py
 │     ├─ accounting/          efs_statement.py (the EFS statement PDFs in data/efs) · read_statements.py (job)
 │     │                       · statement_evidence.py (job) · pure: accounting.py (a statement as a tree)
 │     │                       · fill_checks.py (Love's promised vs charged) · evidence.py (Samsara's evidence)
@@ -163,7 +162,6 @@ they never run in the day (a night missed waits for the next one):
 | `refresh_orders` | 15 min | Active Datatruck orders + stops → `dt_orders` / `dt_stops` |
 | `refresh_fuel.run_recent` | 15 min | Last 3 days of fuel purchases (seconds), for the Live view |
 | `refresh_fuel.run` | night | Every fuel purchase and card (3–17 min), catches late edits |
-| `refresh_market` | 24 h | EIA weekly diesel prices → `market_prices` (one ~0.8 MB download) |
 | `refresh_live` | 5 min | Every truck's latest Samsara position and fuel level → `samsara_live` (one call) |
 | `estimate_tanks` | night | Tank helper for the pilot trucks → `tank_estimates` (one gauge-history call per truck) |
 | `driver_habits` | night | Every driver's diesel stops of the last 30 days with the gauge around them → `fuel_stops` (one gauge-history call per truck that bought diesel, ~175, ~8 min) |
@@ -204,7 +202,6 @@ can never wipe a table.
 | Source copy | `stores` | `store_no` | city, state, lat, lng, retail, net, price_date (the newest sheet) | prices |
 | Source copy | `price_history` | `store_no` + `price_date` | retail, net: every sheet ever put in `data/love's` | prices |
 | Source copy | `price_files` | `path` | size, change time, price date of each sheet already read (a sheet is read once) | prices |
-| Source copy | `market_prices` | `day` + `region` | EIA weekly retail diesel price per region (day = the Monday it was taken) | market |
 | Source copy | `samsara_live` | `samsara_id` | latest lat/lng, address, GPS time, fuel %, fuel reading time | live |
 | Linked | `trucks` | `unit` | samsara_id, vin, name, mpg, auto_chat_id, chat_note | sync (relink) |
 | Helper | `tank_estimates` | `unit` | tank_gal, fills (fill-ups it is based on). Pilot trucks only | tanks |
@@ -358,7 +355,6 @@ Built the way bob-agent's Telegram agent works (`D:/bob-agent/src/agent`, `src/w
 | `evidence` | Look up in Samsara now what the statements' evidence lacks, every truck at once (~5 min per statement) |
 | `orders` | Copy the active Datatruck orders and their stops |
 | `fuel` | Copy every Datatruck fuel line and fuel card (~3 min for ~78K lines) |
-| `market` | Copy the EIA weekly diesel prices by region (seconds) |
 | `serve [--port 8050] [--no-refresh]` | Run the live dashboard at http://127.0.0.1:8050, and from other office PCs at this PC's office address, **http://10.0.40.40:8050** (the log prints it at start; Windows Firewall is off on this PC). Only this PC and private office networks are let in (`DASHBOARD_NETWORKS`): the Radmin VPN (26.x) gets 403, and so may the name PC-017, which resolves to the Radmin address first. Refreshes data on its own |
 | `login` | Log the assistant's Telegram account (`TG_PHONE`) in, once: you type the code Telegram sends it (and its 2FA password). Bob's login (`bob.session`) stays for listing the driver groups |
 | `status` | Rows and last refresh time per table |
@@ -401,7 +397,7 @@ Love's and outside Love's. Average, not median: the two are within a few cents f
 median hides the ~3% of Love's gallons billed with no discount. Not min–max: the extremes are single fills (always a
 California station; the lowest discount is 0¢ every week). The band's width is mostly geography (state taxes), and the
 Love's discount varies by station and by day (cost-plus pricing), so it is not one fixed number. The EIA market
-comparison that was here is gone; EIA prices are still copied daily but nothing shows them.
+comparison that was here is gone, and so is the daily copy of the EIA prices that nothing showed (2026-11-23).
 
 The discount row has three lines (2026-10-28): **At Love's** (the stores we bought at, with the band), **All diesel**
 (what we capture: Love's discount on the Love's share, a few cents elsewhere) and **Love's network average** (every
@@ -488,7 +484,7 @@ stop's place (`recommendations.lat/lng`), so later looks find it on the road and
 driven past or out of reach). Before that, every look took it as passed and sent it again (0226, 2026-11-03: twice to the
 driver, 5 min apart, before 0226 was paused and the fix went in). A real truck stop is a place Google tags both truck stop and
 gas station, or a Pilot, Flying J, TA or Petro travel center by name (Google tags TA as car repair, Petro as a rest stop;
-its truck stop tag alone also covers truck parking): never a gas station in town (`google_places.is_truck_stop`).
+its truck stop tag alone also covers truck parking): never a gas station in town (`google.is_truck_stop`).
 
 **How much** (`fill_up`): at a Love's, always a fill-up, to his usual fill level (the user's go, 2026-11-11). Until then a
 Love's within `PART_REACH_MI` past the stop that was `PART_GAP_USD` cheaper for the company **and** at the pump earned a
@@ -543,7 +539,7 @@ money by themselves over one stop at a time.
 
 **The message** must always be true: "cheaper" is only ever said of the pump price the driver sees (company prices decide,
 but many drivers are charged the pump price, so a stop can look dearer to him). Truck stops only as a backup
-(`base/sources/google_places.py`).
+(`base/sources/google.py`).
 
 **Expect**, from the fairest replay (real gauges, same-day prices, 153 fill-ups, 24 trucks, Oct 14-27): about 6¢/gal if
 every driver follows (0.3-12¢), plus the part fills' ~7¢. The rule picked the driver's real place 18% of the time; stops
@@ -577,7 +573,7 @@ arrives with as "8% (12 gal)" (the gauge's percent, and gallons from the tank si
 (2026-11-02), honest even when a stop passed was cheaper for him.
 
 **The highway and exit** (the user's ask, 2026-11-11): after the miles, "📍 In 34 mi, I-90 (Exit 34)". From Love's own
-store pages, the one source (`base/sources/loves_web`: `loves.com/locations/<store no>`, heading "Belmont, OH | Exit 208/OH-149
+store pages, the one source (`base/sources/loves`: `loves.com/locations/<store no>`, heading "Belmont, OH | Exit 208/OH-149
 on I-70"): each store's page is read once and kept in `store_exits` (job "Love's exits", nightly for new stores; `main.py
 exits` by hand), and `db.stores` hands it to the message as `Store.way`. The price sheets have no exits. A Love's whose
 page names no exit, and a truck stop that isn't a Love's, go out without one. A version from Google's driving directions

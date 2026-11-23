@@ -7,7 +7,7 @@ import { ago, fmt } from './format.js';
 const SOURCE_NAME = {
   fuel_lines: 'Fuel purchases', fuel_cards: 'Fuel cards', dt_trucks: 'Datatruck trucks', dt_drivers: 'Datatruck drivers',
   dt_orders: 'Active loads', dt_stops: 'Load stops', samsara_vehicles: 'Samsara vehicles', trucks: 'Linked trucks',
-  tg_groups: 'Telegram groups', stores: "Love's prices", market_prices: 'Market prices (EIA)',
+  tg_groups: 'Telegram groups', stores: "Love's prices",
   samsara_live: 'Truck positions and fuel', tank_estimates: 'Tank estimates', burn_factors: 'Engine fuel factors', fuel_stops: 'Driver fuel stops',
   price_history: "Love's price history", price_files: "Love's price sheets read",
 };

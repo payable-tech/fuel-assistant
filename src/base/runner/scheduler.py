@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from base import config
-from base.fleet import load_prices, refresh_fuel, refresh_live, refresh_market, refresh_orders, sync_registry
+from base.fleet import load_prices, refresh_fuel, refresh_live, refresh_orders, sync_registry
 from base.fuel import CENTRAL
 from base.runner import heartbeat, progress
 from base.store import db
@@ -27,7 +27,6 @@ JOBS = [
     ("Active loads", config.EVERY_ORDERS_MIN, refresh_orders.run),
     ("Love's prices", config.EVERY_PRICES_MIN, load_prices.run),
     ("Fuel recommendations (silent)", config.EVERY_RECOMMEND_MIN, recommend.run),
-    ("Market diesel prices (EIA)", config.EVERY_MARKET_MIN, refresh_market.run),
     ("EFS statements (data/efs)", config.EVERY_STATEMENTS_MIN, read_statements.run),
     ("Statement evidence (Samsara)", config.EVERY_EVIDENCE_MIN, statement_evidence.run),
     ("Engine fuel factors", config.EVERY_BURN_MIN, estimate_burn.run),

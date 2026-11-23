@@ -1,6 +1,6 @@
 # Telegram through user accounts (Telethon): Bob's account lists the driver groups and saves the Love's sheets posted in
-# their group; the assistant's account sends, only from features/engine/job: to the test group, and to the driver groups of
-# the trucks in LIVE_UNITS.
+# their group; the assistant's account sends: the fuel messages (features/engine/job) to the test group and to the driver
+# groups of the trucks in LIVE_UNITS, and the heartbeat's alerts (base/runner/heartbeat).
 import asyncio
 import threading
 from contextlib import contextmanager

@@ -191,7 +191,6 @@ GAUGE_FRESH_DAYS = 3               # a gauge reading older than this at a statem
 EVERY_RECENT_FUEL_MIN = 15         # just the last few days, for the live view
 EVERY_RECOMMEND_MIN = 5            # silent fuel recommendations for the pilot trucks
 EVERY_BURN_MIN = 24 * 60           # engine fuel factors
-EVERY_MARKET_MIN = 24 * 60         # EIA market prices: a new week appears each Monday
 EVERY_LOOKUP_MIN = 15              # where new fills outside Love's were, the gauge before
 RECENT_FUEL_DAYS = 3
 

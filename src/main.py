@@ -9,7 +9,7 @@ from itertools import groupby
 from logging.handlers import RotatingFileHandler
 
 from base import config
-from base.fleet import load_prices, refresh_fuel, refresh_live, refresh_market, refresh_orders, sync_registry
+from base.fleet import load_prices, refresh_fuel, refresh_live, refresh_orders, sync_registry
 from base.models import EfsCard, EfsCardRow, Order
 from base.sources import telegram
 from base.store import db
@@ -102,11 +102,6 @@ def cmd_orders(args) -> None:
 # Copies every Datatruck fuel line and fuel card.
 def cmd_fuel(args) -> None:
     refresh_fuel.run()
-
-
-# Copies the U.S. EIA weekly retail diesel prices by region, the yardstick for what we pay.
-def cmd_market(args) -> None:
-    refresh_market.run()
 
 
 # Copies every truck's latest Samsara position and fuel level.
@@ -368,7 +363,6 @@ def main() -> None:
     sub.add_parser("evidence", help="look up the statements' fuel used and fill evidence in Samsara now, every truck").set_defaults(run=cmd_evidence)
     sub.add_parser("orders", help="copy active Datatruck orders").set_defaults(run=cmd_orders)
     sub.add_parser("fuel", help="copy every Datatruck fuel line and fuel card").set_defaults(run=cmd_fuel)
-    sub.add_parser("market", help="copy the EIA weekly diesel prices by region").set_defaults(run=cmd_market)
     sub.add_parser("live", help="copy every truck's latest Samsara position and fuel level").set_defaults(run=cmd_live)
     sub.add_parser("tanks", help="estimate the pilot trucks' tank sizes from fill-ups").set_defaults(run=cmd_tanks)
     sub.add_parser("burn", help="calibrate the pilot trucks' engines as fuel meters").set_defaults(run=cmd_burn)

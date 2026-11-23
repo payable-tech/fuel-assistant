@@ -92,7 +92,7 @@ def _fill(samsara_id: str, line: FuelLine) -> FillEvidence:
     readings = samsara.fuel_history(samsara_id, at - timedelta(hours=config.EVIDENCE_PARKED_H), end)
     rise = evidence.biggest_rise(readings, start, end)
     moment = rise[2] if rise else at
-    where = geo.where_at(samsara.placed_track(samsara_id, moment - GPS_AROUND, moment + GPS_AROUND), moment)
+    where = geo.where_at(samsara.gps_history(samsara_id, moment - GPS_AROUND, moment + GPS_AROUND), moment)
     return FillEvidence(line_id=line.line_id, gauge_from=rise[0] if rise else None, gauge_to=rise[1] if rise else None,
                         risen_at=rise[2] if rise else None, lat=where.lat if where else None,
                         lng=where.lng if where else None, place=where.place if where else None)

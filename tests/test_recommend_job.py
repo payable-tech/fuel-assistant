@@ -137,7 +137,7 @@ def test_sent_is_recorded(sent):
 # A road for the truck's road tests: the truck sits on it, the load's stops at its end.
 def on_road(stops, monkeypatch, saved_stops, now=AT):
     calls = []
-    monkeypatch.setattr(job.google_routes, "route", lambda points: calls.append(points) or [points[0], points[-1]])
+    monkeypatch.setattr(job.google, "route", lambda points: calls.append(points) or [points[0], points[-1]])
     order = Order(7, "L-7", "in_transit", "340", AT, tuple(Stop(i, 7, i, "delivery", lat, lng, "X", "TX") for i, (lat, lng) in enumerate(stops)))
     last = TruckWatch(unit="340", at=AT, state="watch", order_id=7, road_made_at=AT, line=[(30.0, -97.0), (29.8, -95.4)],
                       mile=0.0, road_stops=saved_stops)

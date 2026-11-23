@@ -82,7 +82,7 @@ class TrackPoint:
     at: datetime
     lat: float
     lng: float
-    place: str | None = None        # Samsara's address for the point, "Street, City, ST, ZIP", when it was asked for
+    place: str | None = None        # Samsara's address for the point, "Street, City, ST, ZIP"
 
 
 # One reading of a vehicle's fuel gauge, from Samsara's history.
@@ -241,17 +241,6 @@ class StoreOnRoute:
     store: Store
     miles: float                    # miles from the route's start to the route point nearest the store
     off_mi: float                   # straight-line miles from that point to the store
-
-
-US = "U.S."  # the region of a MarketPrice for the whole country
-
-
-# The average retail diesel price of one region in one week, from the U.S. EIA. A row of `market_prices`.
-@dataclass(frozen=True)
-class MarketPrice:
-    day: str                        # "YYYY-MM-DD", the Monday the price was taken
-    region: str                     # an EIA region such as "Midwest" or "California"; US for the whole country
-    price: float                    # dollars per gallon at the pump, taxes included
 
 
 # The result of matching one unit to a Telegram group: a chat, or a note saying why there is none.

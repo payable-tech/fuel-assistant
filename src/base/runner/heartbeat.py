@@ -2,7 +2,7 @@
 # part of the program (base/runner/health) and alerts once in Telegram when one breaks and once when it works again. On start it
 # also tells if the program itself was down (a crash, a power cut). What it finds is kept in `health_alerts`, which the
 # dashboard shows. The user's go, 2026-11-19, after the Datatruck login ran out overnight and nobody knew.
-# It also asks Google itself at every check (base/sources/google_reach) and records the answer in `source_health` like a
+# It also asks Google itself at every check (base/sources/google) and records the answer in `source_health` like a
 # source refresh: nothing else would show Google out of reach (the office network refused it unseen, 2026-11-22).
 import logging
 import time
@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from base import config
 from base.models import Problem
 from base.runner import health
-from base.sources import google_reach, telegram
+from base.sources import google, telegram
 from base.store import db
 
 log = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ def loop(schedule: dict[str, int | None]) -> None:
 # One check: asks Google, finds what is down, alerts on what started or ended, and keeps the rest for the dashboard.
 def run(schedule: dict[str, int | None], now: datetime) -> list[Problem]:
     started = db.now()
-    google_error = google_reach.unreachable()  # asked before the database is opened: a slow network mustn't hold it
+    google_error = google.unreachable()  # asked before the database is opened: a slow network mustn't hold it
     with db.connect() as conn:
         db.record_source(conn, GOOGLE, now, google_error)
         found = _problems(conn, schedule, now)

@@ -1,11 +1,11 @@
-# Love's exits job: reads the own page of each Love's store not read yet (base/sources/loves_web) and keeps its highway and
+# Love's exits job: reads the own page of each Love's store not read yet (base/sources/loves) and keeps its highway and
 # exit in `store_exits`, for the driver's message ("📍 In 34 mi, I-90 (Exit 34)"). A store is read once: after the
 # first run (all stores, ~10 min) only new stores are.
 import logging
 import time
 
 from base import config
-from base.sources import loves_web
+from base.sources import loves
 from base.store import db
 
 log = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ def run() -> int:
     kept = fails = 0
     for store_no in todo:
         try:
-            way = loves_web.exit_of(store_no)
+            way = loves.exit_of(store_no)
         except Exception as error:
             log.warning("Love's page of store %s not read: %r", store_no, error)
             fails += 1

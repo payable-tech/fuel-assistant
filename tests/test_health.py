@@ -75,7 +75,7 @@ def sent(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "TEST_CHAT_ID", -100)
     monkeypatch.setattr(config, "ALERT_CHAT_ID", None)
     calls = Calls()
-    monkeypatch.setattr(heartbeat.google_reach, "unreachable", lambda: calls.google_error)
+    monkeypatch.setattr(heartbeat.google, "unreachable", lambda: calls.google_error)
 
     def send(chat, text):
         if calls.fail:

@@ -1,6 +1,6 @@
 # Tests which Google places count as truck stops for the low-fuel backup, on real results along 540201's and 0530's
 # roads (2026-11-05): tagged truck stop and gas station, or a big chain's travel center; never a gas station in town.
-from base.sources.google_places import is_truck_stop
+from base.sources.google import is_truck_stop
 
 BOTH = ["truck_stop", "gas_station", "point_of_interest"]
 

@@ -62,11 +62,13 @@ def _live(stats: dict) -> SamsaraLive:
                        fuel_pct=fuel.get("value"), fuel_at=_time(fuel["time"]) if fuel else None)
 
 
-# Returns one vehicle's GPS track between two times: thousands of points a day, three pages for three days.
+# Returns one vehicle's GPS track between two times, each point with Samsara's address ("Street, City, ST, ZIP"):
+# thousands of points a day, three pages for three days.
 def gps_history(samsara_id: str, start: datetime, end: datetime) -> list[TrackPoint]:
     params = {"types": "gps", "vehicleIds": samsara_id, "startTime": _iso(start), "endTime": _iso(end)}
     with _client(_account_of(samsara_id)) as client:
-        return [TrackPoint(at=_time(p["time"]), lat=p["latitude"], lng=p["longitude"])
+        return [TrackPoint(at=_time(p["time"]), lat=p["latitude"], lng=p["longitude"],
+                           place=(p.get("reverseGeo") or {}).get("formattedLocation"))
                 for page in _pages(client, "/fleet/vehicles/stats/history", params)
                 for vehicle in page for p in vehicle.get("gps", [])]
 
@@ -78,17 +80,6 @@ def fuel_history(samsara_id: str, start: datetime, end: datetime) -> list[FuelRe
         return [FuelReading(at=_time(r["time"]), pct=r["value"])
                 for page in _pages(client, "/fleet/vehicles/stats/history", params)
                 for vehicle in page for r in vehicle.get("fuelPercents", [])]
-
-
-# Returns one vehicle's GPS points between two times, each with Samsara's address ("Street, City, ST, ZIP"). Keep the
-# window short: a point comes every few seconds.
-def placed_track(samsara_id: str, start: datetime, end: datetime) -> list[TrackPoint]:
-    params = {"types": "gps", "vehicleIds": samsara_id, "startTime": _iso(start), "endTime": _iso(end)}
-    with _client(_account_of(samsara_id)) as client:
-        return [TrackPoint(at=_time(p["time"]), lat=p["latitude"], lng=p["longitude"],
-                           place=(p.get("reverseGeo") or {}).get("formattedLocation"))
-                for page in _pages(client, "/fleet/vehicles/stats/history", params)
-                for vehicle in page for p in vehicle.get("gps", [])]
 
 
 # Returns every vehicle's engine fuel used (gallons) and miles driven between two times, from the fuel & energy report

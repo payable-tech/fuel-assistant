@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from base import config
 from base.models import (BurnFactor, DatatruckDriver, DatatruckTruck, EfsLine, EfsStatement, FillEvidence, FillLookup,
-                         FleetTruck, FuelCard, FuelLine, FuelStop, MarketPrice, Order, Problem, Recommendation, Region,
+                         FleetTruck, FuelCard, FuelLine, FuelStop, Order, Problem, Recommendation, Region,
                          SamsaraLive, SamsaraVehicle, SourceHealth, Stop, Store, SyncedTruck, TankEstimate, TelegramGroup,
                          Truck, TruckBurn, Trip, TruckWatch, UsualLevel)
 
@@ -146,15 +146,6 @@ CREATE TABLE IF NOT EXISTS price_files (
     modified   REAL NOT NULL,
     price_date TEXT NOT NULL,
     synced_at  TEXT NOT NULL
-);
-
--- Writer: market (U.S. EIA weekly retail diesel prices by region): the yardstick for what we pay.
-CREATE TABLE IF NOT EXISTS market_prices (
-    day       TEXT NOT NULL,   -- the Monday the price was taken
-    region    TEXT NOT NULL,
-    price     REAL NOT NULL,   -- dollars per gallon at the pump
-    synced_at TEXT NOT NULL,
-    PRIMARY KEY (day, region)
 );
 
 -- Writer: live (Samsara: every vehicle's latest GPS point and fuel gauge reading).
@@ -493,7 +484,7 @@ FROM fleet WHERE pilot AND (fuel_at IS NULL OR fuel_at < datetime('now', '-{conf
 # Tables filled by refreshes: listed by the `status` command, and dropped for refilling when SCHEMA_VERSION changes.
 # Your pilot list (pilot_trucks), fill_lookups and job_runs are not in this list, so they are never dropped.
 SYNCED_TABLES = ["samsara_vehicles", "samsara_live", "dt_trucks", "dt_drivers", "tg_groups", "dt_orders", "dt_stops",
-                 "stores", "price_history", "price_files", "fuel_lines", "fuel_cards", "market_prices", "trucks",
+                 "stores", "price_history", "price_files", "fuel_lines", "fuel_cards", "trucks",
                  "tank_estimates", "fuel_stops", "burn_factors", "efs_statements", "efs_lines"]
 
 
@@ -966,11 +957,6 @@ def replace_fuel_cards(conn: sqlite3.Connection, cards: list[FuelCard]) -> None:
     _replace(conn, "fuel_cards", [_row(c) for c in cards])
 
 
-# Replaces the EIA market prices copy.
-def replace_market_prices(conn: sqlite3.Connection, prices: list[MarketPrice]) -> None:
-    _replace(conn, "market_prices", [_row(p) for p in prices])
-
-
 # Replaces all linked trucks at once, so a truck gone from the sources also disappears here.
 def replace_trucks(conn: sqlite3.Connection, trucks: list[SyncedTruck]) -> None:
     _replace(conn, "trucks", [_row(t) for t in trucks])
@@ -1005,12 +991,6 @@ def fuel_lines(conn: sqlite3.Connection, since_day: str) -> list[FuelLine]:
 # Returns the fuel lines fueled from one local day through another ("YYYY-MM-DD", both whole), oldest first.
 def fuel_lines_between(conn: sqlite3.Connection, first_day: str, last_day: str) -> list[FuelLine]:
     return [l for l in fuel_lines(conn, first_day) if l.fueled_at[:10] <= last_day]
-
-
-# Returns the market prices taken on or after a day ("YYYY-MM-DD").
-def market_prices(conn: sqlite3.Connection, since_day: str) -> list[MarketPrice]:
-    rows = conn.execute("SELECT day, region, price FROM market_prices WHERE day >= ? ORDER BY day", (since_day,))
-    return [MarketPrice(**row) for row in rows]
 
 
 # Returns the Love's stores with their prices, and their highway and exit where the store's page was read.

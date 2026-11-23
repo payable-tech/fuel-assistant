@@ -18,13 +18,13 @@ What runs on this PC and in what order. Numbers in `CAPS` are settings in
   │          │ reads                                  │ writes           │
   │          ▼                                        ▼                  │
   │   ┌──────────────────────── data/fuel.db ─────────────────────────┐  │
-  │   │ copies of Samsara, Datatruck, Telegram, Love's, EIA           │  │
+  │   │ copies of Samsara, Datatruck, Telegram, Love's                │  │
   │   │ helper results (tanks, driver habits, lookups) · job_runs     │  │
   │   └───────────────────────────────────────────────────────────────┘  │
   └──────────────────────────────────────────────────────────────────────┘
           ▲                                           │ calls
           │ port 8050                                 ▼
-   browser on this PC              Samsara · Datatruck · Telegram (read-only) · EIA
+   browser on this PC              Samsara · Datatruck · Telegram (read-only)
    or another PC on the network    + Love's sheets dropped in data/love's/
 ```
 
@@ -49,19 +49,18 @@ The database runs in WAL mode, so the page can read while a job writes.
 | 2 | Fuel purchases, last days | 15 min | Datatruck, last 3 days | `fuel_lines` (those days) |
 | 3 | Active loads | 15 min | Datatruck orders and their stops | `dt_orders`, `dt_stops` |
 | 4 | Love's prices | 30 min | sheets in `data/love's/` not read before | `price_history`, `stores` |
-| 5 | Market diesel prices (EIA) | 24 h | EIA weekly prices | `market_prices` |
-| 6 | Trucks, drivers, Telegram | nightly 03–06 CT | Samsara vehicles, Datatruck trucks and drivers, Bob's groups | the copies, then `trucks` (links) |
-| 7 | Fuel purchases, full copy | nightly 03–06 CT | every Datatruck fuel line and card (3–17 min) | `fuel_lines`, `fuel_cards` |
-| 8 | Tank estimates (pilot trucks) | nightly 03–06 CT | fuel lines + Samsara gauge history | `tank_estimates` |
-| 9 | Driver habits | nightly 03–06 CT | fuel lines + Samsara gauge history (~8 min) | `fuel_stops` |
-| 10 | Fill lookups | 15 min | fills outside Love's + Samsara GPS and gauge | `fill_lookups` |
-| 11 | Fuel recommendations (silent) | 5 min | the DB + Samsara GPS and engine + Google (below); sends nothing | `truck_watch`, `recommendations` |
-| 12 | Engine fuel factors | 24 h | Samsara engine and gauge history of the pilot trucks | `burn_factors` |
-| 13 | Love's exits (new stores) | nightly 03–06 CT | the own page of each Love's store not read yet (loves.com) | `store_exits` |
+| 5 | Trucks, drivers, Telegram | nightly 03–06 CT | Samsara vehicles, Datatruck trucks and drivers, Bob's groups | the copies, then `trucks` (links) |
+| 6 | Fuel purchases, full copy | nightly 03–06 CT | every Datatruck fuel line and card (3–17 min) | `fuel_lines`, `fuel_cards` |
+| 7 | Tank estimates (pilot trucks) | nightly 03–06 CT | fuel lines + Samsara gauge history | `tank_estimates` |
+| 8 | Driver habits | nightly 03–06 CT | fuel lines + Samsara gauge history (~8 min) | `fuel_stops` |
+| 9 | Fill lookups | 15 min | fills outside Love's + Samsara GPS and gauge | `fill_lookups` |
+| 10 | Fuel recommendations (silent) | 5 min | the DB + Samsara GPS and engine + Google (below); sends nothing | `truck_watch`, `recommendations` |
+| 11 | Engine fuel factors | 24 h | Samsara engine and gauge history of the pilot trucks | `burn_factors` |
+| 12 | Love's exits (new stores) | nightly 03–06 CT | the own page of each Love's store not read yet (loves.com) | `store_exits` |
 
 How it behaves:
-- **One job at a time.** A long job (7 or 9) makes the others wait their turn; nothing ever runs twice at once.
-- **The slow daily jobs (6–9) run at night**, once between 03:00 and 06:00 Central (`NIGHT_HOURS`), one per pass:
+- **One job at a time.** A long job (6 or 8) makes the others wait their turn; nothing ever runs twice at once.
+- **The slow daily jobs (5–8) run at night**, once between 03:00 and 06:00 Central (`NIGHT_HOURS`), one per pass:
   the engine has its look between two of them. A night missed (the program down) or a failed run waits for the
   next night, never the day (the user's go, 2026-11-05, after they paused the engine for 28 min one morning).
 - **The order matters.** When several jobs are due in the same pass, the quick, live ones run first.
@@ -71,7 +70,7 @@ How it behaves:
   next turn. The other jobs carry on.
 - **A refresh that fails or comes back empty** keeps the previous copy, so an API hiccup can't empty a table.
 
-### One look at one truck (job 11)
+### One look at one truck (job 10)
 
 ```
   tank, position, a fresh gauge reading? ─ no → "no fresh gauge": nothing can be said

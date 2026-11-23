@@ -11,7 +11,7 @@ from base import config, geo
 from base.models import (NO_LOAD_ORDER, Decision, FuelLine, Order, Recommendation, Stop, Store, StoreOnRoute, TrackPoint,
                          Trip, Truck, TruckNow, TruckWatch, UsualLevel)
 from base.runner import progress
-from base.sources import google_places, google_routes, samsara, telegram
+from base.sources import google, samsara, telegram
 from base.store import db
 from features.engine import burn, habits, loads, message, no_load, outcomes, recommend
 from features.engine.settings import RULES, truck_now
@@ -311,7 +311,7 @@ def _road(truck: Truck, order: Order, ahead: list[Stop], last: TruckWatch | None
             log.info("Unit %s: the load's stops ahead changed in Datatruck, new road", truck.unit)
         elif on_road or now - last.road_made_at < timedelta(minutes=config.REROUTE_MIN):
             return Road(line, last.road_made_at, geo.mile_on(line, position, last.mile or 0.0), made_for, new=False)
-    line = google_routes.route([position, *stops])
+    line = google.route([position, *stops])
     return Road(geo.thin(line, config.LINE_STEP_MI), now, 0.0, stops, new=True)
 
 
@@ -401,7 +401,7 @@ def _with_backup(here: TruckNow, d: Decision, line: list[geo.Point]) -> Decision
     if len(ahead) < 2:
         return d
     try:
-        found = geo.stores_along(ahead, google_places.truck_stops_along(ahead), config.TRUCK_STOP_OFF_MI, config.ROUTE_STEP_MI)
+        found = geo.stores_along(ahead, google.truck_stops_along(ahead), config.TRUCK_STOP_OFF_MI, config.ROUTE_STEP_MI)
     except Exception as error:
         log.warning("Truck stop search failed: %r", error)
         return d
