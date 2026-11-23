@@ -1,7 +1,9 @@
 # Replays saved driver cases (features/cards/cases) to the card agent against the real eManager, sending nothing. Each
 # case goes through agent.work() exactly as a live tag would, with three things replaced: what is written to Telegram
 # is kept in a list instead, the database is a copy, and a change in eManager lands on the user's own test card, never
-# on a driver's. The result is a report in data/card_cases: each case as one conversation, from the chat before the
+# on a driver's. The agent's clock is set to the moment of the driver's message, and what the database learned after it
+# (later purchases, the truck's place and gauge now, the engine's state now) is kept from it, so a case days old is
+# worked as if it had just come in. The result is a report in data/card_cases: each case as one conversation, from the chat before the
 # driver's message, through every tool the agent used and what it was answered, to what the office really did.
 import asyncio
 import html
@@ -9,10 +11,10 @@ import json
 import logging
 import sqlite3
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from base import config
+from base import config, fuel
 from base.models import EfsCard, EfsCardRow
 from base.sources import telegram
 from base.store import db
@@ -85,6 +87,22 @@ def listen_to_claude(heard: dict) -> None:
         return said
 
     claude.run = run
+
+
+# Sets the clock the agent's files read to `moment`: during a case, "now" is when the driver wrote.
+def clock_at(moment: datetime) -> None:
+    # The real datetime, whose `now` is the case's moment.
+    class At(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return moment
+
+    agent.datetime = tools.datetime = At
+
+
+# A moment as the fuel purchases are stamped: Central time, "YYYY-MM-DD HH:MM".
+def central(moment: datetime) -> str:
+    return moment.astimezone(fuel.CENTRAL).strftime("%Y-%m-%d %H:%M")
 
 
 # The test card as eManager has it now: its Card Lookup row and its page. ReplayError when it can't be found.
@@ -184,17 +202,24 @@ def run(most: int) -> Path:
 # One case through the agent, as a live tag: the run is claimed, the request worked to its end, and everything it did
 # kept in order: each tool it used, with what it asked and what it was answered.
 async def _one(case: dict, cards: OnTestCard, written: list, heard: dict) -> dict:
+    wrote_at = datetime.fromisoformat(case["at"])
+    clock_at(wrote_at + timedelta(minutes=1))  # the agent wakes a minute after the driver wrote
     with db.connect() as conn:
         conn.execute("DELETE FROM agent_runs")  # each case starts clean: no reopen wait left by the case before it
+        # what was learned after the message is kept from the agent (cases run newest first, so this only ever trims)
+        conn.execute("DELETE FROM fuel_lines WHERE fueled_at > ?", (central(wrote_at),))
+        conn.execute("DELETE FROM truck_watch")
     truck, drivers = agent._truck_of(case["chat_id"])
-    age_days = (datetime.now(timezone.utc) - datetime.fromisoformat(case["at"])).days
+    if truck is not None:  # where the truck is and its gauge are today's: unknown for the moment of the message
+        truck = replace(truck, fuel_pct=None, fuel_at=None, place=None, lat=None, lng=None)
+    age_days = (datetime.now(timezone.utc) - wrote_at).days
     seen = {"unit": case["unit"], "at": case["at"], "age_days": age_days, "sender": case["sender"], "text": case["text"],
             "chat": [{"at": c["at"], "sender": c["sender"], "ours": c["ours"], "text": c["text"], "photo": bool(c["photo"])}
                      for c in case["chat"]], "after": case["after"]}
     if truck is None:
         return seen | {"outcome": "no truck on this group any more", "steps": [], "talk": [], "reply": None, "office": []}
     with db.connect() as conn:
-        db.claim_agent_run(conn, case["chat_id"], case["message_id"], truck.unit, datetime.now(timezone.utc), case["text"][:2000])
+        db.claim_agent_run(conn, case["chat_id"], case["message_id"], truck.unit, wrote_at, case["text"][:2000])
     request = tools.Request(None, case["chat_id"], case["message_id"], case["text"], case["sender"], truck, drivers)
     request.efs = cards
     talk: list[dict] = []
@@ -291,7 +316,8 @@ table{{border-collapse:collapse}}td{{padding:3px 12px 3px 0}}</style>
 <h1>Card agent replay: {len(results)} real cases</h1>
 <p>{summary}</p>
 <p>Nothing was sent to any driver or to the office, and no driver's card was changed: {changes} real changes were made, all on the
-test card, which was put back. The truck, its drivers and its card are as they are today, not as on the message's day.</p>
+test card, which was put back. The agent's clock was set to each message's own moment, and later purchases and today's gauge
+and place were kept from it. The truck's drivers and the card's state in eManager are still today's, not the message's day's.</p>
 <div class="label">Why requests went to the office</div><table>{why_rows or '<tr><td>none</td></tr>'}</table>
 {''.join(_conversation(r) for r in results)}"""
 

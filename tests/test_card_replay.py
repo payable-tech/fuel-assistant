@@ -2,11 +2,12 @@
 # card and is taken off again, the test card is put back, and nothing can be written to Telegram. eManager is a fake.
 import asyncio
 from dataclasses import replace
+from datetime import datetime, timezone
 
 import pytest
 
 from base.models import EfsCard, EfsCardRow
-from features.cards import replay, settings, telegram_agent
+from features.cards import agent, replay, settings, telegram_agent, tools
 from features.cards.emanager import fuel_cards
 
 TEST = EfsCardRow(settings.TEST_CARD_ID, "708305******0672", "1", settings.TEST_CARD_UNIT, "99999", "ALIF UZ CORP", "", "INACTIVE")
@@ -103,3 +104,14 @@ def test_report_kinds_and_escaping():
     team = base | {"steps": ["declined_card: needs a person, this truck has 2 drivers and X is not clearly one of them", "hand_to_office: x"]}
     assert replay.handed_for(team) == "team truck: can't tell which driver wrote" and replay.handed_for(base) is None
     assert replay.handed_for(base | {"steps": ["hand_to_office: wants a money code"]}).startswith("not a card opening")
+
+
+# During a case the agent's clock is the moment the driver wrote, and purchases are cut off at that moment in Central
+# time, as they are stamped.
+def test_the_agents_clock_is_the_messages_moment(monkeypatch):
+    monkeypatch.setattr(agent, "datetime", agent.datetime)
+    monkeypatch.setattr(tools, "datetime", tools.datetime)
+    wrote = datetime(2026, 11, 20, 14, 5, tzinfo=timezone.utc)
+    replay.clock_at(wrote)
+    assert agent.datetime.now(timezone.utc) == wrote == tools.datetime.now(timezone.utc)
+    assert replay.central(wrote) == "2026-11-20 08:05"
