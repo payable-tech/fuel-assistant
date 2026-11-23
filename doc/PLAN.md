@@ -123,13 +123,14 @@ Fuel Assistent project/
 │  │                          program) · heartbeat.py (checks every part, alerts) · heartbeat_rules.py (pure)
 │  └─ features/                 each with its own settings.py
 │     ├─ engine/              the fuel messages: job.py (one look per truck) · settings.py (the engine's numbers, and the
-│     │                       rules' settings built from them) · pure: recommend.py (where to fuel) · no_load.py · loads.py (current load)
-│     │                       · burn.py (live MPG) · tank.py · habits.py · message.py (what the driver is told)
-│     │                       · outcomes.py (what came of each message) · helper jobs: estimate_tanks.py
-│     │                       · estimate_burn.py · driver_habits.py · store_exits.py
+│     │                       rules' settings built from them) · helper_jobs.py (tank sizes, MPG factors, driver stops, Love's
+│     │                       exits) · pure: road_rules.py (where to fuel on the load's road) · way_rules.py (the nearest
+│     │                       Love's ahead by the truck's way: no load, or off its road) · loads.py (current load)
+│     │                       · gauge.py (the calm level now, the level around a purchase) · mpg.py (live MPG) · tank.py
+│     │                       · habits.py · message.py (what the driver is told)
 │     ├─ dashboard/           server.py (web/ files + /api/..., open to PCs on the same network) · dashboard.py (each
-│     │                       view's numbers) · fill_lookups.py (job) · pure: nearby.py (cheapest Love's near a fill)
-│     │                       · fleet_status.py
+│     │                       view's numbers) · fill_lookups.py (job) · pure: outcomes.py (what came of each message)
+│     │                       · nearby.py (cheapest Love's near a fill) · fleet_status.py
 │     ├─ accounting/          efs_statement.py (the EFS statement PDFs in data/efs) · read_statements.py (job)
 │     │                       · statement_evidence.py (job) · pure: accounting.py (a statement as a tree)
 │     │                       · fill_checks.py (Love's promised vs charged) · evidence.py (Samsara's evidence)
@@ -439,7 +440,7 @@ Kept from the old engine because the problem stays: `features/engine/job` uses i
 (25 mi, straight line) on that day's sheet (newest sheet ≤ `SHEET_MAX_AGE_DAYS` old). A fill counts once its lookup has
 a place (≤ ~30 min) and a Love's is that close. The circle is a ceiling: it isn't along the route.
 
-## 6.1 The fuel recommendation (`features/engine/recommend.py`, `features/engine/message.py`, `features/engine/burn.py`, `features/engine/job.py`)
+## 6.1 The fuel recommendation (`features/engine/road_rules.py`, `features/engine/message.py`, `features/engine/mpg.py`, `features/engine/job.py`)
 
 Every 5 min, for each pilot truck. Road: Google Routes from the truck through the load's stops ahead (one call per load,
 again as soon as the load's stops ahead change in Datatruck (added, moved or dropped; reached ones just fall off), or if
@@ -500,7 +501,7 @@ plain stop is told: the truck shows as "skipped". The last Love's in reach, a de
 told. Why: the first and the second message each ended at our stop ~42% of the time, the third and later 1 time in 23
 (50779 got 7 in one day); on the messages of Nov 3-10 the rule would have held 11 of 117, none of which was followed.
 
-**No load** (`features/engine/no_load.py`, `features/engine/job._no_load`; the user's go, 2026-11-18, "pass to the fueling level, find
+**No load** (`features/engine/way_rules.py`, `features/engine/job._no_load`; the user's go, 2026-11-18, "pass to the fueling level, find
 the Love's on the direction the unit is going"): a truck with no load ahead (none in Datatruck, or its stops all reached)
 has no road. Once its fuel is down to the driver's usual level, it is told the nearest Love's ahead in the direction it
 is going: the direction from where its GPS was `HEADING_MI` back to where it is now; ahead = within `AHEAD_CONE_DEG` of
@@ -587,7 +588,7 @@ fuel stop (and the fill-up after a part fill, and pickups still ahead, in road o
 the load's last stop. Google's docs say up to 3 stops on mobile browsers, that navigation starts when the origin is left out,
 and that some products may ignore stops: check on a phone before going live. Maps routes like a car, not a truck.
 
-**When a fuel stop is not told** (`features/engine/recommend.quiet`, the user's go, 2026-11-04): for `FUEL_HOLD_MIN` (60) after the
+**When a fuel stop is not told** (`features/engine/road_rules.quiet`, the user's go, 2026-11-04): for `FUEL_HOLD_MIN` (60) after the
 gauge rose like a fill (`truck_watch.fueled_at`), because the fill may still be going on: 14755 was told Tolleson again at
 the pump, its gauge half way up, which looked to this driver like his usual level; and when the stop is under
 `NEAR_STOP_MI` (2) away, because the driver is already there (0226 Piedmont, 0.8 mi); and while the truck is parked
@@ -613,7 +614,7 @@ the session scratchpad), each checked for a group Migo is in (50779 wasn't: skip
 chosen silently has that silent message set "replaced" on going live, so the driver gets it (19727, Greenville).
 More trucks only on the user's go. The Recommend tab marks live trucks and each message as sent or not, with where the truck fueled.
 
-**Fuel plans on the Live tab** (`features/engine/outcomes.messages_sent`, from `LIVE_FROM` 00:00 Central to the newest purchase),
+**Fuel plans on the Live tab** (`features/dashboard/outcomes.messages_sent`, from `LIVE_FROM` 00:00 Central to the newest purchase),
 drawn so the scope of each figure shows without asking (the user, 2026-11-03):
 - *Messages sent to drivers* (`web/js/messages.js`, redone 2026-11-18 on the user's ask: "how many messages, from
   when, and why?"): full width, one square per message colored by what became of it. Filled = ended and counted

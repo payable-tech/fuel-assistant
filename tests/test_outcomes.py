@@ -2,8 +2,9 @@
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
+from base import fuel
 from base.models import FuelLine, FuelStop, Recommendation, TrackPoint
-from features.engine import outcomes
+from features.dashboard import outcomes
 
 
 # What became of a recommendation: the first diesel stop after it, and what going there would have saved.
@@ -80,8 +81,8 @@ def test_last_fill():
                         unit, "company", 7, "Jacob", "company", None)
 
     lines = [line("2026-11-09 08:00"), line("2026-11-10 12:10"), line("2026-11-10 15:00", product="DEFD"), line("2026-11-11 01:00", unit="100")]
-    assert outcomes.last_fill("0226", lines) == datetime(2026, 11, 10, 18, 10, tzinfo=timezone.utc)
-    assert outcomes.last_fill("9999", lines) is None
+    assert fuel.last_fill("0226", lines) == datetime(2026, 11, 10, 18, 10, tzinfo=timezone.utc)
+    assert fuel.last_fill("9999", lines) is None
 
 
 # What became of a message: there, at another Love's or outside Love's once bought; else by how it was settled.

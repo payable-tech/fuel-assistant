@@ -54,16 +54,6 @@ def own_fills(unit: str, came: dict[int, dict], lines: list[FuelLine], window: t
     return [p for p in map(purchase, purchase_stops(diesel, window)) if p["at"] not in asked]
 
 
-# Whether a stop told at `made_at` has been overtaken by fuel bought since: a diesel line of the unit after it.
-def fueled_since(unit: str, made_at: datetime, lines: list[FuelLine]) -> bool:
-    return any(l.unit == unit and is_diesel(l) and utc(l.fueled_at) > made_at for l in lines)
-
-
-# When a truck last bought diesel among the `lines` (UTC); None when it didn't.
-def last_fill(unit: str, lines: list[FuelLine]) -> datetime | None:
-    return max((utc(l.fueled_at) for l in lines if l.unit == unit and is_diesel(l)), default=None)
-
-
 # What became of a message sent: fueled at our stop, at another Love's or outside Love's (its purchase is in
 # Datatruck), drove past, fueled by the gauge with the purchase not in Datatruck yet, still on the way, or called off by
 # us (road remade, load ended).

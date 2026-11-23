@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from base import geo
 from base.models import Decision, FuelRules, Order, Recommendation, Store, StoreOnRoute, Truck, TruckNow, UsualLevel
-from features.engine import message, recommend
+from features.engine import message, road_rules
 
 RULES = FuelRules(reserve_pct=10, worse=0.8, above_usual=5, look_mi=150, part_gap=0.50, part_reach_mi=500, part_min_gal=30,
                   part_margin_gal=25, low_penalty=5, urgent_pct=25, hold_min=60, near_mi=2, max_passed=2, last_pct=3)
@@ -25,7 +25,7 @@ def jacob(pct: float, mile: float = 0.0, usual: UsualLevel = JACOB) -> TruckNow:
 
 # Oct 19 at Skippers VA, gauge 30%: Dunn is above his level but the last safe Love's (Dillon would be 7% if MPG drops).
 def test_hard_stop_beats_his_habit():
-    d = recommend.decide(jacob(30, 3675), [at(3784, 5.25, 5.69, "Dunn"), at(3869, 5.59, 5.59, "Dillon")], FAR, RULES)
+    d = road_rules.decide(jacob(30, 3675), [at(3784, 5.25, 5.69, "Dunn"), at(3869, 5.59, 5.59, "Dillon")], FAR, RULES)
     assert (d.kind, d.stop.store.city, d.reason) == ("stop", "Dunn", "hard_stop")
     assert round(d.arrive_pct) == 20 and round(d.worst_pct) == 17
     text = message.text(jacob(30, 3675), d)  # Dillon can still be reached: skipping is harmless, a plain fuel stop
@@ -35,49 +35,49 @@ def test_hard_stop_beats_his_habit():
 # Oklahoma City, 2026-11-09 (6282): no Love's after the stop is in reach, so skipping it means low fuel. The warning
 # comes whether the stop was picked at his level or as the hard stop; not when the load's end is still in reach.
 def test_last_loves_in_reach_is_a_warning():
-    at_level = recommend.decide(jacob(18), [at(30, 5.5), at(400, 5.5)], FAR, RULES)
+    at_level = road_rules.decide(jacob(18), [at(30, 5.5), at(400, 5.5)], FAR, RULES)
     assert (at_level.kind, at_level.reason, at_level.stop.miles) == ("stop", "last", 30)
     assert at_level.worst_pct >= RULES.reserve_pct  # still above the reserve: a warning, not an emergency
     text = message.text(jacob(18), at_level)
     assert "⚠️ Last Love's you can reach: Town, TX" in text and "Fill up, don't skip it" in text
-    early = recommend.decide(jacob(30), [at(50, 5.5), at(400, 5.5)], FAR, RULES)
+    early = road_rules.decide(jacob(30), [at(50, 5.5), at(400, 5.5)], FAR, RULES)
     assert (early.kind, early.reason, early.stop.miles) == ("stop", "last", 50)
-    end_in_reach = recommend.decide(jacob(30), [at(50, 5.5)], 200.0, RULES)
+    end_in_reach = road_rules.decide(jacob(30), [at(50, 5.5)], 200.0, RULES)
     assert end_in_reach.reason == "hard_stop" and "skip" not in message.text(jacob(30), end_in_reach)
-    more_ahead = recommend.decide(jacob(18), [at(30, 5.5), at(60, 5.6), at(400, 5.5)], FAR, RULES)
+    more_ahead = road_rules.decide(jacob(18), [at(30, 5.5), at(60, 5.6), at(400, 5.5)], FAR, RULES)
     assert more_ahead.reason == "range"
 
 
 # Nothing is told until the stop is close: at 60 miles, Dunn at 109 miles is still only being watched.
 def test_told_only_when_close():
     later = replace(RULES, look_mi=60)
-    d = recommend.decide(jacob(30, 3675), [at(3784, 5.25, 5.69), at(3869, 5.59, 5.59)], FAR, later)
+    d = road_rules.decide(jacob(30, 3675), [at(3784, 5.25, 5.69), at(3869, 5.59, 5.59)], FAR, later)
     assert (d.kind, d.reason) == ("watch", "hard_stop")
 
 
 # A Love's he'd reach well above his level isn't picked while a safe one at his level comes later.
 def test_too_early_is_not_picked():
-    d = recommend.decide(jacob(25), [at(40, 4.00), at(100, 5.50), at(140, 5.50)], FAR, RULES)
+    d = road_rules.decide(jacob(25), [at(40, 4.00), at(100, 5.50), at(140, 5.50)], FAR, RULES)
     assert d.stop.miles == 100 and d.reason == "range"
 
 
 # Among the stops at his level, the one saving the most money.
 def test_money_picks_inside_his_range():
-    d = recommend.decide(jacob(23), [at(80, 5.60), at(100, 5.30)], FAR, RULES)
+    d = road_rules.decide(jacob(23), [at(80, 5.60), at(100, 5.30)], FAR, RULES)
     assert d.stop.miles == 100
 
 
 # Nothing to tell while the stop is still far; nothing at all when the delivery is safely in reach.
 def test_watch_then_enough():
-    assert recommend.decide(jacob(60), [at(400, 5.5)], FAR, RULES).kind == "watch"
-    assert recommend.decide(jacob(60), [at(100, 5.5)], 200.0, RULES).kind == "enough"
+    assert road_rules.decide(jacob(60), [at(400, 5.5)], FAR, RULES).kind == "watch"
+    assert road_rules.decide(jacob(60), [at(100, 5.5)], 200.0, RULES).kind == "enough"
 
 
 # Barstow to Lake Havasu, real prices: a much cheaper Love's ahead, also at the pump, and still a fill-up. Part fills
 # were told 12 times and never bought as asked (the user's go, 2026-11-11).
 def test_a_loves_stop_is_always_a_fill_up():
     truck = jacob(25, usual=UsualLevel(22, 15, 30, 95, 20))
-    d = recommend.decide(truck, [at(50, 7.45, 8.19, "Barstow"), at(220, 6.00, 6.69, "Havasu")], FAR, RULES)
+    d = road_rules.decide(truck, [at(50, 7.45, 8.19, "Barstow"), at(220, 6.00, 6.69, "Havasu")], FAR, RULES)
     assert d.kind == "stop" and d.stop.store.city == "Barstow" and d.then is None
     assert d.gallons == 0.95 * 156 - (truck.fuel_gal - 50 / truck.forecast_mpg)
     words = message.text(truck, d)
@@ -86,42 +86,42 @@ def test_a_loves_stop_is_always_a_fill_up():
 
 # No Love's can be counted on: urgent, naming the next one if any.
 def test_urgent():
-    d = recommend.decide(jacob(11), [at(100, 5.5)], FAR, RULES)
+    d = road_rules.decide(jacob(11), [at(100, 5.5)], FAR, RULES)
     assert (d.kind, d.reason) == ("urgent", "low") and d.stop.miles == 100
-    assert recommend.decide(jacob(11), [], FAR, RULES).stop is None
+    assert road_rules.decide(jacob(11), [], FAR, RULES).stop is None
     assert f"Fuel is low: 11% ({0.11 * 156:.0f} gal)" in message.text(jacob(11), d)
 
 
 # 800 miles without a Love's and the tank at 70%: nothing to shout about yet.
 def test_long_gap_is_not_urgent_while_there_is_fuel():
-    assert recommend.decide(jacob(70), [at(800, 5.5)], FAR, RULES).kind == "watch"
-    assert recommend.decide(jacob(20), [at(800, 5.5)], FAR, RULES).kind == "urgent"
+    assert road_rules.decide(jacob(70), [at(800, 5.5)], FAR, RULES).kind == "watch"
+    assert road_rules.decide(jacob(20), [at(800, 5.5)], FAR, RULES).kind == "urgent"
 
 
 # A stop told stands while it can be reached, even under the reserve; only past reach does it change.
 def test_told_stop_stands_under_the_reserve():
-    assert recommend.in_reach(jacob(14), at(50, 5.5), RULES)
-    assert recommend.worst_pct(jacob(14), 50) < 10
-    assert not recommend.in_reach(jacob(12), at(100, 5.5), RULES)
+    assert road_rules.in_reach(jacob(14), at(50, 5.5), RULES)
+    assert road_rules.worst_pct(jacob(14), 50) < 10
+    assert not road_rules.in_reach(jacob(12), at(100, 5.5), RULES)
 
 
 # Under the reserve with Love's still in reach is no emergency: the nearest one, then the last with its own words.
 def test_elastic_reserve():
-    two = recommend.decide(jacob(12), [at(30, 5.5), at(50, 5.0)], FAR, RULES)
+    two = road_rules.decide(jacob(12), [at(30, 5.5), at(50, 5.0)], FAR, RULES)
     assert (two.kind, two.reason, two.stop.miles) == ("stop", "tight", 30)
     assert "Fuel is getting low" in message.text(jacob(12), two) and "⚠️" not in message.text(jacob(12), two)
-    one = recommend.decide(jacob(12), [at(30, 5.5), at(120, 5.0)], FAR, RULES)
+    one = road_rules.decide(jacob(12), [at(30, 5.5), at(120, 5.0)], FAR, RULES)
     assert (one.kind, one.reason, one.stop.miles) == ("stop", "last", 30)
     assert "Last Love's you can reach: Town, TX" in message.text(jacob(12), one) and "don't skip it" in message.text(jacob(12), one)
-    past = recommend.decide(jacob(12), [at(120, 5.0)], FAR, RULES)
+    past = road_rules.decide(jacob(12), [at(120, 5.0)], FAR, RULES)
     assert (past.kind, past.reason) == ("urgent", "low")
 
 
 # An emergency never names a station he'd run dry before reaching.
 def test_emergency_names_only_what_he_can_reach():
-    far = recommend.decide(jacob(6), [at(200, 5.6)], FAR, RULES)
+    far = road_rules.decide(jacob(6), [at(200, 5.6)], FAR, RULES)
     assert far.kind == "urgent" and "Find the nearest truck stop now" in message.text(jacob(6), far)
-    near = recommend.decide(jacob(9), [at(70, 5.6)], FAR, RULES)
+    near = road_rules.decide(jacob(9), [at(70, 5.6)], FAR, RULES)
     assert near.kind == "urgent" and "Love's Town, TX" in message.text(jacob(9), near)
 
 
@@ -159,7 +159,7 @@ def test_no_link_without_a_stop():
 # station, and a separate link starts the road.
 def test_message():
     truck = jacob(20)
-    d = recommend.decide(truck, [at(60, 5.91, 6.49, "Sparta"), at(120, 5.91, 6.49)], FAR, RULES)
+    d = road_rules.decide(truck, [at(60, 5.91, 6.49, "Sparta"), at(120, 5.91, 6.49)], FAR, RULES)
     words = message.text(truck, d).split("\n")
     assert words[0] == "⛽ Fuel stop: Love's Sparta, TX" and words[2] == "Love's Sparta, TX - $6.49/gal"
     arrives = 0.2 * 156 - 60 / 6.69
@@ -175,10 +175,10 @@ def test_message_names_the_exit():
     truck = jacob(20)
     sparta = at(60, 5.91, 6.49, "Sparta")
     known = replace(sparta, store=replace(sparta.store, way="I-90 (Exit 34)"))
-    d = recommend.decide(truck, [known, at(120, 5.91, 6.49)], FAR, RULES)
+    d = road_rules.decide(truck, [known, at(120, 5.91, 6.49)], FAR, RULES)
     assert message.text(truck, d).split("\n")[4] == "📍 In 60 mi, I-90 (Exit 34)"
     assert "📍 In 60 mi, I-90 (Exit 34)\n" in message.html_text(truck, d, None)
-    plain = recommend.decide(truck, [sparta, at(120, 5.91, 6.49)], FAR, RULES)
+    plain = road_rules.decide(truck, [sparta, at(120, 5.91, 6.49)], FAR, RULES)
     assert message.text(truck, plain).split("\n")[4] == "📍 In 60 mi"
 
 
@@ -191,38 +191,38 @@ def test_no_price_no_price_line():
 
 # With no Love's left in reach but the delivery still is, there's nothing to shout about.
 def test_delivery_in_reach_is_no_emergency():
-    assert recommend.decide(jacob(9), [at(120, 5.0)], 40.0, RULES).kind == "enough"
+    assert road_rules.decide(jacob(9), [at(120, 5.0)], 40.0, RULES).kind == "enough"
 
 
 # Under the reserve but far from the next Love's: watched until it's close.
 def test_tight_is_told_only_when_close():
-    d = recommend.decide(jacob(20), [at(100, 5.5), at(800, 5.0)], FAR, replace(RULES, look_mi=60))
+    d = road_rules.decide(jacob(20), [at(100, 5.5), at(800, 5.0)], FAR, replace(RULES, look_mi=60))
     assert (d.kind, d.reason) == ("watch", "last")
 
 
 # Regions: where fuel will be needed down the road, and a mark where a much cheaper Love's lies past one.
 def test_regions():
     stops = [at(m, 6.5, 7.0) for m in range(100, 1500, 100)] + [at(1550, 5.5, 6.0)]
-    found = recommend.regions(jacob(60), stops, 2000.0, RULES)
+    found = road_rules.regions(jacob(60), stops, 2000.0, RULES)
     assert len(found) >= 2
     assert found[0].from_mi <= found[0].to_mi < found[1].from_mi
     assert any(r.cheaper_ahead for r in found)
-    assert recommend.regions(jacob(60), stops, 200.0, RULES) == []
+    assert road_rules.regions(jacob(60), stops, 200.0, RULES) == []
 
 
 # The picture of Jacob at Skippers: Dunn is too early by his level but the stop, Dillon under reserve, and the forecast
 # starts from the gauge.
 def test_picture():
-    seen = recommend.picture(jacob(30, 3675), [at(3600, 5.0), at(3784, 5.25, 5.69), at(3869, 5.59, 5.59)], FAR, RULES)
+    seen = road_rules.picture(jacob(30, 3675), [at(3600, 5.0), at(3784, 5.25, 5.69), at(3869, 5.59, 5.59)], FAR, RULES)
     assert [v.verdict for v in seen.views] == ["passed", "early", "late"]
-    assert recommend.picture(jacob(12), [at(120, 5.0)], FAR, RULES).views[0].verdict == "out"
+    assert road_rules.picture(jacob(12), [at(120, 5.0)], FAR, RULES).views[0].verdict == "out"
     assert seen.decision.stop.miles == 3784
 
 
 # A Love's that fails the safety rule isn't in the region when one that passes is (Tre's Sparta, not Shepherdsville).
 def test_region_follows_the_safety_rule():
     tre = TruckNow(fuel_gal=47, mile=0, tank_gal=162, forecast_mpg=8.0, cautious_mpg=5.86, usual=UsualLevel(18, 6, 39, 97, 19))
-    found = recommend.regions(tre, [at(56, 6.27), at(161, 5.91), at(238, 5.89)], 1164.0, RULES)
+    found = road_rules.regions(tre, [at(56, 6.27), at(161, 5.91), at(238, 5.89)], 1164.0, RULES)
     assert (found[0].from_mi, found[0].to_mi, found[0].fill_mi) == (161, 161, 161)
 
 
@@ -230,9 +230,9 @@ def test_region_follows_the_safety_rule():
 def test_told_stop_leads_the_plan():
     tre = TruckNow(fuel_gal=47, mile=0, tank_gal=162, forecast_mpg=8.0, cautious_mpg=5.86, usual=UsualLevel(18, 6, 39, 97, 19))
     stops = [at(56, 6.27), at(161, 5.91), at(368, 5.62)]
-    seen = recommend.picture(tre, stops, 1164.0, RULES, (stops[0], 35.0))
+    seen = road_rules.picture(tre, stops, 1164.0, RULES, (stops[0], 35.0))
     assert seen.regions[0].fill_mi == 56
-    assert round(seen.regions[0].fill_pct - recommend.arrive_pct(tre, 56)) == round(100 * 35 / 162)
+    assert round(seen.regions[0].fill_pct - road_rules.arrive_pct(tre, 56)) == round(100 * 35 / 162)
 
 
 # The zone of the tank now: from his level at the expected MPG, the reserve and empty at the cautious MPG, so a Love's
@@ -240,7 +240,7 @@ def test_told_stop_leads_the_plan():
 def test_the_zone_agrees_with_the_verdicts():
     truck = jacob(30, 100)
     stops = [at(m, 5.5) for m in range(110, 500, 10)]
-    seen = recommend.picture(truck, stops, FAR, RULES)
+    seen = road_rules.picture(truck, stops, FAR, RULES)
     z = seen.zones[0]
     assert z.start_mi < z.reserve_mi < z.end_mi and round(z.end_mi) == 100 + round(0.3 * 156 * 6.69 * 0.8)
     for v in seen.views:
@@ -252,14 +252,14 @@ def test_the_zone_agrees_with_the_verdicts():
 
 # A truck already under his level is in its zone at once, and a zone past the road's end isn't drawn.
 def test_zone_limits():
-    assert recommend.zones(jacob(10), [], FAR, RULES)[0].start_mi == 0
-    assert recommend.zones(jacob(90), [], 100.0, RULES) == ()
+    assert road_rules.zones(jacob(10), [], FAR, RULES)[0].start_mi == 0
+    assert road_rules.zones(jacob(90), [], 100.0, RULES) == ()
 
 
 # A city in capitals on the price sheet reads normally in the message; others stay as written.
 def test_station_name():
-    assert recommend.station(at(10, 5.0, city="BIG SPRING")) == "Love's Big Spring, TX"
-    assert recommend.station(at(10, 5.0, city="McPherson")) == "Love's McPherson, TX"
+    assert road_rules.station(at(10, 5.0, city="BIG SPRING")) == "Love's Big Spring, TX"
+    assert road_rules.station(at(10, 5.0, city="McPherson")) == "Love's McPherson, TX"
 
 
 HOT_SPOT = StoreOnRoute(store=Store("g", "Inman", "SC", 35.08, -82.06, 0.0, 0.0, "", name="HOT SPOT"), miles=18, off_mi=0.3)
@@ -269,11 +269,11 @@ HOT_SPOT = StoreOnRoute(store=Store("g", "Inman", "SC", 35.08, -82.06, 0.0, 0.0,
 # (at least 30 gal), not a fill-up; with no Love's ahead, a fill-up.
 def test_backup_buys_only_to_the_next_loves():
     truck, newport = jacob(17), at(133, 5.95, 6.39, "Newport")
-    gallons, then = recommend.backup_amount(truck, HOT_SPOT, newport, RULES)
+    gallons, then = road_rules.backup_amount(truck, HOT_SPOT, newport, RULES)
     assert (gallons, then) == (30, newport)
-    on_arrival = recommend.worst_pct(truck, 18) / 100 * 156
+    on_arrival = road_rules.worst_pct(truck, 18) / 100 * 156
     assert gallons + on_arrival - 115 / truck.cautious_mpg >= 0.10 * 156     # the reserve holds on the way
-    assert recommend.backup_amount(truck, HOT_SPOT, None, RULES) == (0.99 * 156 - on_arrival, None)
+    assert road_rules.backup_amount(truck, HOT_SPOT, None, RULES) == (0.99 * 156 - on_arrival, None)
 
 
 # The message for it: how much to buy, and the Love's to fill up at after. No card line (the user's call).
@@ -290,14 +290,14 @@ def test_told_now():
     rec = Recommendation(1, "0226", "Jacob", 1, "L", datetime(2026, 11, 5, tzinfo=timezone.utc), "stop", "1100", "Love's Town, TX",
                          100.0, 20.0, 10.0, 8.0, 100.0, None, "range", 5.5, 6.0, "2026-11-05", 6.69, 5.35, 13.0, "text", "open", None)
     near, far, truck = at(100, 5.5), at(1000, 5.5), jacob(20)
-    assert recommend.told_now(rec, near, truck, False, RULES) is None
-    assert recommend.told_now(rec, None, truck, False, RULES) == "passed"
-    assert recommend.told_now(rec, None, truck, True, RULES) == "replaced"
-    assert recommend.told_now(rec, far, truck, False, RULES) == "replaced"          # out of reach now
+    assert road_rules.told_now(rec, near, truck, False, RULES) is None
+    assert road_rules.told_now(rec, None, truck, False, RULES) == "passed"
+    assert road_rules.told_now(rec, None, truck, True, RULES) == "replaced"
+    assert road_rules.told_now(rec, far, truck, False, RULES) == "replaced"          # out of reach now
     urgent = replace(rec, kind="urgent", reason="low")
-    assert recommend.told_now(urgent, far, truck, False, RULES) is None              # told as an emergency: stands
-    assert recommend.told_now(urgent, None, truck, False, RULES) == "passed"
-    assert recommend.told_now(replace(urgent, store_no=None), None, truck, False, RULES) is None  # names no place
+    assert road_rules.told_now(urgent, far, truck, False, RULES) is None              # told as an emergency: stands
+    assert road_rules.told_now(urgent, None, truck, False, RULES) == "passed"
+    assert road_rules.told_now(replace(urgent, store_no=None), None, truck, False, RULES) is None  # names no place
 
 
 LINE = [(30.0 + k * 0.1, -97.0) for k in range(20)]  # about 130 miles due north
@@ -310,14 +310,14 @@ TOLD = Recommendation(1, "340", "Ali", 1, "L-1", NOV2, "stop", "140", "Love's To
 # place, so it stands and isn't sent again each look (0226, 2026-11-03). Driven past, it is gone.
 def test_told_stop():
     loves = at(40, 5.5)
-    assert recommend.told_stop(TOLD, [loves], LINE, 10.0, 2, 0.5) == loves
-    assert recommend.told_stop(TOLD, [loves], LINE, 50.0, 2, 0.5) is None                 # driven past
+    assert road_rules.told_stop(TOLD, [loves], LINE, 10.0, 2, 0.5) == loves
+    assert road_rules.told_stop(TOLD, [loves], LINE, 50.0, 2, 0.5) is None                 # driven past
     urgent = replace(TOLD, kind="urgent", store_no="ChIJx", station="HOT SPOT Inman, SC", lat=30.5, lng=-97.0)
-    stop = recommend.told_stop(urgent, [loves], LINE, 10.0, 2, 0.5)
+    stop = road_rules.told_stop(urgent, [loves], LINE, 10.0, 2, 0.5)
     assert stop is not None and 33 < stop.miles < 36 and stop.store.store_no == "ChIJx"
-    assert recommend.told_stop(urgent, [], LINE, 50.0, 2, 0.5) is None                    # driven past
-    assert recommend.told_stop(replace(urgent, lat=None, lng=None), [], LINE, 10.0, 2, 0.5) is None
-    assert recommend.told_stop(replace(urgent, kind="stop"), [], LINE, 10.0, 2, 0.5) is None
+    assert road_rules.told_stop(urgent, [], LINE, 50.0, 2, 0.5) is None                    # driven past
+    assert road_rules.told_stop(replace(urgent, lat=None, lng=None), [], LINE, 10.0, 2, 0.5) is None
+    assert road_rules.told_stop(replace(urgent, kind="stop"), [], LINE, 10.0, 2, 0.5) is None
 
 
 # A fuel stop isn't told just after a fill was seen (it may still be going on: 14755 at Tolleson, 2026-11-04), nor when
@@ -330,12 +330,12 @@ def test_quiet():
         return Decision(kind, stop=at(miles, 5.5), reason=reason)
 
     long_ago = NOV2 - timedelta(hours=2)
-    assert recommend.quiet(here, stop(150), NOV2 - timedelta(minutes=10), NOV2, RULES)   # fueled 10 min ago
-    assert not recommend.quiet(here, stop(150), long_ago, NOV2, RULES) and not recommend.quiet(here, stop(150), None, NOV2, RULES)
-    assert recommend.quiet(here, stop(101.5), None, NOV2, RULES)                          # there
-    assert recommend.quiet(here, stop(99.8, reason="hard_stop"), None, NOV2, RULES)
-    assert not recommend.quiet(here, stop(101.5, reason="tight"), None, NOV2, RULES)     # under the reserve: told
-    assert not recommend.quiet(here, stop(101.5, kind="urgent", reason="low"), NOV2, NOV2, RULES)
+    assert road_rules.quiet(here, stop(150), NOV2 - timedelta(minutes=10), NOV2, RULES)   # fueled 10 min ago
+    assert not road_rules.quiet(here, stop(150), long_ago, NOV2, RULES) and not road_rules.quiet(here, stop(150), None, NOV2, RULES)
+    assert road_rules.quiet(here, stop(101.5), None, NOV2, RULES)                          # there
+    assert road_rules.quiet(here, stop(99.8, reason="hard_stop"), None, NOV2, RULES)
+    assert not road_rules.quiet(here, stop(101.5, reason="tight"), None, NOV2, RULES)     # under the reserve: told
+    assert not road_rules.quiet(here, stop(101.5, kind="urgent", reason="low"), NOV2, NOV2, RULES)
 
 
 # After two stops told and driven past on one tank, a third plain stop isn't told (50779 got 7 in a day, 2026-11-05; of
@@ -344,17 +344,17 @@ def test_quiet_after_two_stops_driven_past():
     here = TruckNow(fuel_gal=60, mile=100.0, tank_gal=150, forecast_mpg=7.0, cautious_mpg=5.6, usual=UsualLevel(30, 20, 40, 95, 9))
     for reason, held in (("range", True), ("hard_stop", True), ("detour", False), ("tight", False), ("last", False)):
         d = Decision("stop", stop=at(150, 5.5), worst_pct=15, reason=reason)
-        assert recommend.quiet(here, d, None, NOV2, RULES, passed=2) is held and recommend.skipped(d, 2, RULES) is held
-        assert not recommend.quiet(here, d, None, NOV2, RULES, passed=1) and not recommend.skipped(d, 1, RULES)
+        assert road_rules.quiet(here, d, None, NOV2, RULES, passed=2) is held and road_rules.skipped(d, 2, RULES) is held
+        assert not road_rules.quiet(here, d, None, NOV2, RULES, passed=1) and not road_rules.skipped(d, 1, RULES)
     urgent = Decision("urgent", stop=at(150, 5.5), reason="low")
-    assert not recommend.quiet(here, urgent, None, NOV2, RULES, passed=5) and not recommend.skipped(urgent, 5, RULES)
+    assert not road_rules.quiet(here, urgent, None, NOV2, RULES, passed=5) and not road_rules.skipped(urgent, 5, RULES)
 
 
 # The road where a truck stop is looked for: from the truck to where its fuel runs out at the MPG expected.
 def test_in_range():
     truck = TruckNow(fuel_gal=10, mile=10.0, tank_gal=150, forecast_mpg=5.0, cautious_mpg=4.0, usual=JACOB)  # 50 mi of fuel
     marks = geo.along(LINE)
-    assert recommend.in_range(truck, LINE) == LINE[2:9] and marks[2] >= 10 > marks[1] and marks[8] <= 60 < marks[9]
+    assert road_rules.in_range(truck, LINE) == LINE[2:9] and marks[2] >= 10 > marks[1] and marks[8] <= 60 < marks[9]
 
 
 # With no Love's in reach, a truck stop nearer than the next Love's takes its place, buying just enough to get there;
@@ -362,12 +362,12 @@ def test_in_range():
 def test_with_backup():
     truck, newport = jacob(17, 10), at(133, 5.95, 6.39, "Newport")
     d = Decision("urgent", stop=newport, reason="low")
-    backup = recommend.with_backup(truck, d, [replace(HOT_SPOT, miles=8)], RULES)  # 8 mi along the road in range
+    backup = road_rules.with_backup(truck, d, [replace(HOT_SPOT, miles=8)], RULES)  # 8 mi along the road in range
     assert backup.stop == replace(HOT_SPOT, miles=18) and backup.then == newport
-    assert (backup.gallons, backup.then) == recommend.backup_amount(truck, backup.stop, newport, RULES)
-    assert backup.arrive_pct == recommend.arrive_pct(truck, 18) and backup.worst_pct == recommend.worst_pct(truck, 18)
-    assert recommend.with_backup(truck, d, [], RULES) is d
-    assert recommend.with_backup(truck, d, [replace(HOT_SPOT, miles=150)], RULES) is d
+    assert (backup.gallons, backup.then) == road_rules.backup_amount(truck, backup.stop, newport, RULES)
+    assert backup.arrive_pct == road_rules.arrive_pct(truck, 18) and backup.worst_pct == road_rules.worst_pct(truck, 18)
+    assert road_rules.with_backup(truck, d, [], RULES) is d
+    assert road_rules.with_backup(truck, d, [replace(HOT_SPOT, miles=150)], RULES) is d
 
 
 # The Love's to fill up at after a part fill: the one the stop told named (a message from before 2026-11-11, or a truck
@@ -375,17 +375,17 @@ def test_with_backup():
 def test_then_of():
     usual = UsualLevel(22, 15, 30, 95, 20)
     stops = [at(50, 7.45, 8.19, "Barstow"), at(220, 6.00, 6.69, "Havasu")]
-    seen = recommend.picture(jacob(25, usual=usual), stops, FAR, RULES)
-    assert recommend.then_of(None, seen) is None
-    assert recommend.then_of(replace(TOLD, then_station="Love's Barstow, TX"), seen) == "150"
-    assert recommend.then_of(TOLD, seen) is None
+    seen = road_rules.picture(jacob(25, usual=usual), stops, FAR, RULES)
+    assert road_rules.then_of(None, seen) is None
+    assert road_rules.then_of(replace(TOLD, then_station="Love's Barstow, TX"), seen) == "150"
+    assert road_rules.then_of(TOLD, seen) is None
 
 
 # What is kept of a message: the stop with its prices and place, the gauge, and the very words the driver gets.
 def test_record():
     here = jacob(25, usual=UsualLevel(22, 15, 30, 95, 20))
     havasu = at(220, 6.00, 6.69, "Havasu")
-    d = replace(recommend.decide(here, [at(50, 7.45, 8.19, "Barstow"), havasu], FAR, RULES), then=havasu)  # as a truck stop's has
+    d = replace(road_rules.decide(here, [at(50, 7.45, 8.19, "Barstow"), havasu], FAR, RULES), then=havasu)  # as a truck stop's has
     truck = Truck("340", "1", "V", "Unit 340", "Ali", 7.0, 25.0, NOV2, 30.0, -97.0, None, NOV2, 156.0, "manual", None, -100, "auto",
                   None, True)
     order = Order(7, "L-7", "in_transit", "340", NOV2, ())
@@ -410,25 +410,25 @@ def test_detour_before_low_fuel():
     here = TruckNow(fuel_gal=0.21 * 182, mile=83.0, tank_gal=182, forecast_mpg=6.05, cautious_mpg=5.14,
                     usual=UsualLevel(38.5, 17.75, 51.5, 75, 26))
     road, ingalls = [at(83 + 172, 6.0, city="Springfield")], off_road(83 + 18, 8.3)
-    assert recommend.decide(here, road, FAR, RULES).kind == "urgent"                        # before: low fuel
-    d = recommend.decide(here, road, FAR, RULES, [ingalls])
+    assert road_rules.decide(here, road, FAR, RULES).kind == "urgent"                        # before: low fuel
+    d = road_rules.decide(here, road, FAR, RULES, [ingalls])
     assert (d.kind, d.reason, d.stop.store.city) == ("stop", "detour", "Ingalls") and d.worst_pct > 15
     assert round(d.gallons) == round(0.75 * 182 - d.arrive_pct / 100 * 182)                # a fill-up to his level
     words = message.text(here, d)
     assert "📍 In 29 mi, about 8 mi off your road" in words and "short detour" in words and "Fuel is low" not in words
-    assert recommend.told_stop(replace(TOLD, store_no="600"), road + [ingalls], LINE, 83.0, 2, 0.5) == ingalls  # stands
+    assert road_rules.told_stop(replace(TOLD, store_no="600"), road + [ingalls], LINE, 83.0, 2, 0.5) == ingalls  # stands
 
 
 # A detour only when no Love's on the road is in reach, and only to one that is in reach itself.
 def test_detour_only_when_needed():
     here = jacob(20, 0.0)
     near, far_off = off_road(10, 5), off_road(300, 5)
-    assert recommend.decide(here, [at(60, 5.5)], FAR, RULES, [near]).stop.miles == 60      # one on the road: no detour
-    assert recommend.decide(here, [], FAR, RULES, [far_off]).kind == "urgent"              # off the road, out of reach
-    assert recommend.decide(here, [], 50.0, RULES, [near]).kind == "enough"                # the delivery is in reach
-    gap = recommend.decide(jacob(60, 0.0), [], FAR, replace(RULES, look_mi=60), [off_road(500, 5)])
+    assert road_rules.decide(here, [at(60, 5.5)], FAR, RULES, [near]).stop.miles == 60      # one on the road: no detour
+    assert road_rules.decide(here, [], FAR, RULES, [far_off]).kind == "urgent"              # off the road, out of reach
+    assert road_rules.decide(here, [], 50.0, RULES, [near]).kind == "enough"                # the delivery is in reach
+    gap = road_rules.decide(jacob(60, 0.0), [], FAR, replace(RULES, look_mi=60), [off_road(500, 5)])
     assert (gap.kind, gap.reason) == ("watch", "no_loves")                                 # out of reach, fuel enough
-    watch = recommend.decide(jacob(60, 0.0), [], FAR, replace(RULES, look_mi=60), [off_road(200, 5)])
+    watch = road_rules.decide(jacob(60, 0.0), [], FAR, replace(RULES, look_mi=60), [off_road(200, 5)])
     assert (watch.kind, watch.reason) == ("watch", "detour")                               # told once within 60 mi
 
 
@@ -441,22 +441,22 @@ def test_no_top_up_warning_with_a_detour_later():
                         usual=UsualLevel(15.5, 10, 20, 95, 12))
     road, albuquerque = [at(36, 5.07, city="Sonora"), at(844, 5.2, city="Cortez")], off_road(600, 4, city="Albuquerque")
     rules = replace(RULES, look_mi=60)
-    d = recommend.decide(sean(80), road, FAR, rules, [albuquerque])
+    d = road_rules.decide(sean(80), road, FAR, rules, [albuquerque])
     assert (d.kind, d.reason, d.stop.store.city) == ("watch", "detour", "Albuquerque") and d.worst_pct >= 10
-    past_sonora = recommend.decide(sean(80 - 100 * 40 / 7.85 / 153, 40), road, FAR, rules, [albuquerque])
+    past_sonora = road_rules.decide(sean(80 - 100 * 40 / 7.85 / 153, 40), road, FAR, rules, [albuquerque])
     assert (past_sonora.kind, past_sonora.stop.store.city) == ("watch", "Albuquerque")      # nothing told yet
-    close = recommend.decide(sean(80 - 100 * 560 / 7.85 / 153, 560), road, FAR, rules, [albuquerque])
+    close = road_rules.decide(sean(80 - 100 * 560 / 7.85 / 153, 560), road, FAR, rules, [albuquerque])
     assert (close.kind, close.reason, close.stop.store.city) == ("stop", "detour", "Albuquerque")
-    alone = recommend.decide(sean(80), road, FAR, rules)
+    alone = road_rules.decide(sean(80), road, FAR, rules)
     assert (alone.kind, alone.reason, alone.stop.store.city) == ("stop", "last", "Sonora")
-    too_far = recommend.decide(sean(80), road, FAR, rules, [off_road(700, 4, city="Albuquerque")])  # 7% at worst
+    too_far = road_rules.decide(sean(80), road, FAR, rules, [off_road(700, 4, city="Albuquerque")])  # 7% at worst
     assert (too_far.kind, too_far.reason, too_far.stop.store.city) == ("stop", "last", "Sonora")
 
 
 # The Love's near the road split into those on it and those off it, the way there added, nearest first.
 def test_split_by_road():
     on, off = at(50, 5.5), replace(at(40, 5.5), off_mi=8.0)
-    road, detours = recommend.split_by_road([off, on, replace(at(45, 5.5), off_mi=2.0)], 1.5, 1.3)
+    road, detours = road_rules.split_by_road([off, on, replace(at(45, 5.5), off_mi=2.0)], 1.5, 1.3)
     assert road == [on]
     assert [round(s.miles, 1) for s in detours] == [47.6, 50.4] and detours[0].off_mi == 2.0
 
@@ -464,7 +464,7 @@ def test_split_by_road():
 # The plan drawn shows the detour chosen among the Love's, at its miles with the way there.
 def test_picture_shows_the_detour():
     here = jacob(20, 0.0)
-    seen = recommend.picture(here, [at(400, 5.5)], FAR, RULES, off_road=[off_road(30, 6), off_road(60, 6, city="Other", no="601")])
+    seen = road_rules.picture(here, [at(400, 5.5)], FAR, RULES, off_road=[off_road(30, 6), off_road(60, 6, city="Other", no="601")])
     assert seen.decision.reason == "detour"
     assert [v.stop.store.city for v in seen.views] == ["Ingalls", "Town"]                 # only the one chosen joins
 
@@ -474,9 +474,9 @@ def test_parked():
     from base.models import TrackPoint
     then = NOV2 - timedelta(minutes=20)
     track = [TrackPoint(then - timedelta(hours=1), 39.50, -87.38), TrackPoint(then, 39.507, -87.385)]
-    assert recommend.parked(track, (39.5068, -87.3844), NOV2 - timedelta(minutes=15), 1.0)   # Terre Haute, 08:00 to 10:00
-    assert not recommend.parked(track, (39.55, -86.73), NOV2 - timedelta(minutes=15), 1.0)   # on I-70 again
-    assert not recommend.parked(track[1:], (39.507, -87.385), then - timedelta(minutes=1), 1.0)  # track too short
+    assert road_rules.parked(track, (39.5068, -87.3844), NOV2 - timedelta(minutes=15), 1.0)   # Terre Haute, 08:00 to 10:00
+    assert not road_rules.parked(track, (39.55, -86.73), NOV2 - timedelta(minutes=15), 1.0)   # on I-70 again
+    assert not road_rules.parked(track[1:], (39.507, -87.385), then - timedelta(minutes=1), 1.0)  # track too short
 
 
 # A parked truck's fuel stop waits till it moves (540201 was told at 08:18 and passed it 3 h later, 2026-11-05); low
@@ -485,9 +485,9 @@ def test_quiet_while_parked():
     here = TruckNow(fuel_gal=60, mile=100.0, tank_gal=150, forecast_mpg=7.0, cautious_mpg=5.6, usual=UsualLevel(30, 20, 40, 95, 9))
     for reason, held in (("range", True), ("hard_stop", True), ("detour", True), ("tight", False), ("last", False)):
         d = Decision("stop", stop=at(150, 5.5), reason=reason)
-        assert recommend.quiet(here, d, None, NOV2, RULES, parked=True) is held
-        assert not recommend.quiet(here, d, None, NOV2, RULES, parked=False)
+        assert road_rules.quiet(here, d, None, NOV2, RULES, parked=True) is held
+        assert not road_rules.quiet(here, d, None, NOV2, RULES, parked=False)
     # the last Love's in reach with the reserve kept is no low fuel yet: it waits like any stop; under it, it doesn't
-    assert recommend.quiet(here, Decision("stop", stop=at(150, 5.5), worst_pct=15, reason="last"), None, NOV2, RULES, parked=True)
-    assert not recommend.quiet(here, Decision("stop", stop=at(150, 5.5), worst_pct=8, reason="last"), None, NOV2, RULES, parked=True)
-    assert not recommend.quiet(here, Decision("urgent", stop=at(150, 5.5), reason="low"), None, NOV2, RULES, parked=True)
+    assert road_rules.quiet(here, Decision("stop", stop=at(150, 5.5), worst_pct=15, reason="last"), None, NOV2, RULES, parked=True)
+    assert not road_rules.quiet(here, Decision("stop", stop=at(150, 5.5), worst_pct=8, reason="last"), None, NOV2, RULES, parked=True)
+    assert not road_rules.quiet(here, Decision("urgent", stop=at(150, 5.5), reason="low"), None, NOV2, RULES, parked=True)

@@ -12,8 +12,8 @@ from base.models import (FleetTruck, FuelLine, FuelStop, Order, Picture, Recomme
 from base.sources import samsara
 from base.store import db
 from features.accounting import accounting, evidence, fill_checks, settings as accounting_settings
-from features.dashboard import fleet_status, nearby, settings
-from features.engine import habits, message, outcomes, recommend, settings as engine_settings
+from features.dashboard import fleet_status, nearby, outcomes, settings
+from features.engine import habits, message, road_rules, settings as engine_settings
 from features.engine.settings import RULES, truck_now
 
 DRIVEN_CACHE_S = 60  # a truck's road driven and gauge are asked of Samsara at most this often, however often the page asks
@@ -100,7 +100,7 @@ def _from(lines: list[FuelLine], day: str) -> list[FuelLine]:
     return [l for l in lines if l.fueled_at >= day]
 
 
-# The messages sent to drivers since the first one, and what came of them (features/engine/outcomes.messages_sent), with the
+# The messages sent to drivers since the first one, and what came of them (features/dashboard/outcomes.messages_sent), with the
 # live trucks and the goal.
 def _messages_sent(recs: list[Recommendation], lines: list[FuelLine]) -> dict:
     head = {"units": list(config.LIVE_UNITS), "since": settings.LIVE_FROM, "target": settings.LOVES_TARGET}
@@ -210,8 +210,8 @@ def _road_view(truck: Truck, watch: TruckWatch | None, told: Recommendation | No
     line = list(watch.line)
     here = truck_now(watch.fuel_pct, watch.mile or 0.0, truck.tank_gal, watch.forecast_mpg, watch.cautious_mpg, watch.usual)
     near = geo.stores_along(line, stores, engine_settings.NEARBY_MI, engine_settings.ROUTE_STEP_MI)
-    stops, off_road = recommend.split_by_road(near, engine_settings.CORRIDOR_MI, engine_settings.DETOUR_ROAD_FACTOR)
-    seen = recommend.picture(here, stops, watch.route_mi, RULES, _told_plan(told, stops + off_road, line, here.mile), off_road)
+    stops, off_road = road_rules.split_by_road(near, engine_settings.CORRIDOR_MI, engine_settings.DETOUR_ROAD_FACTOR)
+    seen = road_rules.picture(here, stops, watch.route_mi, RULES, _told_plan(told, stops + off_road, line, here.mile), off_road)
     order = next((o for o in orders if o.order_id == watch.order_id), None)
     return {"line": geo.thin(line, engine_settings.MAP_STEP_MI), "made_at": watch.road_made_at.isoformat(), "load_id": watch.load_id,
             "route_mi": watch.route_mi, "mile": here.mile, "live_mpg": watch.live_mpg, "live_used": watch.live_used,
@@ -230,7 +230,7 @@ def _told_plan(told: Recommendation | None, stops: list[StoreOnRoute], line: lis
                mile: float) -> tuple[StoreOnRoute, float | None] | None:
     if not told:
         return None
-    stop = recommend.told_stop(told, stops, line, mile, engine_settings.TRUCK_STOP_OFF_MI, engine_settings.ROUTE_STEP_MI)
+    stop = road_rules.told_stop(told, stops, line, mile, engine_settings.TRUCK_STOP_OFF_MI, engine_settings.ROUTE_STEP_MI)
     return (stop, told.gallons if told.then_station else None) if stop else None
 
 
@@ -240,9 +240,9 @@ def _choice(here: TruckNow, told: Recommendation | None, seen: Picture) -> dict:
     d = seen.decision
     if told:
         return {"decision": d.kind, "reason": told.reason, "would_say": told.text, "chosen": told.store_no,
-                "then": recommend.then_of(told, seen)}
+                "then": road_rules.then_of(told, seen)}
     return {"decision": d.kind, "reason": d.reason, "would_say": message.text(here, d) if d.kind in ("stop", "urgent") else None,
-            "chosen": d.stop.store.store_no if d.stop else None, "then": recommend.then_of(None, seen)}
+            "chosen": d.stop.store.store_no if d.stop else None, "then": road_rules.then_of(None, seen)}
 
 
 # A fuel zone for the map, with its safe and its risky stretch of road.
@@ -259,12 +259,12 @@ def _stops(stops) -> list[dict]:
 # The Love's ahead close to the road but off it (their miles counting the way there): the rules take one only when no
 # Love's on the road is in reach.
 def _nearby(off_road: list[StoreOnRoute], here: TruckNow) -> list[dict]:
-    return [_plain(s) | {"arrive_pct": recommend.arrive_pct(here, s.miles), "worst_pct": recommend.worst_pct(here, s.miles)}
-            for s in off_road if recommend.is_ahead(s, here.mile)]
+    return [_plain(s) | {"arrive_pct": road_rules.arrive_pct(here, s.miles), "worst_pct": road_rules.worst_pct(here, s.miles)}
+            for s in off_road if road_rules.is_ahead(s, here.mile)]
 
 
 # What a truck really did lately, from Samsara: the road driven and its gauge since its road was made or its last message
-# (features/engine/outcomes.watch_from), and its fill-ups, placed where its GPS was when it paid.
+# (features/dashboard/outcomes.watch_from), and its fill-ups, placed where its GPS was when it paid.
 def recommend_driven(unit: str) -> dict:
     cached = _driven_cache.get(unit)
     if cached and time.monotonic() - cached[0] < DRIVEN_CACHE_S:
@@ -326,7 +326,7 @@ def _pin(rec: Recommendation, stores: dict[str, Store]) -> list | None:
 
 
 # What came of a truck's messages (by id) and its own fill-ups no message asked for, each with the gauge around it
-# from the driver's fuel `stops` (features/engine/outcomes.with_gauge).
+# from the driver's fuel `stops` (features/dashboard/outcomes.with_gauge).
 def _results(unit: str, recs: list[Recommendation], lines: list[FuelLine],
              stops: list[FuelStop]) -> tuple[dict[int, dict], list[dict]]:
     found = _outcomes(recs, lines)
@@ -351,7 +351,7 @@ def _trip_item(t: Trip, recs: list[Recommendation], watch: TruckWatch | None) ->
             "messages": sum(1 for r in recs if r.order_id == t.order_id and r.status != "repeat")}
 
 
-# What became of each recommendation: the truck's first diesel stop after it (features/engine/outcomes).
+# What became of each recommendation: the truck's first diesel stop after it (features/dashboard/outcomes).
 def _outcomes(recs: list[Recommendation], lines: list) -> dict[int, dict]:
     return outcomes.outcomes(recs, lines, _window(), _within())
 

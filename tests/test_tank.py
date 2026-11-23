@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from base import fuel
 from base.models import FuelLine, FuelReading, TankEstimate
-from features.engine import tank
+from features.engine import gauge, tank
 
 WINDOW = timedelta(hours=2)
 
@@ -33,8 +33,8 @@ def test_gauge_before():
     at = datetime(2026, 10, 18, 12, tzinfo=timezone.utc)
     readings = [FuelReading(at - timedelta(hours=3), 5.0), FuelReading(at - timedelta(minutes=30), 22.0),
                 FuelReading(at - timedelta(minutes=5), 20.0), FuelReading(at + timedelta(minutes=5), 90.0)]
-    assert tank.gauge_before(at, readings, WINDOW) == 20.0
-    assert tank.gauge_before(at, readings[:1], WINDOW) is None
+    assert gauge.before(at, readings, WINDOW) == 20.0
+    assert gauge.before(at, readings[:1], WINDOW) is None
 
 
 # Central clock time becomes UTC with daylight saving: +5 h in October, +6 h in December.

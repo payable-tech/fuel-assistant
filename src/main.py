@@ -19,7 +19,7 @@ from features.accounting import read_statements, settings as accounting_settings
 from features.cards import efs_cards, efs_chrome, efs_web, settings as cards_settings
 from features.cards.efs_chrome import EfsError
 from features.dashboard import fill_lookups, server, settings as dashboard_settings
-from features.engine import driver_habits, estimate_burn, estimate_tanks, loads, store_exits
+from features.engine import helper_jobs, loads
 
 HOLES_SHOWN = 10    # items listed per hole unless --all
 
@@ -113,18 +113,18 @@ def cmd_live(args) -> None:
 
 # Estimates the pilot trucks' tank sizes from their recent fill-ups and the Samsara fuel gauge.
 def cmd_tanks(args) -> None:
-    estimate_tanks.run()
+    helper_jobs.tank_sizes()
     print("See the tank sizes with `pilot`; a truck without one is listed in `holes`.")
 
 
 # Reads the Love's store pages not read yet for their highway and exit (all stores the first time, ~10 min).
 def cmd_exits(args) -> None:
-    print(f"Kept the highway and exit of {store_exits.run()} Love's stores.")
+    print(f"Kept the highway and exit of {helper_jobs.loves_exits()} Love's stores.")
 
 
 # Calibrates the pilot trucks' engines as fuel meters.
 def cmd_burn(args) -> None:
-    estimate_burn.run()
+    helper_jobs.mpg_factors()
     print("See them on the dashboard's Recommend tab (live MPG).")
 
 
@@ -197,7 +197,7 @@ def cmd_pilot(args) -> None:
 
 # Collects every driver's fuel stops of the last days with the Samsara gauge around them; the Drivers tab shows them.
 def cmd_habits(args) -> None:
-    driver_habits.run()
+    helper_jobs.driver_stops()
     print("See every driver's habits on the dashboard's Drivers tab.")
 
 

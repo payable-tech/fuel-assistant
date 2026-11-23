@@ -1,9 +1,9 @@
 # The fuel engine's settings: every number its rules and its helper jobs go by. At the end they are put in the shape
-# features/engine/recommend takes (RULES), built once here, so the engine (features/engine/job) and the dashboard always
+# features/engine/road_rules takes (RULES), built once here, so the engine (features/engine/job) and the dashboard always
 # judge a truck by the same rules.
 from base.models import FuelRules, TruckNow, UsualLevel
 
-# Fuel recommendation (features/engine/recommend): the hard rule, the driver's level, then money
+# Fuel recommendation (features/engine/road_rules): the hard rule, the driver's level, then money
 RESERVE_PCT = 10           # never plan to arrive under this at the cautious MPG
 WORSE_MPG = 0.85           # the cautious MPG: the lower of average and live, 15% worse (the user's pick, 2026-11-02)
 ABOVE_USUAL_PTS = 1        # a stop reached more than this above the driver's usual level gets ignored (2-17% fuel there).
@@ -50,7 +50,7 @@ TRUCK_STOP_OFF_MI = 2      # no Love's in reach: real truck stops this close to 
 NEARBY_MI = 10             # Love's this close to the road, though off it: counted, with the way there, when none on the
                            # road is in reach, before low fuel (540201, Ingalls IN, user's go 2026-11-05); on the map too
 DETOUR_ROAD_FACTOR = 1.3   # the road to a Love's off the road is about this much longer than the straight line
-# A truck with no load (features/engine/no_load, the user's go 2026-11-18): once its fuel is down to the driver's usual level, the
+# A truck with no load (features/engine/way_rules, the user's go 2026-11-18): once its fuel is down to the driver's usual level, the
 # nearest Love's ahead in the direction it is going is told, like any stop (within LOOK_MI, held while parked)
 HEADING_MI = 10            # its direction: from where its GPS was this many miles back to where it is now
 HEADING_MAX_MIN = 30       # ...driven within this many minutes: the miles before a stop say nothing of the way after it
@@ -67,7 +67,7 @@ MAP_STEP_MI = 0.25         # roads go to the map with points at least this far a
 EXITS_PAUSE_SEC = 1        # between two Love's store pages read for their highway and exit: 608 stores take ~10 min, once
 LINK_MAX_VIA = 3          # stops on the way in a message's link: Google's limit on mobile browsers
 
-# Live MPG (features/engine/burn): the engine as a fuel meter
+# Live MPG (features/engine/mpg): the engine as a fuel meter
 LIVE_MPG_HOURS = 3         # how the truck runs "now": over this many hours
 LIVE_MIN_MILES = 25        # ...with at least these miles driven in them
 BURN_DAYS = 14             # each truck is calibrated on this many days
@@ -85,7 +85,7 @@ TANK_WINDOW_MIN = 120      # gauge readings this long before/after a purchase co
 TANK_MIN_RISE_PCT = 25     # smaller gauge rises are too noisy to use
 TANK_MIN_FILLS = 3         # fewer usable fill-ups -> no estimate (the truck shows in `holes`)
 
-# The rules' settings, as features/engine/recommend takes them.
+# The rules' settings, as features/engine/road_rules takes them.
 RULES = FuelRules(reserve_pct=RESERVE_PCT, worse=WORSE_MPG, above_usual=ABOVE_USUAL_PTS,
                   look_mi=LOOK_MI, part_gap=PART_GAP_USD, part_reach_mi=PART_REACH_MI,
                   part_min_gal=PART_MIN_GAL, part_margin_gal=PART_MARGIN_GAL,

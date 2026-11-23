@@ -5,7 +5,7 @@ from datetime import datetime
 from urllib.parse import urlencode
 
 from base.models import NO_LOAD_ORDER, Decision, Order, Recommendation, StoreOnRoute, Truck, TruckNow
-from features.engine.recommend import arrive_pct, station
+from features.engine.road_rules import arrive_pct, station
 
 
 # The message the driver would get, in plain words. Every reason in it is true, and the price is the pump price he sees.

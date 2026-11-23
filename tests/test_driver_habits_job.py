@@ -5,7 +5,7 @@ import pytest
 
 from base import config
 from base.models import FuelLine
-from features.engine import driver_habits
+from features.engine import helper_jobs
 
 
 # With the gauge calls failing, the job gives up, so the copy step keeps the previous copy instead of saving blank gauges.
@@ -13,12 +13,12 @@ def test_gauge_failure_keeps_the_old_copy(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "t.db")
     line = FuelLine(1, datetime.now().strftime("%Y-%m-%d %H:%M"), "fuel", "ULSD", 100.0, 600.0, 550.0, 0.0, True, "LOVES #1", "Town", "TX",
                     "TTL", "340", "company", 7, "Ali", "company", None)
-    monkeypatch.setattr(driver_habits.db, "fuel_lines", lambda conn, since_day: [line])
-    monkeypatch.setattr(driver_habits.db, "fleet", lambda conn: [type("T", (), {"unit": "340", "samsara_id": "1"})()])
+    monkeypatch.setattr(helper_jobs.db, "fuel_lines", lambda conn, since_day: [line])
+    monkeypatch.setattr(helper_jobs.db, "fleet", lambda conn: [type("T", (), {"unit": "340", "samsara_id": "1"})()])
 
     def down(*args):
         raise RuntimeError("down")
 
-    monkeypatch.setattr(driver_habits.samsara, "fuel_history", down)
+    monkeypatch.setattr(helper_jobs.samsara, "fuel_history", down)
     with pytest.raises(RuntimeError):
-        driver_habits._stops()
+        helper_jobs._stops()

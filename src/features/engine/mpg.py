@@ -1,7 +1,7 @@
 # Live MPG (pure): the engine as a fuel meter. Fuel burned follows engine load x RPM x time, so a running total of that,
 # calibrated per truck against its fuel gauge, tells how many gallons a stretch really took, without the gauge's wobble.
 from bisect import bisect_left, bisect_right
-from datetime import datetime, timedelta
+from datetime import datetime
 from statistics import median
 
 from base.models import EngineHistory, FuelReading
@@ -70,18 +70,6 @@ def forecast_mpg(average: float, live: float | None) -> float:
 # The MPG the hard stop counts on: the lower of the two, made `worse` of that, so running out is the unlikely mistake.
 def cautious_mpg(average: float, live: float | None, worse: float) -> float:
     return min(average, live or average) * worse
-
-
-# The fuel now, calmed: the middle of the last `span`'s readings (at least `at_least` of them, up to `lookback` ago), none
-# from before a fill-up, so a wobble can't change a recommendation but a fill-up shows at once. None without readings.
-def steady_gauge(readings: list[FuelReading], now: datetime, span: timedelta, lookback: timedelta, at_least: int,
-                 fill_rise: float) -> float | None:
-    recent = sorted((r for r in readings if now - lookback <= r.at <= now), key=lambda r: r.at)
-    rises = [i for i in range(1, len(recent)) if recent[i].pct - recent[i - 1].pct >= fill_rise]  # fill-ups
-    recent = recent[rises[-1]:] if rises else recent
-    inside = [r for r in recent if r.at >= now - span]
-    used = inside if len(inside) >= at_least else recent[-at_least:]  # a stopped truck reports rarely, burns next to nothing
-    return median(r.pct for r in used) if used else None
 
 
 # The gauge at a moment: the middle reading close to it; None without readings.

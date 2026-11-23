@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from base import geo
 from base.models import Decision, FuelRules, Recommendation, Store, StoreOnRoute, TrackPoint, TruckNow
-from features.engine.recommend import arrive_pct, fill_up, in_reach, worst_pct
+from features.engine.road_rules import arrive_pct, fill_up, in_reach, worst_pct
 
 
 # The direction the truck is going (compass degrees): from where its GPS `track` was `back_mi` before its `position`

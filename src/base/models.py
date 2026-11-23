@@ -360,7 +360,7 @@ class EngineHistory:
     miles: tuple[Sample, ...]
 
 
-# How many gallons one unit of a truck's engine meter burns (features/engine/burn). A row of `burn_factors`.
+# How many gallons one unit of a truck's engine meter burns (features/engine/mpg). A row of `burn_factors`.
 @dataclass(frozen=True)
 class BurnFactor:
     unit: str
@@ -421,7 +421,7 @@ class Region:
     fill_pct: float | None = None   # ...and the gauge after it; None: the driver's fill level
 
 
-# What the rules say now. kind: "enough", "watch", "stop" or "urgent" (features/engine/recommend.decide).
+# What the rules say now. kind: "enough", "watch", "stop" or "urgent" (features/engine/road_rules.decide).
 @dataclass(frozen=True)
 class Decision:
     kind: str

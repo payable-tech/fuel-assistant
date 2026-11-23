@@ -6,7 +6,7 @@ from statistics import median, quantiles
 
 from base.fuel import is_loves, purchase_stops, utc
 from base.models import DriverHabit, FuelLine, FuelReading, FuelStop, UsualLevel
-from features.engine import tank
+from features.engine import gauge
 
 
 # Every driver's diesel stops, each with the gauge of the truck they drove around it (`readings` by unit).
@@ -23,11 +23,11 @@ def fuel_stops(lines: list[FuelLine], readings: dict[str, list[FuelReading]], wi
 # One stop's purchases as a FuelStop, with the gauge just before and just after.
 def _stop(lines: list[FuelLine], readings: list[FuelReading], window: timedelta) -> FuelStop:
     first, last = utc(lines[0].fueled_at), utc(lines[-1].fueled_at)
-    gauge = tank.gauge_around(first, last, readings, window)
+    levels = gauge.around(first, last, readings, window)
     return FuelStop(driver_id=lines[0].driver_id, driver_name=lines[0].driver_name or "", unit=lines[0].unit, at=last,
                     gallons=sum(l.gallons for l in lines), billed=sum(l.billed for l in lines),
                     loves=is_loves(lines[0]), state=lines[0].state,
-                    gauge_before=gauge[0] if gauge else None, gauge_after=gauge[1] if gauge else None)
+                    gauge_before=levels[0] if levels else None, gauge_after=levels[1] if levels else None)
 
 
 # How each driver usually fuels, most gallons first. A stop starting below `low_pct` "ran low"; one buying less

@@ -6,6 +6,7 @@ from statistics import median
 
 from base.fuel import purchase_stops, utc
 from base.models import FuelLine, FuelReading, TankEstimate
+from features.engine import gauge
 
 
 # The diesel bought at one stop, from its first to its last purchase (UTC).
@@ -46,22 +47,8 @@ def fill_ups(lines: list[FuelLine], window: timedelta) -> list[FillUp]:
 
 # Measures one fill-up from the gauge around it. None when readings are missing or the gauge rose too little to trust.
 def measure(fill: FillUp, readings: list[FuelReading], window: timedelta, min_rise_pct: float) -> Measure | None:
-    gauge = gauge_around(fill.first, fill.last, readings, window)
-    if gauge is None or gauge[1] - gauge[0] < min_rise_pct:
+    levels = gauge.around(fill.first, fill.last, readings, window)
+    if levels is None or levels[1] - levels[0] < min_rise_pct:
         return None
-    low, high = gauge
+    low, high = levels
     return Measure(size=fill.gallons / ((high - low) / 100), holds_at_least=fill.gallons / ((100 - low) / 100))
-
-
-# The gauge around a stop from `first` to `last`: (lowest reading in the `window` before, highest in the `window`
-# after), or None when either side has no reading.
-def gauge_around(first: datetime, last: datetime, readings: list[FuelReading],
-                 window: timedelta) -> tuple[float, float] | None:
-    before = gauge_before(first, readings, window)
-    after = [r.pct for r in readings if last <= r.at <= last + window]
-    return (before, max(after)) if before is not None and after else None
-
-
-# The lowest gauge reading in the `window` before a moment; None without one.
-def gauge_before(at: datetime, readings: list[FuelReading], window: timedelta) -> float | None:
-    return min((r.pct for r in readings if at - window <= r.at <= at), default=None)

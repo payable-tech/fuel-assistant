@@ -9,7 +9,7 @@ from base.models import FillLookup, FuelLine, FuelReading, TrackPoint
 from base.sources import samsara
 from base.store import db
 from features.dashboard import settings
-from features.engine import settings as engine_settings, tank
+from features.engine import gauge, settings as engine_settings
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ def _truck(samsara_id: str, lines: list[FuelLine], window: timedelta) -> list[Fi
 def _fill(samsara_id: str, line: FuelLine, at: datetime, readings: list[FuelReading], window: timedelta) -> FillLookup:
     near = _place(samsara_id, at)
     return FillLookup(line_id=line.line_id, lat=near.lat if near else None, lng=near.lng if near else None,
-                      gauge_before=tank.gauge_before(at, readings, window))
+                      gauge_before=gauge.before(at, readings, window))
 
 
 # Where the truck was at a moment: its GPS point nearest it in time; None when Samsara has none close.

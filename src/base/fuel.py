@@ -364,3 +364,13 @@ def live(lines: list[FuelLine], above: dict[int, float | None], feed_size: int, 
         "feed": [feed_row(l) for l in sorted(diesel, key=lambda l: l.fueled_at, reverse=True)[:feed_size]],
         "outside": outside_by_driver(this_week, above, outside_limit),
     }
+
+
+# Whether a stop told at `made_at` has been overtaken by fuel bought since: a diesel line of the unit after it.
+def fueled_since(unit: str, made_at: datetime, lines: list[FuelLine]) -> bool:
+    return any(l.unit == unit and is_diesel(l) and utc(l.fueled_at) > made_at for l in lines)
+
+
+# When a truck last bought diesel among the `lines` (UTC); None when it didn't.
+def last_fill(unit: str, lines: list[FuelLine]) -> datetime | None:
+    return max((utc(l.fueled_at) for l in lines if l.unit == unit and is_diesel(l)), default=None)
