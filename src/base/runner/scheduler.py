@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from base import config
-from base.fleet import load_prices, refresh_fuel, refresh_live, refresh_orders, sync_registry
+from base.fleet import copies, link_trucks, price_sheets
 from base.fuel import CENTRAL
 from base.runner import heartbeat, progress
 from base.store import db
@@ -22,17 +22,17 @@ NIGHTLY = None  # in place of the minutes between runs: once a night, in config.
 # The slow daily ones come last and run at night: each holds the engine up for minutes while it runs (one job at a
 # time), and in the morning that paused it for 28 min (2026-11-05). The user's go the same day.
 JOBS = [
-    ("Truck positions and fuel levels", config.EVERY_LIVE_MIN, refresh_live.run),
-    ("Fuel purchases, last days", config.EVERY_RECENT_FUEL_MIN, refresh_fuel.run_recent),
-    ("Active loads", config.EVERY_ORDERS_MIN, refresh_orders.run),
-    ("Love's prices", config.EVERY_PRICES_MIN, load_prices.run),
+    ("Truck positions and fuel levels", config.EVERY_LIVE_MIN, copies.live),
+    ("Fuel purchases, last days", config.EVERY_RECENT_FUEL_MIN, copies.recent_fuel),
+    ("Active loads", config.EVERY_ORDERS_MIN, copies.orders),
+    ("Love's prices", config.EVERY_PRICES_MIN, price_sheets.run),
     ("Fuel recommendations (silent)", config.EVERY_RECOMMEND_MIN, recommend.run),
     ("EFS statements (data/efs)", config.EVERY_STATEMENTS_MIN, read_statements.run),
     ("Statement evidence (Samsara)", config.EVERY_EVIDENCE_MIN, statement_evidence.run),
     ("Engine fuel factors", config.EVERY_BURN_MIN, estimate_burn.run),
     ("Fill lookups (place, gauge)", config.EVERY_LOOKUP_MIN, fill_lookups.run),
-    ("Trucks, drivers, Telegram", NIGHTLY, sync_registry.run),
-    ("Fuel purchases, full copy", NIGHTLY, refresh_fuel.run),
+    ("Trucks, drivers, Telegram", NIGHTLY, link_trucks.run),
+    ("Fuel purchases, full copy", NIGHTLY, copies.fuel),
     ("Driver habits (fuel stops with the gauge)", NIGHTLY, driver_habits.run),
     ("Tank estimates (pilot trucks)", NIGHTLY, estimate_tanks.run),
     ("Love's exits (new stores)", NIGHTLY, store_exits.run),

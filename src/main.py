@@ -9,7 +9,7 @@ from itertools import groupby
 from logging.handlers import RotatingFileHandler
 
 from base import config
-from base.fleet import load_prices, refresh_fuel, refresh_live, refresh_orders, sync_registry
+from base.fleet import copies, link_trucks, price_sheets
 from base.models import EfsCard, EfsCardRow, Order
 from base.sources import telegram
 from base.store import db
@@ -75,13 +75,13 @@ def cmd_init_db(args) -> None:
 
 # Refreshes Samsara, Datatruck and Telegram copies and relinks trucks.
 def cmd_sync(args) -> None:
-    linked = sync_registry.run()
+    linked = link_trucks.run()
     print(f"{linked} trucks linked. Next: `holes` to see what didn't link, `fleet` for the list.")
 
 
 # Reads the Love's price sheets not read before; the newest one's prices are the ones in force.
 def cmd_prices(args) -> None:
-    load_prices.run()
+    price_sheets.run()
 
 
 # Reads the EFS statement PDFs saved in data/efs that were not read before.
@@ -96,17 +96,17 @@ def cmd_evidence(args) -> None:
 
 # Copies the active Datatruck orders and their stops.
 def cmd_orders(args) -> None:
-    refresh_orders.run()
+    copies.orders()
 
 
 # Copies every Datatruck fuel line and fuel card.
 def cmd_fuel(args) -> None:
-    refresh_fuel.run()
+    copies.fuel()
 
 
 # Copies every truck's latest Samsara position and fuel level.
 def cmd_live(args) -> None:
-    refresh_live.run()
+    copies.live()
 
 
 # Estimates the pilot trucks' tank sizes from their recent fill-ups and the Samsara fuel gauge.

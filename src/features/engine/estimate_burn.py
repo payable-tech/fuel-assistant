@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from base import config
-from base.fleet import mirror
+from base.fleet import copies
 from base.models import BurnFactor
 from base.sources import samsara
 from base.store import db
@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 
 # Replaces the factors. Returns True when they were refreshed (a failure keeps the previous ones).
 def run() -> bool:
-    return mirror.refresh("Engine fuel factors", factors, db.replace_burn_factors)
+    return copies.refresh("Engine fuel factors", factors, db.replace_burn_factors)
 
 
 # Calibrates every pilot truck with a known tank (two Samsara calls per truck).

@@ -4,7 +4,7 @@
 import logging
 from pathlib import Path
 
-from base.fleet import mirror
+from base.fleet import copies
 from base.sources import loves
 from base.store import db
 
@@ -32,4 +32,4 @@ def run() -> bool:
         log.info("Price history: %d new sheets read", added)
     with db.connect() as conn:
         newest = db.newest_price_file(conn)
-    return newest is not None and mirror.refresh("Love's stores", lambda: loves.stores(Path(newest)), db.replace_stores)
+    return newest is not None and copies.refresh("Love's stores", lambda: loves.stores(Path(newest)), db.replace_stores)

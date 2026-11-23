@@ -1,7 +1,7 @@
 # Tests the linking rules: VIN pairing, and Telegram group matching (unit number + driver name) that never guesses.
 from datetime import datetime, timezone
 
-from base.fleet.linking import link_by_vin, match_chats
+from base.fleet.link_rules import link_by_vin, match_chats
 from base.models import DatatruckDriver, DatatruckTruck, SamsaraVehicle, TelegramGroup
 
 

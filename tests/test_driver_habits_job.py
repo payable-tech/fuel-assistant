@@ -8,7 +8,7 @@ from base.models import FuelLine
 from features.engine import driver_habits
 
 
-# With the gauge calls failing, the job gives up, so mirror keeps the previous copy instead of saving blank gauges.
+# With the gauge calls failing, the job gives up, so the copy step keeps the previous copy instead of saving blank gauges.
 def test_gauge_failure_keeps_the_old_copy(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "t.db")
     line = FuelLine(1, datetime.now().strftime("%Y-%m-%d %H:%M"), "fuel", "ULSD", 100.0, 600.0, 550.0, 0.0, True, "LOVES #1", "Town", "TX",

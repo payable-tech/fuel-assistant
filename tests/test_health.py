@@ -1,11 +1,11 @@
-# Tests the heartbeat: its rules (base/runner/health), that every source refresh is recorded (base/fleet/mirror), and that an alert
+# Tests the heartbeat: its rules (base/runner/health), that every source refresh is recorded (base/fleet/copies), and that an alert
 # goes out once when a part breaks and once when it works again (base/runner/heartbeat).
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from base import config
-from base.fleet import mirror
+from base.fleet import copies
 from base.fuel import CENTRAL
 from base.models import Problem, SourceHealth
 from base.runner import health, heartbeat
@@ -97,11 +97,11 @@ class Calls(list):
 
 # Every refresh is recorded: a failed one keeps the last good time and its error, a good one clears the error.
 def test_mirror_records_each_try(sent):
-    assert not mirror.refresh("Src", lambda: (_ for _ in ()).throw(RuntimeError("login refused")), lambda c, r: None)
+    assert not copies.refresh("Src", lambda: (_ for _ in ()).throw(RuntimeError("login refused")), lambda c, r: None)
     with db.connect() as conn:
         first = db.source_health(conn)[0]
     assert first.last_ok_at is None and "login refused" in first.error
-    assert mirror.refresh("Src", lambda: [1], lambda c, r: None)
+    assert copies.refresh("Src", lambda: [1], lambda c, r: None)
     with db.connect() as conn:
         ok = db.source_health(conn)[0]
     assert ok.error is None and ok.last_ok_at is not None

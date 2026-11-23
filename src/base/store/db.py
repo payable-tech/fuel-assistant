@@ -350,7 +350,7 @@ CREATE TABLE IF NOT EXISTS job_runs (
     error       TEXT
 );
 
--- Writers: every source refresh (base/fleet/mirror), and the heartbeat for Google Maps, which it asks itself (base/runner/heartbeat).
+-- Writers: every source refresh (base/fleet/copies), and the heartbeat for Google Maps, which it asks itself (base/runner/heartbeat).
 -- One row per source: when it was last tried, last worked, and why the last try failed (NULL when it worked). A failed
 -- refresh keeps the old copy, so this is where a failure shows.
 CREATE TABLE IF NOT EXISTS source_health (

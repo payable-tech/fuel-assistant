@@ -115,8 +115,8 @@ Fuel Assistent project/
 │  │  │                       · telegram.py · google.py (roads, truck stops as the urgent
 │  │  │                       backup, can Google be reached)
 │  │  ├─ store/db.py          schema, views, queries
-│  │  ├─ fleet/               the copies: mirror.py · sync_registry.py · linking.py (pure) · refresh_fuel.py
-│  │  │                       · refresh_orders.py · refresh_live.py · load_prices.py
+│  │  ├─ fleet/               copies.py (the safe copy step and the plain copies: positions, loads,
+│  │  │                       purchases) · price_sheets.py (Love's sheets) · link_trucks.py · link_rules.py (pure)
 │  │  └─ runner/              scheduler.py · progress.py (the watchdog's clock) · heartbeat.py · health.py (pure)
 │  └─ features/
 │     ├─ engine/              the fuel messages: job.py (one look per truck) · settings.py (the rules' settings from
@@ -155,14 +155,14 @@ they never run in the day (a night missed waits for the next one):
 
 | Job | Every | Does |
 |---|---|---|
-| `sync_registry` | night | Refresh Samsara, Datatruck and Telegram copies, then relink `trucks` |
-| `load_prices` | 30 min | Sheets in `data/love's/` not read before → `price_history`; the newest price date → `stores` |
+| `link_trucks` | night | Refresh Samsara, Datatruck and Telegram copies, then relink `trucks` |
+| `price_sheets` | 30 min | Sheets in `data/love's/` not read before → `price_history`; the newest price date → `stores` |
 | `read_statements` | 30 min | EFS statement PDFs in `data/efs` not read before → `efs_statements` / `efs_lines` (~8 s per statement) |
 | `statement_evidence` | 15 min | Per statement, every Samsara truck's engine fuel used, miles and gauge → `statement_burn` (4 calls); per diesel fill, the gauge's biggest rise and the truck's place → `fill_evidence` (two small calls per fill, 10 trucks per run). Both kept |
-| `refresh_orders` | 15 min | Active Datatruck orders + stops → `dt_orders` / `dt_stops` |
-| `refresh_fuel.run_recent` | 15 min | Last 3 days of fuel purchases (seconds), for the Live view |
-| `refresh_fuel.run` | night | Every fuel purchase and card (3–17 min), catches late edits |
-| `refresh_live` | 5 min | Every truck's latest Samsara position and fuel level → `samsara_live` (one call) |
+| `copies.orders` | 15 min | Active Datatruck orders + stops → `dt_orders` / `dt_stops` |
+| `copies.recent_fuel` | 15 min | Last 3 days of fuel purchases (seconds), for the Live view |
+| `copies.fuel` | night | Every fuel purchase and card (3–17 min), catches late edits |
+| `copies.live` | 5 min | Every truck's latest Samsara position and fuel level → `samsara_live` (one call) |
 | `estimate_tanks` | night | Tank helper for the pilot trucks → `tank_estimates` (one gauge-history call per truck) |
 | `driver_habits` | night | Every driver's diesel stops of the last 30 days with the gauge around them → `fuel_stops` (one gauge-history call per truck that bought diesel, ~175, ~8 min) |
 | `recommend` | 5 min | Each pilot truck: where it should fuel next, recorded, sent to the driver on live trucks (§6.1) → `truck_watch`, `recommendations` |
@@ -181,7 +181,7 @@ looked at) for `STUCK_MIN` (30 min), so a hang is restarted like a crash. After 
 automatic login on this PC; LOOP.md section 5).
 
 Errors: a failing job is logged and retried on its next run; one truck failing doesn't stop the others.
-A refresh that fails **or returns nothing** keeps the previous copy (`base/fleet/mirror.py`), so an API hiccup
+A refresh that fails **or returns nothing** keeps the previous copy (`base/fleet/copies.py`), so an API hiccup
 can never wipe a table.
 
 ## 5. Database (SQLite, `data/fuel.db`)
@@ -235,7 +235,7 @@ Views (no data, recreated on every start so they always match the code):
 helper writes only its own table; yours always wins in `fleet`; a value with neither source is a hole, never a
 default.
 
-### 5.1 Linking rules (`base/fleet/linking.py`)
+### 5.1 Linking rules (`base/fleet/link_rules.py`)
 - **Samsara ↔ Datatruck** by VIN (trimmed, upper-case). When Samsara has several records for one VIN (an old
   one and a new one), the record with the **latest GPS** is the real truck: the old one went silent when its
   device moved. In live data, never more than one record of a pair was active. Ties (for example, neither

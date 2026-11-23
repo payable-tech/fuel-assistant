@@ -6,7 +6,7 @@ import openpyxl
 import pytest
 
 from base import config
-from base.fleet import mirror
+from base.fleet import copies
 from base.models import TelegramGroup
 from base.sources import datatruck, loves
 from base.store import db
@@ -70,7 +70,7 @@ def titles() -> list[str]:
 
 # A good fetch replaces the copy; an empty or failing fetch leaves the previous copy in place.
 def test_refresh_keeps_copy_on_empty_or_error():
-    assert mirror.refresh("groups", lambda: [TelegramGroup(-1, "Unit 340")], db.replace_tg_groups)
-    assert not mirror.refresh("groups", lambda: [], db.replace_tg_groups)
-    assert not mirror.refresh("groups", lambda: 1 / 0, db.replace_tg_groups)
+    assert copies.refresh("groups", lambda: [TelegramGroup(-1, "Unit 340")], db.replace_tg_groups)
+    assert not copies.refresh("groups", lambda: [], db.replace_tg_groups)
+    assert not copies.refresh("groups", lambda: 1 / 0, db.replace_tg_groups)
     assert titles() == ["Unit 340"]
