@@ -1,22 +1,10 @@
-# Tests the scheduler's rules: when a job is due (by its interval, or once a night) and when the loop counts as stuck.
+# Tests the scheduler's rules: when a job is due (by its interval, or once a night), and the timetable's order.
 from datetime import datetime, timedelta, timezone
 
+import timetable
 from base import config
-from base.runner import progress, scheduler
+from base.runner import scheduler
 from base.store import db
-
-
-# A long job (10 min) isn't stuck; no progress for over half an hour is.
-def test_stuck_only_after_half_an_hour():
-    assert not scheduler.stuck(10 * 60) and not scheduler.stuck(29 * 60) and scheduler.stuck(31 * 60)
-
-
-# A tick starts the progress clock afresh: the watchdog counts from the last one.
-def test_tick_restarts_the_progress_clock(monkeypatch):
-    monkeypatch.setattr(progress.time, "monotonic", lambda: 1000.0)
-    progress.tick()
-    monkeypatch.setattr(progress.time, "monotonic", lambda: 1600.0)
-    assert progress.idle_sec() == 600
 
 
 # A job is due when it never ran, when its last run was cut off before finishing (a restart), or once its interval passed.
@@ -63,7 +51,7 @@ def test_night_opened(monkeypatch):
 # Every job's interval is minutes or NIGHTLY, and the night jobs come after all the others (the loop stops a pass after
 # one of them, so a job listed later would wait behind it).
 def test_night_jobs_last():
-    kinds = [every is scheduler.NIGHTLY for _, every, _ in scheduler.JOBS]
+    kinds = [every is scheduler.NIGHTLY for _, every, _ in timetable.JOBS]
     assert kinds == sorted(kinds) and sum(kinds) == 5
 
 

@@ -1,22 +1,31 @@
 # Heartbeat: every few minutes, in its own thread (so it still works when the refreshes are stuck or busy), checks every
-# part of the program (base/runner/health) and alerts once in Telegram when one breaks and once when it works again. On start it
+# part of the program (base/runner/heartbeat_rules) and alerts once in Telegram when one breaks and once when it works again. On start it
 # also tells if the program itself was down (a crash, a power cut). What it finds is kept in `health_alerts`, which the
 # dashboard shows. The user's go, 2026-11-19, after the Datatruck login ran out overnight and nobody knew.
 # It also asks Google itself at every check (base/sources/google) and records the answer in `source_health` like a
 # source refresh: nothing else would show Google out of reach (the office network refused it unseen, 2026-11-22).
 import logging
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 
 from base import config
 from base.models import Problem
-from base.runner import health
+from base.runner import heartbeat_rules as rules
 from base.sources import google, telegram
 from base.store import db
 
 log = logging.getLogger(__name__)
 NAME = "Heartbeat"  # its runs are recorded in job_runs under this name; the Data tab lists it with the refreshes
 GOOGLE = "Google Maps"  # the Routes and Places APIs in source_health: one row, so one alert when Google is out of reach
+
+
+# Starts the heartbeat in a background thread of its own that ends with the program, so it still checks and alerts while
+# the jobs are busy or stuck. `schedule`: see loop.
+def start(schedule: dict[str, int | None]) -> threading.Thread:
+    thread = threading.Thread(target=loop, args=(schedule,), name="heartbeat", daemon=True)
+    thread.start()
+    return thread
 
 
 # Forever: tells if the program was down before this start, then checks every HEARTBEAT_MIN. `schedule`: each
@@ -38,13 +47,13 @@ def run(schedule: dict[str, int | None], now: datetime) -> list[Problem]:
     with db.connect() as conn:
         db.record_source(conn, GOOGLE, now, google_error)
         found = _problems(conn, schedule, now)
-        kept, ended = health.changes(found, db.health_alerts(conn))
+        kept, ended = rules.changes(found, db.health_alerts(conn))
     for p in ended:
-        if not p.told or _send(health.up_text(p, now)):  # never told: nothing to take back
+        if not p.told or _send(rules.up_text(p, now)):  # never told: nothing to take back
             with db.connect() as conn:
                 db.clear_alert(conn, p.component)
     for p in kept:
-        told = p.told or _send(health.down_text(p))  # an alert that couldn't go out is tried again next time
+        told = p.told or _send(rules.down_text(p))  # an alert that couldn't go out is tried again next time
         with db.connect() as conn:
             db.set_alert(conn, Problem(p.component, p.text, p.since, told))
     with db.connect() as conn:
@@ -56,11 +65,11 @@ def run(schedule: dict[str, int | None], now: datetime) -> list[Problem]:
 def _problems(conn, schedule: dict[str, int | None], now: datetime) -> list[Problem]:
     runs = [(r["job"], datetime.fromisoformat(r["started_at"]), r["error"]) for r in db.job_runs(conn).values()]
     gps_at, fuel_at, sheet_day = db.newest_data(conn)
-    return (health.source_problems(db.source_health(conn), now, config.SOURCE_DOWN_MIN)
-            + health.job_problems(runs, schedule, now, config.JOB_LATE_MIN)
-            + health.data_problems(gps_at, fuel_at, sheet_day, now, config.GPS_STALE_MIN, config.PURCHASE_STALE_H,
+    return (rules.source_problems(db.source_health(conn), now, config.SOURCE_DOWN_MIN)
+            + rules.job_problems(runs, schedule, now, config.JOB_LATE_MIN)
+            + rules.data_problems(gps_at, fuel_at, sheet_day, now, config.GPS_STALE_MIN, config.PURCHASE_STALE_H,
                                    config.PURCHASE_DAY_HOURS, config.PRICE_SHEET_BY)
-            + health.send_problems(_unsent(conn, now), config.UNSENT_MIN))
+            + rules.send_problems(_unsent(conn, now), config.UNSENT_MIN))
 
 
 # Fuel messages made for live trucks that have a group, in the last UNSENT_MIN minutes, that didn't go out. A truck
@@ -80,7 +89,7 @@ def _tell_gap(now: datetime) -> None:
         if last and last["finished_at"]:
             ended = datetime.fromisoformat(last["finished_at"])
             if now - ended > timedelta(minutes=config.DOWN_GAP_MIN):
-                _send(health.gap_text(ended, now))
+                _send(rules.gap_text(ended, now))
     except Exception:
         log.exception("Heartbeat could not check the time down")
 

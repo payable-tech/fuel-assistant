@@ -67,8 +67,8 @@ A base that everything needs, and the features on top of it (the user's choice, 
 
 Two rules of dependency:
 
-- A feature may use the base; the base never uses a feature. The one exception is `base/runner/scheduler.py`, whose
-  timetable lists every feature's jobs.
+- A feature may use the base; the base never uses a feature. `main.py` and `timetable.py` are the two files that know
+  every feature: the commands, and the list of jobs the scheduler is given.
 - Features don't use each other, except `dashboard/`, which reads `engine/` and `accounting/` to show them.
 
 Inside every folder the kinds of file keep their old rule:
@@ -106,6 +106,7 @@ Fuel Assistent project/
 ├─ doc/PLAN.md                this file
 ├─ src/
 │  ├─ main.py                 command line (see section 5.2)
+│  ├─ timetable.py            every automatic job and how often it runs
 │  ├─ base/                   what every feature needs
 │  │  ├─ config.py            settings + secrets from .env
 │  │  ├─ models.py            dataclasses shared by everything
@@ -117,7 +118,8 @@ Fuel Assistent project/
 │  │  ├─ store/db.py          schema, views, queries
 │  │  ├─ fleet/               copies.py (the safe copy step and the plain copies: positions, loads,
 │  │  │                       purchases) · price_sheets.py (Love's sheets) · link_trucks.py · link_rules.py (pure)
-│  │  └─ runner/              scheduler.py · progress.py (the watchdog's clock) · heartbeat.py · health.py (pure)
+│  │  └─ runner/              scheduler.py (runs the timetable's jobs) · watchdog.py (restarts a frozen
+│  │                          program) · heartbeat.py (checks every part, alerts) · heartbeat_rules.py (pure)
 │  └─ features/
 │     ├─ engine/              the fuel messages: job.py (one look per truck) · settings.py (the rules' settings from
 │     │                       config.py) · pure: recommend.py (where to fuel) · no_load.py · loads.py (current load)
@@ -169,7 +171,7 @@ they never run in the day (a night missed waits for the next one):
 | `estimate_burn` | 24 h | Each pilot truck's engine calibrated as a fuel meter → `burn_factors` |
 | `fill_lookups` | 15 min | Each new diesel fill outside Love's: where the truck was and the gauge before → `fill_lookups` |
 
-`serve` runs these through `base/runner/scheduler.py` (one background thread, one job at a time; each run recorded in
+`serve` runs these (listed in `src/timetable.py`) through `base/runner/scheduler.py` (one background thread, one job at a time; each run recorded in
 `job_runs` and shown on the Data tab). `serve --no-refresh` only shows the data. The database runs in WAL mode so
 the dashboard keeps reading while a refresh writes.
 

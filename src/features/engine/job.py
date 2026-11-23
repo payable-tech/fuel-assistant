@@ -10,7 +10,7 @@ import httpx
 from base import config, geo
 from base.models import (NO_LOAD_ORDER, Decision, FuelLine, Order, Recommendation, Stop, Store, StoreOnRoute, TrackPoint,
                          Trip, Truck, TruckNow, TruckWatch, UsualLevel)
-from base.runner import progress
+from base.runner import watchdog
 from base.sources import google, samsara, telegram
 from base.store import db
 from features.engine import burn, habits, loads, message, no_load, outcomes, recommend
@@ -56,7 +56,7 @@ def run() -> int:
             log.error("Fuel recommendation for unit %s failed: %r", truck.unit, error)
         except Exception:
             log.exception("Fuel recommendation for unit %s failed", truck.unit)
-        progress.tick()  # a long pass (the first after a restart: ~25 min) is moving, not hung
+        watchdog.tick()  # a long pass (the first after a restart: ~25 min) is moving, not hung
     return len(trucks)
 
 

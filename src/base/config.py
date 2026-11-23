@@ -172,7 +172,7 @@ TANK_MIN_FILLS = 3         # fewer usable fill-ups -> no estimate (the truck sho
 # Schedule, in minutes
 STUCK_MIN = 30                     # no progress for this long (a job done or a truck looked at; the longest job takes
                                    # ~17): the program restarts itself
-NIGHT_HOURS = (3, 6)               # Central: the slow daily jobs (scheduler.NIGHT_JOBS) run once a night between these
+NIGHT_HOURS = (3, 6)               # Central: the slow daily jobs (NIGHTLY in src/timetable.py) run once a night between these
                                    # hours, when the fewest stops are told (user's go, 2026-11-05)
 EVERY_LIVE_MIN = 5                 # Samsara position and fuel level of every truck
 EVERY_ORDERS_MIN = 15

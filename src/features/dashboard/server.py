@@ -10,7 +10,6 @@ from ipaddress import ip_address, ip_network
 from urllib.parse import parse_qs
 
 from base import config
-from base.runner import scheduler
 from features.dashboard import dashboard
 
 log = logging.getLogger(__name__)
@@ -83,13 +82,14 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 # Runs the dashboard at http://127.0.0.1:<port> (and at this PC's office address from other office PCs, when
-# DASHBOARD_HOST allows) until stopped with Ctrl+C; with `refresh`, data refreshes itself too.
-def serve(port: int, refresh: bool) -> None:
+# DASHBOARD_HOST allows) until stopped with Ctrl+C. `start_jobs`: what starts the automatic jobs, called once the
+# server is set up (None: only show the data).
+def serve(port: int, start_jobs=None) -> None:
     server = ThreadingHTTPServer((config.DASHBOARD_HOST, port), partial(Handler, directory=str(config.WEB_DIR)))
     _stay_awake()
     _no_click_pause()
-    if refresh:
-        scheduler.start()
+    if start_jobs:
+        start_jobs()
         log.info("Automatic refreshes are on (see the Data tab for their last runs)")
     log.info("Dashboard running at http://127.0.0.1:%d  (Ctrl+C to stop)", port)
     if config.DASHBOARD_HOST != "127.0.0.1":  # the PC's office address: its name can resolve to the Radmin VPN first

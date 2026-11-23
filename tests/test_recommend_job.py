@@ -38,7 +38,7 @@ def test_failures_are_logged_and_each_truck_ticks(sent, monkeypatch, caplog):
     ticks = []
     monkeypatch.setattr(job.db, "pilot", lambda conn: [SimpleNamespace(unit="340"), SimpleNamespace(unit="341")])
     monkeypatch.setattr(job, "_look", look)
-    monkeypatch.setattr(job.progress, "tick", lambda: ticks.append(1))
+    monkeypatch.setattr(job.watchdog, "tick", lambda: ticks.append(1))
     assert job.run() == 2
     network, fault = [r for r in caplog.records if r.name == "features.engine.job"]
     assert network.exc_info is None and "unit 340" in network.getMessage() and "ConnectError" in network.getMessage()

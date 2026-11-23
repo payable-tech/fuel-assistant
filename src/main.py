@@ -8,9 +8,11 @@ from datetime import datetime, timezone
 from itertools import groupby
 from logging.handlers import RotatingFileHandler
 
+import timetable
 from base import config
 from base.fleet import copies, link_trucks, price_sheets
 from base.models import EfsCard, EfsCardRow, Order
+from base.runner import heartbeat, scheduler, watchdog
 from base.sources import telegram
 from base.store import db
 from features.accounting import read_statements, statement_evidence
@@ -128,7 +130,15 @@ def cmd_burn(args) -> None:
 
 # Runs the dashboard in the browser at http://127.0.0.1:<port>, refreshing its data on a timetable unless told not to.
 def cmd_serve(args) -> None:
-    server.serve(args.port, refresh=not args.no_refresh)
+    server.serve(args.port, None if args.no_refresh else start_jobs)
+
+
+# Starts what keeps the data fresh without anyone typing commands: the scheduler with every job of the timetable, the
+# watchdog that restarts the program when the jobs freeze, and the heartbeat that alerts in Telegram when a part breaks.
+def start_jobs() -> None:
+    scheduler.start(timetable.JOBS)
+    watchdog.start()
+    heartbeat.start(timetable.schedule())
 
 
 # Logs the assistant's Telegram account (TG_PHONE) in once: you type the code Telegram sends to it.

@@ -548,7 +548,7 @@ class SourceHealth:
     error: str | None
 
 
-# Something not working, found by the heartbeat (base/runner/health): which part, what is wrong, since when (None when that
+# Something not working, found by the heartbeat (base/runner/heartbeat_rules): which part, what is wrong, since when (None when that
 # isn't known), and whether the alert about it went out (a row of `health_alerts` keeps it till it is fixed).
 @dataclass(frozen=True)
 class Problem:
