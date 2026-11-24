@@ -29,10 +29,8 @@ STOP_ON = ("EFS's bot check", "eManager is not logged in", "eManager not logged 
 # Why a request went to the office, by words of the step that says so: the report counts these.
 HANDED_FOR = (("not clearly one of them", "team truck: can't tell which driver wrote"),
               ("no active driver", "no active driver on the truck in Datatruck"),
-              ("cards on unit", "not exactly one card on the unit in the driver's name"),
-              ("override already on", "the card already has an override on"),
-              ("asked the office", "the card is on hold or inactive: the rule wants a person's yes"),
-              ("opened this card", "the agent opened this card less than 6 hours ago"),
+              ("can't tell which card", "can't tell which card on the unit is the driver's"),
+              ("not in the driver's name", "the only card is inactive and in another name"),
               ("eManager", "eManager did not answer or did not confirm"),
               ("that is not for the fuel desk", "the card's status is not in the owner's table"))
 
@@ -135,6 +133,11 @@ class OnTestCard:
     # A card's page, for real.
     def card(self, account: str, row: EfsCardRow) -> EfsCard:
         return fuel_cards.card(account, row)
+
+    # The activation asked for a driver's card: nothing is changed (the opening that follows activates the test
+    # card). Returns the driver's card as if it were active now.
+    def set_status(self, account: str, row: EfsCardRow, status: str) -> EfsCard:
+        return replace(fuel_cards.card(account, row), status=status)
 
     # The opening asked for a driver's card, made on the test card: activated first if it is at rest, opened, then the
     # override taken off again so the next case finds it ready. Returns the driver's card with the test card's result.

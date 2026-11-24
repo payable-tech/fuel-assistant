@@ -268,9 +268,9 @@ def test_an_override_ticks_hand_enter_only_when_asked_and_never_product_limits(m
     assert fields["handOverride"] == "true" and "promptOverride" not in fields
 
 
-# Only an active card without an override can be overridden.
-def test_only_an_active_card_without_an_override_can_be_overridden(monkeypatch, site):
-    with pytest.raises(real_site.EfsError, match="Only an active card"):
+# An inactive card is not overridden (it is activated first), nor one already in override mode.
+def test_an_inactive_card_or_one_with_an_override_is_not_overridden(monkeypatch, site):
+    with pytest.raises(real_site.EfsError, match="An inactive card cannot be overridden"):
         fuel_cards.set_override("ALIF", ROW, 1)
     active(monkeypatch, override=True)
     with pytest.raises(real_site.EfsError, match="already in override mode"):

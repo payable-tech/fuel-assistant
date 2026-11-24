@@ -16,8 +16,8 @@ EMANAGER_USERS = {"ALIF": "Bobalif", "DT": "BOB_DT"}
 EMANAGER_POLICIES = {"ALIF": ("1", "2"), "DT": ("1",)}
 
 # The card agent (features/cards/agent, the user's go 2026-11-23): wakes when the assistant's account is tagged in a driver
-# group, reads the chat, and when the driver needs his fuel card opened, opens it for one fill and tells him to try
-# again, the way Bob does. Its own Telegram login on the same account, apart from the engine's (one login file can't be
+# group, reads the chat, and when the driver asks about his fuel card, opens it for one fill at any location and tells
+# him to try again, without the office (the user, 2026-11-24). Its own Telegram login on the same account, apart from the engine's (one login file can't be
 # opened twice); `main.py agent-login` makes it once.
 # Which account it is: its login file, and the phone its login code goes to. The assistant's account (TG_PHONE) when
 # unset; the user, 2026-11-23: test on Bob's account first (AGENT_SESSION=agent-bob.session), switch to Migo later.
@@ -29,7 +29,7 @@ AGENT_ACT = True           # False: it decides and reports to the office, but op
 AGENT_HISTORY = 10         # messages of the chat it reads, the one that tagged it included
 AGENT_MAX_PHOTOS = 3       # the newest photos among them it looks at (a declined receipt, a pump screen)
 AGENT_OPEN_FILLS = 1       # an opening lasts this many transactions, always All Locations (features/cards/emanager/fuel_cards)
-AGENT_REOPEN_HOURS = 6     # a card it opened isn't opened again by it sooner: the office decides then
+AGENT_REPEAT_HOURS = 24    # opening a card it already opened this recently is marked as a repeat in the office report
 AGENT_OFFICE_CHAT_ID = int(os.getenv("AGENT_OFFICE_CHAT_ID", "").strip() or 0) or None  # its reports; the test group when unset
 # A group that plays a truck's group with a fabricated truck, driver and card (features/cards/emanager/fake_cards): nothing real is read
 # or changed for it. AGENT_TEST_ONLY=1 makes the agent ignore every other group (and skip the eManager window).

@@ -1,8 +1,8 @@
-# The card agent's rules (pure), as bob-agent's fuel card worker has them (owner, 2026-10-11): when a tag is worth waking
-# it for, whose card a request is for (the group's driver; on a team truck the one writing), which card is theirs (the
-# one on the truck's unit in their name), what is done with a declined card, and whether a reply may go out. Claude
-# reads the chat and talks to the driver; these rules decide what is done to a card, whatever the chat says. The words
-# are in features/cards/wording.
+# The card agent's rules (pure): when a tag is worth waking it for, whose card a request is for (the group's driver; on
+# a team truck the one writing), which card is theirs (on the truck's unit, in their name when one is), what is done
+# with it, and whether a reply may go out. Claude reads the chat and talks to the driver; these rules decide what is
+# done to a card, whatever the chat says. The words are in features/cards/wording.
+# The user, 2026-11-24: a driver who asks about his fuel card gets it opened for any location, without the office.
 import re
 from datetime import datetime, timedelta
 
@@ -12,14 +12,10 @@ from base.models import DatatruckDriver, EfsCard, EfsCardRow
 # a tag by name always wakes it.
 CARD_WORDS = re.compile(r"card|declin|open|override|pump|activ|not work|doesn.?t work|try again|fuel|diesel|kart",
                         re.IGNORECASE)
-# owner, 2026-10-11: what Bob does for a declined card, by its status and whether an override is on: the change, and
-# whether a person is asked first. Anything not here goes to a person.
-OPEN, ACTIVATE_AND_OPEN = "open", "activate and open"
-RULES = {("ACTIVE", False): (OPEN, False), ("HOLD", False): (ACTIVATE_AND_OPEN, True),
-         ("INACTIVE", False): (ACTIVATE_AND_OPEN, True)}
-# What is done with a declined card (verdict): opened now, the office asked first, or only watched (the agent's switch
-# is off: it says what it would do).
-OPEN_NOW, ASK_FIRST, WATCH_ONLY = "open now", "ask first", "watch only"
+# What is done with the driver's card (verdict). The user, 2026-11-24: it is put in override mode for any location,
+# whatever its status (an override works on a held or fraud-flagged card too); an inactive card is activated first; a
+# card already in override mode is open as it is. WATCH_ONLY: the agent's switch is off, it says what it would do.
+OPEN, ACTIVATE_AND_OPEN, ALREADY_OPEN, WATCH_ONLY = "open", "activate and open", "already open", "watch only"
 # Why a reply to the driver may not go out (reply_refused).
 ALREADY_REPLIED, HAS_NUMBER, NOT_OPENED = "already replied", "has a number", "not opened"
 
@@ -40,62 +36,56 @@ def only_a_tag(text: str) -> bool:
     return not re.sub(r"@\w+", "", text or "").strip()
 
 
-# The driver a request is for: the truck's one active driver; on a team truck, the one writing, by name (owner,
-# 2026-10-11: the asker's Telegram name may differ from the driver's, so a team with no clear match goes to a person).
-def whose(drivers: list[DatatruckDriver], sender: str) -> DatatruckDriver:
-    if not drivers:
-        raise NeedsPerson("Datatruck has no active driver on this truck")
+# The driver a request is for: the truck's one active driver; on a team truck, the one writing, by name (when the name
+# fits both, the one it fits word for word). None when that can't be told: no active driver, or a team and the writer
+# is neither clearly (the asker may be the office, or his Telegram name differs).
+def whose(drivers: list[DatatruckDriver], sender: str) -> DatatruckDriver | None:
     if len(drivers) == 1:
         return drivers[0]
     writing = [d for d in drivers if same_person(sender, d.full_name)]
-    if len(writing) != 1:
-        raise NeedsPerson(f"this truck has {len(drivers)} drivers and {sender} is not clearly one of them")
-    return writing[0]
+    if len(writing) > 1:
+        writing = [d for d in writing if _words(sender) == _words(d.full_name)]
+    return writing[0] if len(writing) == 1 else None
 
 
-# The driver's own card: the one card, in either account, on the truck's unit exactly (a lookup by 318 also lists 3189)
-# and in the driver's name. A card on the unit in another name is never touched.
-def their_card(found: list[tuple[str, EfsCardRow]], unit: str, driver: DatatruckDriver) -> tuple[str, EfsCardRow]:
+# The driver's card among those Card Lookup found, in either account: on the truck's unit exactly (a lookup by 318 also
+# lists 3189), and the one in his name. When none or several are in his name, the only one of them still in use (not
+# INACTIVE): a leftover card of an earlier driver is inactive. Returns the account, the card, and whether it is in his
+# name. A person decides when that still leaves no one card.
+def their_card(found: list[tuple[str, EfsCardRow]], unit: str,
+               driver: DatatruckDriver | None) -> tuple[str, EfsCardRow, bool]:
     on_unit = [(a, r) for a, r in found if r.unit.strip() == unit]
-    theirs = [(a, r) for a, r in on_unit if same_person(r.driver_name, driver.full_name)]
-    if len(theirs) != 1:
-        seen = ", ".join(f"{named(a, r)} {r.status}" for a, r in on_unit) or "none"
-        raise NeedsPerson(f"{len(theirs)} cards on unit {unit} are in {plain_name(driver.full_name)}'s name "
-                          f"(cards on that unit: {seen})")
-    return theirs[0]
+    theirs = [(a, r) for a, r in on_unit if driver and same_person(r.driver_name, driver.full_name)]
+    if len(theirs) == 1:
+        return *theirs[0], True
+    in_use = [(a, r) for a, r in theirs or on_unit if r.status != "INACTIVE"]
+    if len(in_use) == 1:
+        return *in_use[0], bool(theirs)
+    who = plain_name(driver.full_name) if driver else "the driver who wrote"
+    seen = ", ".join(f"{named(a, r)} {r.status}" for a, r in on_unit) or "none"
+    raise NeedsPerson(f"can't tell which card on unit {unit} is for {who} (cards on that unit: {seen})")
 
 
-# What the owner's table does with a card as it stands: the change and whether a person says yes first. A card it has
-# no line for goes to a person.
-def rule(card: EfsCard, account: str, row: EfsCardRow) -> tuple[str, bool]:
-    found = RULES.get((card.status, card.override))
-    if found is None:
-        on = ", with an override already on" if card.override else ""
-        raise NeedsPerson(f"{named(account, row)} is {card.status}{on}; that is not for the fuel desk to fix")
-    return found
+# What is done with the driver's card as it stands (the user, 2026-11-24): a card already in override mode is open; an
+# inactive one is activated and opened, but only when it is in his own name (`own`); any other status is opened as it
+# is. WATCH_ONLY when the agent's switch is off.
+def verdict(card: EfsCard, account: str, row: EfsCardRow, own: bool, may_act: bool) -> str:
+    if card.override:
+        return ALREADY_OPEN
+    if card.status == "INACTIVE" and not own:
+        raise NeedsPerson(f"{named(account, row)} is INACTIVE and not in the driver's name; the fuel desk activates "
+                          "only a driver's own card")
+    if not may_act:
+        return WATCH_ONLY
+    return ACTIVATE_AND_OPEN if card.status == "INACTIVE" else OPEN
 
 
-# Why the agent may not open a card again now, or None when it may: not within `reopen_hours` of opening it itself
-# (a second request so soon is the office's to judge).
-def too_soon(last_opened: datetime | None, now: datetime, reopen_hours: float) -> str | None:
-    if last_opened and now - last_opened < timedelta(hours=reopen_hours):
-        return f"the fuel desk opened this card {ago(now - last_opened)} ago"
+# How long ago the agent last opened this card, when that was within `hours`: the office is told of a repeat. None
+# otherwise.
+def repeat(last_opened: datetime | None, now: datetime, hours: float) -> timedelta | None:
+    if last_opened and now - last_opened < timedelta(hours=hours):
+        return now - last_opened
     return None
-
-
-# What is done with a declined card, the driver's own, as it stands: the owner's table first (a card it has no line for
-# goes to a person), then the wait after the agent's own last opening (a second request so soon is the office's to
-# judge), then whether the table wants a person's yes first (ASK_FIRST), then whether the agent may act at all
-# (WATCH_ONLY when its switch is off), else OPEN_NOW.
-def verdict(card: EfsCard, account: str, row: EfsCardRow, last_opened: datetime | None, now: datetime,
-            reopen_hours: float, may_act: bool) -> str:
-    _, ask_first = rule(card, account, row)
-    soon = too_soon(last_opened, now, reopen_hours)
-    if soon:
-        raise NeedsPerson(f"{named(account, row)}: {soon}")
-    if ask_first:
-        return ASK_FIRST
-    return OPEN_NOW if may_act else WATCH_ONLY
 
 
 # Why a reply may not go to the driver, or None when it may: one reply to a request; never empty and never a long

@@ -70,8 +70,9 @@ def set_status(account: str, row: EfsCardRow, status: str) -> EfsCard:
     return _confirm(row, answer, {**_header(page), "card.header.status": status}, override=False)
 
 
-# Puts an active card in override mode for 1-9 transactions, always for All Locations (the user, 2026-11-22);
-# hand_enter ticks "Allow Hand Enter". "Product/Limit Override" is never ticked: it opens a limits page first, not
+# Puts a card in override mode for 1-9 transactions, always for All Locations (the user, 2026-11-22), whatever its
+# status but INACTIVE (the user, 2026-11-24: an override works on a held or fraud-flagged card too; an inactive card
+# is activated first). hand_enter ticks "Allow Hand Enter". "Product/Limit Override" is never ticked: it opens a limits page first, not
 # recorded yet (seen live 2026-11-22).
 def set_override(account: str, row: EfsCardRow, times: int, hand_enter: bool = False) -> EfsCard:
     if not 1 <= times <= MOST_TIMES:
@@ -79,8 +80,8 @@ def set_override(account: str, row: EfsCardRow, times: int, hand_enter: bool = F
     site.act_as(account)
     page = _card_page(row)
     before = _card(page)
-    if before.status != "ACTIVE":
-        raise EfsError(f"Only an active card can be overridden; card {row.number} is {before.status}.")
+    if before.status == "INACTIVE":
+        raise EfsError(f"An inactive card cannot be overridden; activate card {row.number} first.")
     if before.override:
         raise EfsError(f"Card {row.number} is already in override mode; remove that override first.")
     form = site.fetch(f"/cards/CardPromptManagement.action?overrideCard=overrideCard&cardOverride=-1"

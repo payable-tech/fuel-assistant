@@ -1,6 +1,6 @@
-# Tests the card agent, built the way bob-agent's agent works: whose card a request is for, the owner's rule for it,
-# that the tools hold whatever the model asks (only the truck's driver's own card, opened once for one fill, one
-# reply, never a number, every opening reported), what wakes it, and how Claude is called (the Claude Code login, no
+# Tests the card agent: whose card a request is for, the user's rule for it (opened whatever its status, an inactive
+# card of his activated first), that the tools hold whatever the model asks (only a card on the truck's unit, opened
+# once for one fill, one reply, never a number, every opening reported), what wakes it, and how Claude is called (the Claude Code login, no
 # built-in tools). eManager, Telegram and Claude are fakes here.
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -36,7 +36,7 @@ def world(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "TEST_CHAT_ID", -555)
     monkeypatch.setattr(cards_settings, "AGENT_OFFICE_CHAT_ID", None)
     monkeypatch.setattr(cards_settings, "AGENT_ACT", True)
-    w = SimpleNamespace(cards={}, opened=[], writes=[])
+    w = SimpleNamespace(cards={}, opened=[], activated=[], writes=[])
     for c in (card("c10001", "3189", "JOHN DOE"), card("c20002", "3189", "MARY ROE"), card("c30003", "31890", "JOHN DOE")):
         w.cards[c[0].card_id] = c
     monkeypatch.setattr(tools.fuel_cards, "cards", lambda account, by, text:
@@ -47,11 +47,17 @@ def world(tmp_path, monkeypatch):
         w.opened.append((account, row.card_id, times))
         return EfsCard(**{**w.cards[row.card_id][1].__dict__, "override": True})
 
+    def status(account, row, to):
+        w.activated.append((row.card_id, to))
+        w.cards[row.card_id] = (row, EfsCard(**{**w.cards[row.card_id][1].__dict__, "status": to}))
+        return w.cards[row.card_id][1]
+
     async def write(client, chat, text, reply_to=None):
         w.writes.append((chat, text, reply_to))
         return 1
 
     monkeypatch.setattr(tools.fuel_cards, "set_override", override)
+    monkeypatch.setattr(tools.fuel_cards, "set_status", status)
     monkeypatch.setattr(tools.telegram_agent, "write", write)
     return w
 
@@ -76,34 +82,49 @@ def test_same_person():
     assert not rules.same_person("", "JOHN DOE")
 
 
-# Whose card: the one driver; on a team truck the one writing, by name; no clear match goes to a person.
+# Whose card: the one driver; on a team truck the one writing, by name, and when the name fits both, the one it fits
+# word for word; no one when that can't be told.
 def test_whose():
     assert rules.whose([JOHN], "Big Boss") == JOHN
     assert rules.whose([JOHN, MARY], "Mary Roe") == MARY
-    with pytest.raises(NeedsPerson):
-        rules.whose([JOHN, MARY], "Dispatch Night")
-    with pytest.raises(NeedsPerson):
-        rules.whose([], "John")
+    assert rules.whose([JOHN, MARY], "Dispatch Night") is None and rules.whose([], "John") is None
+    both = DatatruckDriver(3, "JEFF PERN / Roe Mary", None, "active", "DT", "3189")
+    assert rules.whose([both, MARY], "Mary Roe") == MARY
 
 
-# Their card: on the unit exactly and in the driver's name; none or two go to a person, with the cards on the unit.
+# Their card: on the unit exactly and in the driver's name. With none in his name (or no driver told), the one card
+# in use on the unit; a person decides only when that still leaves no one card.
 def test_their_card():
     found = [("DT", card("a1", "3189", "JOHN DOE")[0]), ("DT", card("a2", "31890", "JOHN DOE")[0]),
              ("DT", card("a3", "3189", "MARY ROE")[0])]
-    assert rules.their_card(found, "3189", JOHN)[1].card_id == "a1"
-    with pytest.raises(NeedsPerson, match="0 cards on unit 3189"):
-        rules.their_card(found, "3189", DatatruckDriver(9, "SAM NEW", None, "active", "DT", "3189"))
+    assert rules.their_card(found, "3189", JOHN) == ("DT", found[0][1], True)
+    sam = DatatruckDriver(9, "SAM NEW", None, "active", "DT", "3189")
+    with pytest.raises(NeedsPerson, match="can't tell which card on unit 3189 is for SAM NEW"):
+        rules.their_card(found, "3189", sam)
+    with pytest.raises(NeedsPerson, match="the driver who wrote"):
+        rules.their_card(found, "3189", None)
+    old = [("DT", card("b1", "3189", "OLD DRIVER", "INACTIVE")[0]), ("DT", card("b2", "3189", "KASH NEW")[0])]
+    assert rules.their_card(old, "3189", sam) == ("DT", old[1][1], False)     # the one card in use, not in his name
+    assert rules.their_card(old, "3189", None) == ("DT", old[1][1], False)
+    two = [("ALIF", card("d1", "3189", "JOHN DOE", "INACTIVE")[0]), ("DT", card("d2", "3189", "DOE JOHN", "HOLD")[0])]
+    assert rules.their_card(two, "3189", JOHN) == ("DT", two[1][1], True)     # two in his name: the one in use
 
 
-# The owner's table: active and not open, open it; held or inactive, activate then open after a person's yes;
-# anything else (already open) goes to a person.
-def test_rule():
+# The user's rule: any status but inactive is opened as it is (hold and fraud too); an inactive card is activated
+# first, but only the driver's own; a card already open is left; a repeat is noticed within its hours.
+def test_verdict():
     row, page = card("c1", "3189", "X")
-    assert rules.rule(page, "DT", row) == (rules.OPEN, False)
-    assert rules.rule(card("c1", "3189", "X", "HOLD")[1], "DT", row) == (rules.ACTIVATE_AND_OPEN, True)
-    with pytest.raises(NeedsPerson, match="override already on"):
-        rules.rule(card("c1", "3189", "X", override=True)[1], "DT", row)
-    assert rules.too_soon(NOW - timedelta(hours=2), NOW, 6) and rules.too_soon(NOW - timedelta(hours=7), NOW, 6) is None
+    assert rules.verdict(page, "DT", row, True, True) == rules.OPEN
+    for status in ("HOLD", "FRAUD"):
+        assert rules.verdict(card("c1", "3189", "X", status)[1], "DT", row, False, True) == rules.OPEN
+    inactive = card("c1", "3189", "X", "INACTIVE")[1]
+    assert rules.verdict(inactive, "DT", row, True, True) == rules.ACTIVATE_AND_OPEN
+    with pytest.raises(NeedsPerson, match="not in the driver's name"):
+        rules.verdict(inactive, "DT", row, False, True)
+    assert rules.verdict(card("c1", "3189", "X", "FRAUD", override=True)[1], "DT", row, True, True) == rules.ALREADY_OPEN
+    assert rules.verdict(page, "DT", row, True, False) == rules.WATCH_ONLY
+    assert rules.repeat(NOW - timedelta(hours=2), NOW, 24) == timedelta(hours=2)
+    assert rules.repeat(NOW - timedelta(hours=30), NOW, 24) is None and rules.repeat(None, NOW, 24) is None
 
 
 # What wakes it and what it is told: a tag by name, or a card request answering it; facts with no driver ID.
@@ -132,27 +153,65 @@ def test_declined_card_opens_his_card(world):
     assert t.outcome() == "opened c10001, replied"
 
 
-# On a team truck the card of the one writing is opened; someone not clearly a driver goes to the office.
+# On a team truck the card of the one writing is opened; someone not clearly a driver, with two cards in use on the
+# unit, goes to the office.
 def test_team_truck(world):
     assert "try again" in said(task("Mary Roe", (JOHN, MARY)).declined_card({}))
     assert world.opened == [("DT", "c20002", 1)]
     world.opened.clear()
     assert "Needs a person" in said(task("Night Dispatch", (JOHN, MARY)).declined_card({}))
-    assert world.opened == [] and "not clearly one of them" in world.writes[-1][1]
+    assert world.opened == [] and "can't tell which card" in world.writes[-1][1]
 
 
-# A held card goes to the office (activating is a person's yes); one opened by the agent hours ago too; and
-# watch-only opens nothing.
-def test_held_soon_and_watch_only(world, monkeypatch):
-    world.cards["c10001"] = card("c10001", "3189", "JOHN DOE", "HOLD")
-    assert "being checked" in said(task().declined_card({})) and world.opened == []
+# A held or fraud-flagged card is only overridden; an inactive one of his is activated first; the office reads which.
+def test_held_fraud_and_inactive_cards_are_opened(world):
+    for status in ("HOLD", "FRAUD"):
+        world.cards["c10001"] = card("c10001", "3189", "JOHN DOE", status)
+        assert "try again now" in said(task().declined_card({}))
+        assert world.activated == [] and f"Its status is {status}" in world.writes[-1][1]
+    world.cards["c10001"] = card("c10001", "3189", "JOHN DOE", "INACTIVE")
+    t = task()
+    assert "try again now" in said(t.declined_card({}))
+    assert world.activated == [("c10001", "ACTIVE")] and world.opened[-1] == ("DT", "c10001", 1)
+    assert "activated first" in world.writes[-1][1] and "Repeat: the fuel desk opened this card" in world.writes[-1][1]
+    assert said(t.reply_to_driver({"text": "Card is ready, try again now."})) == "Sent."
+
+
+# An activation that worked before the override failed is said to the office: the card is ACTIVE now, not open.
+def test_a_failed_opening_after_activating_says_so(world, monkeypatch):
+    def refuse(account, row, times):
+        raise tools.EfsError("eManager said no")
+
+    monkeypatch.setattr(tools.fuel_cards, "set_override", refuse)
+    world.cards["c10001"] = card("c10001", "3189", "JOHN DOE", "INACTIVE")
+    assert "Opening failed" in said(task().declined_card({}))
+    assert "is ACTIVE now, but not open" in world.writes[-1][1]
+
+
+# A card already open is left as it is and the driver may be told to try again; a card opened by the agent an hour
+# ago is opened again; with no card in the driver's name, the one card in use on the unit is opened, an inactive one
+# never; and watch-only opens nothing.
+def test_open_already_again_another_name_and_watch_only(world, monkeypatch):
+    world.cards["c10001"] = card("c10001", "3189", "JOHN DOE", override=True)
+    t = task()
+    assert "already open" in said(t.declined_card({})) and world.opened == []
+    assert "nothing changed" in world.writes[-1][1]
+    assert said(t.reply_to_driver({"text": "Card is ready, try again now."})) == "Sent."
     world.cards["c10001"] = card("c10001", "3189", "JOHN DOE")
     with db.connect() as conn:
         db.claim_agent_run(conn, -100, 7, "3189", NOW, "x")
         db.record_agent_open(conn, -100, 7, "c10001", datetime.now(timezone.utc) - timedelta(hours=1))
-    assert "Needs a person" in said(task().declined_card({})) and world.opened == []
-    with db.connect() as conn:
-        conn.execute("UPDATE agent_runs SET opened_card = NULL")
+    assert "try again now" in said(task().declined_card({})) and world.opened == [("DT", "c10001", 1)]
+    assert "Repeat" in world.writes[-1][1]
+    world.opened.clear()
+    del world.cards["c20002"]
+    world.cards["c10001"] = card("c10001", "3189", "SOMEONE ELSE")
+    assert "try again now" in said(task().declined_card({})) and world.opened == [("DT", "c10001", 1)]
+    assert "not in the driver's name" in world.writes[-1][1]
+    world.opened.clear()
+    world.cards["c10001"] = card("c10001", "3189", "SOMEONE ELSE", "INACTIVE")
+    assert "Needs a person" in said(task().declined_card({})) and world.opened == [] and world.activated == []
+    world.cards["c10001"] = card("c10001", "3189", "JOHN DOE")
     monkeypatch.setattr(cards_settings, "AGENT_ACT", False)
     assert "Watch-only" in said(task().declined_card({})) and world.opened == []
     assert "Would open" in world.writes[-1][1]
@@ -168,7 +227,7 @@ def test_reply_guards(world):
 
 
 # How Claude is called: this PC's Claude Code login (no key), none of Claude Code's own tools or settings, only these
-# four tools by their server names, the model and limits from config, the photos as pictures before the text. Its
+# three tools by their server names, the model and limits from config, the photos as pictures before the text. Its
 # thinking is asked for as text, and the run's trace keeps what it thought, used and wrote, in order.
 def test_claude_call(world, monkeypatch, tmp_path):
     from features.cards import claude
@@ -190,8 +249,7 @@ def test_claude_call(world, monkeypatch, tmp_path):
     assert got.trace == (("thought", "he is at the pump"), ("used", "declined_card"), ("said", "done"))
     assert options.thinking == {"type": "adaptive", "display": "summarized"}
     assert options.tools == [] and options.permission_mode == "dontAsk" and options.setting_sources == []
-    assert options.allowed_tools == ["mcp__fuel__declined_card", "mcp__fuel__look_up_card", "mcp__fuel__reply_to_driver",
-                                     "mcp__fuel__hand_to_office"]
+    assert options.allowed_tools == ["mcp__fuel__declined_card", "mcp__fuel__reply_to_driver", "mcp__fuel__hand_to_office"]
     assert options.model == cards_settings.AGENT_MODEL and options.max_turns == claude.MAX_TURNS
     content = seen["message"][0]["message"]["content"]
     assert content[0]["type"] == "image" and content[-1] == {"type": "text", "text": "the chat"}

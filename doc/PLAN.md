@@ -331,23 +331,24 @@ default.
 ### 5.8 The card agent (`features/cards/agent.py`, `tools.py`, `rules.py`, `wording.py`, `claude.py`, `telegram_agent.py`; the user's go 2026-11-23)
 Built the way bob-agent's Telegram agent works (`D:/bob-agent/src/agent`, `src/workers/fuel_cards`).
 - **Claude** runs through the Claude Agent SDK on this PC's Claude Code login (the plan, not API billing), `AGENT_MODEL`,
-  with none of Claude Code's own tools or settings: only four tools (`declined_card`, `look_up_card`, `reply_to_driver`,
-  `hand_to_office`), at most 12 turns or $2 a run.
+  with none of Claude Code's own tools or settings: only three tools (`declined_card`, `reply_to_driver`,
+  `hand_to_office`), at most 12 turns or $2 a run. Its thinking is kept as a summary in each run's trace.
 - **Wakes** when the assistant's account is tagged in a truck's group (or answered with card words); never in its office
   or test chat or a group with no truck; each message once; a bare tag within 10 min of a request there joins it.
   Reads the last `AGENT_HISTORY` messages and up to `AGENT_MAX_PHOTOS` photos, plus the truck's facts (drivers, fuel,
   place, nearest Love's, last fills; never a driver ID). eManager logged out: the office is told, Claude isn't asked.
-- **A declined card is the owner's rule in code** (bob-agent's, owner 2026-10-11), Claude only passes its line on: whose
-  card is the group's truck's driver (a team: the one writing, by name); his card is the one on the unit in his name, in
-  ALIF or DT; ACTIVE and not open: opened for `AGENT_OPEN_FILLS` fill, all locations, now; HOLD or INACTIVE: to the
-  office (activating is a person's yes); anything else, or opened by the agent within `AGENT_REOPEN_HOURS`: to the office.
-  Every opening is posted to the office (`AGENT_OFFICE_CHAT_ID`, else the test group; last four digits only) and
+- **Opening the card is the user's rule in code** (2026-11-24: a driver who asks about his fuel card gets it opened,
+  without the office), Claude only passes its line on: whose card is the group's truck's driver (a team: the one
+  writing, by name); his card is the one on the unit in his name, in ALIF or DT, else the one card in use on the unit;
+  it is opened for `AGENT_OPEN_FILLS` fill, all locations, now, whatever its status (HOLD and FRAUD included); an
+  INACTIVE card in his name is activated first; a card already in override mode is left as it is. Only when no one card
+  can be told does it go to the office. Every opening is posted to the office (`AGENT_OFFICE_CHAT_ID`, else the test group; last four digits only) and
   written to `agent_runs` the moment eManager confirms it.
 - **The driver** gets one short line, as a dispatcher writes ("Card is ready, try again now."): never a long number,
   never "ready"/"open" unless a card was opened. `AGENT_ACT = False` makes it watch-only.
 - **Runs** as its own program (`card-agent`, `run_agent.bat`); it opens the eManager window and keeps its login alive
-  (log in there by hand, every 24 hours). Not done yet: approvals for activating a card (bob-agent asks an approver),
-  closing an override nobody used.
+  (log in there by hand, every 24 hours). Not done yet: everything but opening (money codes, checks, moving a card to
+  another truck), closing an override nobody used.
 
 ### 5.2 Commands (`.venv\Scripts\python.exe src\main.py <command>`)
 

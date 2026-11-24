@@ -28,6 +28,12 @@ def card(account: str, row: EfsCardRow) -> EfsCard:
     return _card["now"]
 
 
+# Sets the test card's status, as eManager would show it afterwards.
+def set_status(account: str, row: EfsCardRow, status: str) -> EfsCard:
+    _card["now"] = replace(_card["now"], status=status)
+    return _card["now"]
+
+
 # Opens the test card (override mode), as eManager would show it afterwards.
 def set_override(account: str, row: EfsCardRow, times: int, hand_enter: bool = False) -> EfsCard:
     _card["now"] = replace(_card["now"], override=True)

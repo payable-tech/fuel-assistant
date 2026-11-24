@@ -1,5 +1,5 @@
-# What Claude may do for one request: four tools. Each gathers what it needs, asks the rules (features/cards/rules) and
-# only then acts, so no chat text can make it act on another truck, open a card twice, or send a number. The words it
+# What Claude may do for one request: three tools. Each gathers what it needs, asks the rules (features/cards/rules)
+# and only then acts, so no chat text can make it act on another truck, open a card twice, or send a number. The words it
 # answers and reports are in features/cards/wording. Every opening is reported to the office and kept in `agent_runs`.
 import asyncio
 import logging
@@ -42,10 +42,10 @@ class Request:
         self.opened_at: datetime | None = None
         self.replied = self.handed = False
 
-    # The tools Claude may call, with what each does as Claude reads it.
+    # The tools Claude may call, with what each does as Claude reads it. look_up_card is not among them for now (the
+    # user, 2026-11-24: its one job is opening the card; looking first only made it hesitate).
     def tools(self) -> list[Tool]:
         return [Tool("declined_card", wording.DECLINED_CARD_TOOL, wording.NO_INPUT, self.declined_card),
-                Tool("look_up_card", wording.LOOK_UP_CARD_TOOL, wording.NO_INPUT, self.look_up_card),
                 Tool("reply_to_driver", wording.REPLY_TOOL, wording.REPLY_INPUT, self.reply_to_driver),
                 Tool("hand_to_office", wording.HAND_TO_OFFICE_TOOL, wording.NOTE_INPUT, self.hand_to_office)]
 
@@ -55,36 +55,35 @@ class Request:
             (["handed to the office"] if self.handed else [])
         return ", ".join(done)
 
-    # Tool: a declined card. Gathers (whose card it is, the cards on the truck's unit, the card's page, when the agent
-    # last opened it), lets the rules decide (rules.verdict), then acts: opens it, asks the office first, only reports
-    # what it would do, or hands it to a person. Claude only passes its line on.
+    # Tool: the driver asks about using his card. Gathers (whose card it is, the cards on the truck's unit, the card's
+    # page), lets the rules decide (rules.verdict), then acts: opens it (activating it first when it is inactive),
+    # finds it open already, only reports what it would do, or hands it to a person when no one card can be told.
+    # Claude only passes its line on.
     async def declined_card(self, args: dict) -> dict:
         if self.opened:
             return answer(wording.ALREADY_OPENED)
         try:
             driver = rules.whose(self.drivers, self.sender)  # settled before eManager is asked anything
-            account, row = rules.their_card(await self._lookup(), self.unit, driver)
+            account, row, own = rules.their_card(await self._lookup(), self.unit, driver)
             card = await emanager(self.efs.card, account, row)
-            with db.connect() as conn:
-                last_opened = db.agent_last_opened(conn, row.card_id)
-            verdict = rules.verdict(card, account, row, last_opened, datetime.now(timezone.utc),
-                                    settings.AGENT_REOPEN_HOURS, settings.AGENT_ACT)
+            verdict = rules.verdict(card, account, row, own, settings.AGENT_ACT)
         except (NeedsPerson, EfsError) as why:
             self.steps.append(f"declined_card: needs a person, {why}")
             await self.hand_to_office({"note": wording.note_needs_person(why)})
             return answer(wording.needs_person(why))
         card_name = rules.named(account, row)
-        if verdict == rules.ASK_FIRST:  # HOLD or INACTIVE: activating is a person's yes (no approvals here yet)
-            self.steps.append(f"declined_card: {card_name} is {card.status}, asked the office")
-            await self.hand_to_office({"note": wording.note_not_active(card_name, card.status)})
-            return answer(wording.NOT_ACTIVE)
         if verdict == rules.WATCH_ONLY:
             self.steps.append(f"declined_card: would open {card_name} (AGENT_ACT is off)")
             await self.office(wording.would_open(card_name, self.unit, self.text))
             return answer(wording.WATCH_ONLY_CARD)
-        return await self._open(account, row)
+        if verdict == rules.ALREADY_OPEN:  # nothing to change in eManager; the driver may be told to try again
+            self.opened = row.card_id
+            self.steps.append(f"declined_card: {card_name} was opened already (override on), nothing changed")
+            await self.office(wording.already_open_report(card_name, self.unit, self.text))
+            return answer(wording.OPEN_ALREADY)
+        return await self._open(account, row, card.status, verdict == rules.ACTIVATE_AND_OPEN, own)
 
-    # Tool: this truck's cards as eManager shows them now; read only.
+    # This truck's cards as eManager shows them now; read only. Not among Claude's tools for now (see tools()).
     async def look_up_card(self, args: dict) -> dict:
         try:
             found = await self._lookup()
@@ -135,21 +134,30 @@ class Request:
         async with _efs:
             return [(a, r) for a in ACCOUNTS for r in await asyncio.to_thread(self.efs.cards, a, "unit", self.unit)]
 
-    # Opens the card for one fill at all locations, records it the moment eManager confirms, and reports it.
-    async def _open(self, account: str, row: EfsCardRow) -> dict:
+    # Opens the card for one fill at all locations (`activate`: it is inactive, so it is set ACTIVE first), records it
+    # the moment eManager confirms, and reports it with what a person should know: the status it was in, whether it
+    # is in the driver's name (`own`), and whether the agent opened it not long ago.
+    async def _open(self, account: str, row: EfsCardRow, status: str, activate: bool, own: bool) -> dict:
         card_name = rules.named(account, row)
+        activated = False
         try:
+            if activate:
+                await emanager(self.efs.set_status, account, row, "ACTIVE")
+                activated = True
             after = await emanager(self.efs.set_override, account, row, settings.AGENT_OPEN_FILLS)
         except EfsError as error:
             self.steps.append(f"declined_card: eManager did not open it, {error}")
-            await self.hand_to_office({"note": wording.note_open_failed(card_name, error)})
+            await self.hand_to_office({"note": wording.note_open_failed(card_name, error, activated)})
             return answer(wording.OPEN_FAILED)
         if not after.override:
             await self.hand_to_office({"note": wording.note_not_confirmed(card_name)})
             return answer(wording.NOT_CONFIRMED)
         self.opened, self.opened_at = row.card_id, datetime.now(timezone.utc)
-        with db.connect() as conn:  # at once: the audit and the cooldown survive a crash after this
+        with db.connect() as conn:  # at once: the audit survives a crash after this
+            again = rules.repeat(db.agent_last_opened(conn, row.card_id), self.opened_at, settings.AGENT_REPEAT_HOURS)
             db.record_agent_open(conn, self.chat_id, self.message_id, row.card_id, self.opened_at)
-        self.steps.append(f"declined_card: opened {card_name} for {settings.AGENT_OPEN_FILLS} fill")
-        await self.office(wording.opened_report(card_name, self.unit, settings.AGENT_OPEN_FILLS, self.text))
+        self.steps.append(f"declined_card: opened {card_name} for {settings.AGENT_OPEN_FILLS} fill"
+                          f"{' (activated first)' if activated else ''}")
+        await self.office(wording.opened_report(card_name, self.unit, settings.AGENT_OPEN_FILLS,
+                                                wording.remarks(status, activated, own, again), self.text))
         return answer(wording.OPENED)
