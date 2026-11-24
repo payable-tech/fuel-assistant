@@ -145,7 +145,7 @@ class FuelLine:
     card_id: int | None             # Datatruck's card id; the card number itself is never stored
 
 
-# A fuel card in Datatruck. A row of `fuel_cards`; the card number itself is never stored.
+# A fuel card in Datatruck. A row of `fuel_cards`; of the card number only the last four digits are stored.
 @dataclass(frozen=True)
 class FuelCard:
     card_id: int
@@ -156,6 +156,7 @@ class FuelCard:
     billable: bool                  # purchases go on the driver's balance
     deduction_policy: str | None    # "retail_plus_fee", "retail_amount", "invoice_amount"
     active: bool
+    last4: str | None = None        # the card number's last four digits, as people name a card ("…7539")
 
 
 # A fuel card as eManager's Card Lookup lists it (features/cards/emanager/fuel_cards). Last four digits are not unique: pick by card_id.
@@ -300,6 +301,7 @@ class FleetTruck:
     fuel_at: datetime | None
     has_card: bool                  # an active fuel card on a driver active on this truck, or on the truck itself
     fueled_at: str | None           # newest fuel purchase, local Central time "YYYY-MM-DD HH:MM"
+    cards: str | None = None        # those cards' last four digits, "7539, 0482"; None with no card (or none read yet)
 
 
 # One diesel stop of a driver (purchases at one place grouped), with the truck's gauge around it. A row of `fuel_stops`.

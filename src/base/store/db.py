@@ -51,6 +51,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         _add_column(conn, "recommendations", "lat", "REAL")
         _add_column(conn, "recommendations", "lng", "REAL")
         _add_column(conn, "agent_runs", "record", "TEXT")
+        _add_column(conn, "fuel_cards", "last4", "TEXT")
         _schema_ready.add(str(config.DB_PATH))
 
 
@@ -318,7 +319,8 @@ def _truck(row: sqlite3.Row) -> Truck:
 
 
 # Returns every Datatruck truck for the fleet status, one row each, linked to Samsara or not: its active drivers (a
-# team's type is its first driver's), its Samsara readings, whether it has an active fuel card, its newest purchase.
+# team's type is its first driver's), its Samsara readings, whether it has an active fuel card (and those cards' last
+# four digits), its newest purchase.
 # A card counts when its driver is active on this truck, or when it has no driver and is assigned to this unit: a
 # card's unit alone doesn't count, because many active cards still sit on drivers who left.
 def fleet_status(conn: sqlite3.Connection) -> list[FleetTruck]:
@@ -326,14 +328,15 @@ def fleet_status(conn: sqlite3.Connection) -> list[FleetTruck]:
         WITH active AS (SELECT unit, driver_id, full_name, driver_type FROM dt_drivers
                         WHERE employee_status = 'active' AND unit IS NOT NULL),
              -- the units with a card, worked out once (asking the cards again for every truck takes seconds)
-             carded AS (SELECT a.unit FROM fuel_cards c JOIN active a ON a.driver_id = c.driver_id WHERE c.active
-                        UNION SELECT unit FROM fuel_cards WHERE active AND driver_id IS NULL AND unit IS NOT NULL),
+             carded AS (SELECT a.unit, c.last4 FROM fuel_cards c JOIN active a ON a.driver_id = c.driver_id WHERE c.active
+                        UNION SELECT unit, last4 FROM fuel_cards WHERE active AND driver_id IS NULL AND unit IS NOT NULL),
              fueled AS (SELECT unit, MAX(fueled_at) AS fueled_at FROM fuel_lines GROUP BY unit)
         SELECT d.unit, d.status,
                (SELECT group_concat(full_name, ' & ') FROM active WHERE unit = d.unit) AS driver,
                (SELECT driver_type FROM active WHERE unit = d.unit ORDER BY driver_id LIMIT 1) AS driver_type,
                t.name AS samsara_name, l.gps_at, l.fuel_pct, l.fuel_at,
-               d.unit IN (SELECT unit FROM carded) AS has_card, f.fueled_at
+               d.unit IN (SELECT unit FROM carded) AS has_card, f.fueled_at,
+               (SELECT group_concat(last4, ', ') FROM carded WHERE unit = d.unit) AS cards
         FROM dt_trucks d
         LEFT JOIN trucks t ON t.unit = d.unit
         LEFT JOIN samsara_live l ON l.samsara_id = t.samsara_id

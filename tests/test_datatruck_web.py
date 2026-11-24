@@ -32,10 +32,11 @@ def test_fuel_lines_once_each(monkeypatch):
     assert [l.line_id for l in datatruck_web.fuel_lines()] == [3, 2, 1]
 
 
-# A fuel card keeps who it belongs to and how it is charged, not its number.
+# A fuel card keeps who it belongs to and how it is charged; of its number only the last four digits, never the whole.
 def test_fuel_card_mapping():
-    c = datatruck_web._fuel_card({"id": 4, "number": "7083050030000000000", "mc_number": {"company_name": "DT"},
+    c = datatruck_web._fuel_card({"id": 4, "number": "7083050030000007539", "mc_number": {"company_name": "DT"},
                                   "assigned_to": "driver", "assigned_driver": {"id": 7}, "unit_number": "717",
                                   "is_billable": True, "fuel_deduction_policy": "retail_plus_fee", "is_card_active": True})
     assert (c.card_id, c.driver_id, c.unit, c.billable, c.deduction_policy, c.active) == (4, 7, "717", True, "retail_plus_fee", True)
-    assert "7083050030000000000" not in repr(c)
+    assert c.last4 == "7539" and "708305003" not in repr(c)
+    assert datatruck_web._fuel_card({"id": 5, "number": None}).last4 is None

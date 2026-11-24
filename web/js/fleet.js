@@ -49,6 +49,7 @@ const COLUMNS = [
   { key: 'unit', name: 'Unit', by: (t) => t.unit, text: (t) => t.unit },
   { key: 'driver', name: 'Driver', by: (t) => personName(t.driver), text: (t) => t.driver || 'no active driver' },
   asked('status'), asked('duty'), asked('type'), asked('samsara'), asked('card'),
+  { key: 'cards', name: 'Card no.', by: (t) => cardNumbers(t), text: (t) => cardNumbers(t) },
   { key: 'gps', name: 'Last GPS', by: (t) => t.gps_at || '', of: (t) => age(t.gps_at), choices: AGES },
   { key: 'gauge', name: 'Gauge', by: (t) => t.fuel_pct ?? -1, of: (t) => level(t.fuel_pct), choices: LEVELS },
   { key: 'read', name: 'Gauge read', by: (t) => t.fuel_at || '', of: (t) => age(t.fuel_at), choices: AGES },
@@ -76,6 +77,9 @@ const HAVE = [
   { label: 'Samsara working, no card assigned', color: '--warn', has: (t) => t.samsara === 'working' && t.card !== 'card' },
   { label: 'Neither', color: '--s4', has: (t) => t.samsara !== 'working' && t.card !== 'card' },
 ];
+
+// A truck's cards as people name them, by their last four digits: "…7539, …0482"; nothing without a card.
+const cardNumbers = (t) => (t.cards || []).map((n) => `…${n}`).join(', ');
 
 // Orders two trucks by unit number, numbers by their value ("9" before "10").
 const byUnit = (a, b) => a.unit.localeCompare(b.unit, 'en', { numeric: true });
@@ -303,7 +307,7 @@ function row(t) {
   const old = (when) => (!when || new Date() - new Date(when) > 24 * HOUR ? 'left off' : 'left');
   const cell = (text, cls = 'left') => el('td', { class: cls }, text);
   return el('tr', {}, el('td', {}, el('b', {}, t.unit)), cell(personName(t.driver)), cell(group('status', t.status).label),
-    cell(t.on_duty ? 'On duty' : 'Not on duty'), cell(tag(t, 'type')), cell(tag(t, 'samsara')), cell(tag(t, 'card')),
+    cell(t.on_duty ? 'On duty' : 'Not on duty'), cell(tag(t, 'type')), cell(tag(t, 'samsara')), cell(tag(t, 'card')), cell(cardNumbers(t)),
     cell(since(t.gps_at), old(t.gps_at)), cell(fmt.level(t.fuel_pct)), cell(since(t.fuel_at), old(t.fuel_at)),
     cell(fmt.wholeGallons(t.gallons)), cell(t.live ? 'Yes' : ''), cell(group('samsara', t.samsara).todo || '', 'left fleet-todo'));
 }

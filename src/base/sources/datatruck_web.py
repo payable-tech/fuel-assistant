@@ -66,14 +66,16 @@ def _fuel_line(raw: dict) -> FuelLine:
     )
 
 
-# Converts one raw fuel card, dropping its number.
+# Converts one raw fuel card; of its number only the last four digits are kept.
 def _fuel_card(raw: dict) -> FuelCard:
     driver = raw.get("assigned_driver") or {}
+    digits = "".join(c for c in str(raw.get("number") or "") if c.isdigit())
     return FuelCard(
         card_id=raw["id"], company=(raw.get("mc_number") or {}).get("company_name") or "",
         assigned_to=raw.get("assigned_to"), driver_id=driver.get("id"),
         unit=(raw.get("unit_number") or "").strip() or None, billable=bool(raw.get("is_billable")),
         deduction_policy=raw.get("fuel_deduction_policy"), active=bool(raw.get("is_card_active")),
+        last4=digits[-4:] or None,
     )
 
 

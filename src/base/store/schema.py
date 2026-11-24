@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS fuel_lines (
 );
 CREATE INDEX IF NOT EXISTS fuel_lines_by_time ON fuel_lines (fueled_at);
 
--- Writer: fuel (Datatruck fuel cards, without their numbers).
+-- Writer: fuel (Datatruck fuel cards; of a card's number only the last four digits).
 CREATE TABLE IF NOT EXISTS fuel_cards (
     card_id          INTEGER PRIMARY KEY,
     company          TEXT NOT NULL,
@@ -74,7 +74,8 @@ CREATE TABLE IF NOT EXISTS fuel_cards (
     billable         INTEGER NOT NULL,
     deduction_policy TEXT,
     active           INTEGER NOT NULL,
-    synced_at        TEXT NOT NULL
+    synced_at        TEXT NOT NULL,
+    last4            TEXT
 );
 
 -- Writer: sync (Telegram, the groups Bob is in).

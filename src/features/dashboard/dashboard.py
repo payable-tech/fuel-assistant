@@ -143,7 +143,8 @@ def fleet_payload() -> dict:
 def _fleet_row(t: FleetTruck, named: set[str], now: datetime, stale: timedelta, fueled_since: str) -> dict:
     return {"unit": t.unit, "status": t.status, "driver": t.driver, "on_duty": fleet_status.on_duty(t),
             "type": fleet_status.truck_type(t), "samsara": fleet_status.samsara_state(t, named, now, stale),
-            "card": fleet_status.card_state(t, fueled_since), "live": t.unit in config.LIVE_UNITS,
+            "card": fleet_status.card_state(t, fueled_since), "cards": t.cards.split(", ") if t.cards else [],
+            "live": t.unit in config.LIVE_UNITS,
             "gps_at": t.gps_at.isoformat() if t.gps_at else None, "fuel_pct": t.fuel_pct,
             "fuel_at": t.fuel_at.isoformat() if t.fuel_at else None}
 

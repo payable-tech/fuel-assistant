@@ -112,8 +112,9 @@ def test_fleet_status():
                                     DatatruckTruck(3, "901", "X", "shop", None)])
         db.replace_dt_drivers(conn, [DatatruckDriver(7, "ALI (LO)", "lease", "active", "TTL", "340"),
                                      DatatruckDriver(8, "GONE", "lease", "inactive", "TTL", "900")])
-        db.replace_fuel_cards(conn, [FuelCard(1, "TTL", "driver", 7, "340", True, "retail_plus_fee", True),
-                                     FuelCard(2, "TTL", "driver", 8, "900", True, "retail_plus_fee", True)])
+        db.replace_fuel_cards(conn, [FuelCard(1, "TTL", "driver", 7, "340", True, "retail_plus_fee", True, "7539"),
+                                     FuelCard(3, "TTL", "driver", 7, "340", True, "retail_plus_fee", True, "0482"),
+                                     FuelCard(2, "TTL", "driver", 8, "900", True, "retail_plus_fee", True, "1111")])
         db.replace_samsara_vehicles(conn, [SamsaraVehicle("9", "TTL Unit 901", "Z", None, None)])
         db.replace_samsara_live(conn, [SamsaraLive("1", 30.2, -97.1, "Austin, TX", now, 40.0, now)])
         db.replace_fuel_lines(conn, [bought])
@@ -122,5 +123,7 @@ def test_fleet_status():
     assert rows == {"340": (True, "LO", "working", "card"), "900": (False, "none", "none", "fueled"),
                     "901": (False, "none", "mismatch", "nocard")}
     assert d["samsara_at"] == now.isoformat(timespec="seconds") and d["synced_at"] and d["trucks"][0]["driver"] == "ALI (LO)"
+    # the cards of a truck's active drivers by their last four digits; a card on a driver who left is not the truck's
+    assert {t["unit"]: sorted(t["cards"]) for t in d["trucks"]} == {"340": ["0482", "7539"], "900": [], "901": []}
     # the diesel each truck bought lately, for its column: unit 900 bought 100 gal yesterday, the others none
     assert {t["unit"]: t["gallons"] for t in d["trucks"]} == {"340": 0, "900": 100, "901": 0} and d["gallons_days"] == 30
