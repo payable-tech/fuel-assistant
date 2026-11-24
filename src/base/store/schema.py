@@ -374,6 +374,17 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     record      TEXT,
     PRIMARY KEY (chat_id, message_id)
 );
+
+-- Writer: the card agent. One row, its pulse, for the dashboard: when it last said it is running, whether eManager is
+-- logged in and since when, and the last tag it heard with what it did about it.
+CREATE TABLE IF NOT EXISTS agent_pulse (
+    id             INTEGER PRIMARY KEY CHECK (id = 1),
+    beat_at        TEXT,
+    emanager       INTEGER,
+    emanager_since TEXT,
+    tag_at         TEXT,
+    tag_note       TEXT
+);
 """
 
 # Views hold no data, so they are recreated on every connect and always match the code and config.

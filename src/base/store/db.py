@@ -666,6 +666,39 @@ def agent_jobs_since(conn: sqlite3.Connection, since: datetime) -> int:
                         (_ts(since),)).fetchone()[0]
 
 
+# One run of the card agent as its row; None when there is none for that message.
+def agent_run(conn: sqlite3.Connection, chat_id: int, message_id: int) -> dict | None:
+    row = conn.execute(
+        "SELECT chat_id, message_id, unit, woke_at, text, outcome, steps, opened_card, opened_at, error, record "
+        "FROM agent_runs WHERE chat_id = ? AND message_id = ?", (chat_id, message_id)).fetchone()
+    return dict(row) if row else None
+
+
+# Notes that the card agent is running at this moment (its pulse's beat).
+def agent_beat(conn: sqlite3.Connection, at: datetime) -> None:
+    conn.execute("INSERT INTO agent_pulse (id, beat_at) VALUES (1, ?) ON CONFLICT (id) DO UPDATE SET beat_at = excluded.beat_at",
+                 (_ts(at),))
+
+
+# Notes whether the card agent found eManager logged in; "since" moves only when that changed.
+def agent_emanager(conn: sqlite3.Connection, alive: bool, at: datetime) -> None:
+    conn.execute("INSERT INTO agent_pulse (id, emanager, emanager_since) VALUES (1, ?, ?) ON CONFLICT (id) DO UPDATE SET "
+                 "emanager_since = CASE WHEN agent_pulse.emanager IS excluded.emanager THEN agent_pulse.emanager_since "
+                 "ELSE excluded.emanager_since END, emanager = excluded.emanager", (int(alive), _ts(at)))
+
+
+# Notes the last tag the card agent heard, and in a few words what it did about it.
+def agent_tag(conn: sqlite3.Connection, at: datetime, note: str) -> None:
+    conn.execute("INSERT INTO agent_pulse (id, tag_at, tag_note) VALUES (1, ?, ?) ON CONFLICT (id) DO UPDATE SET "
+                 "tag_at = excluded.tag_at, tag_note = excluded.tag_note", (_ts(at), note))
+
+
+# The card agent's pulse as its row; None before its first beat.
+def agent_pulse(conn: sqlite3.Connection) -> dict | None:
+    row = conn.execute("SELECT beat_at, emanager, emanager_since, tag_at, tag_note FROM agent_pulse WHERE id = 1").fetchone()
+    return dict(row) if row else None
+
+
 # The card agent's runs since a moment, newest first, each as its row.
 def agent_runs_since(conn: sqlite3.Connection, since: datetime) -> list[dict]:
     return [dict(row) for row in conn.execute(

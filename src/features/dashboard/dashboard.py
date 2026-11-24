@@ -12,7 +12,8 @@ from base.models import (FleetTruck, FuelLine, FuelStop, Order, Picture, Recomme
 from base.sources import samsara
 from base.store import db
 from features.accounting import accounting, evidence, fill_checks, settings as accounting_settings
-from features.dashboard import fleet_status, nearby, outcomes, settings
+from features.cards import settings as cards_settings
+from features.dashboard import card_jobs, fleet_status, nearby, outcomes, settings
 from features.engine import habits, message, road_rules, settings as engine_settings
 from features.engine.settings import RULES, truck_now
 
@@ -407,6 +408,31 @@ def accounting_payload(statement_no: str | None) -> dict:
               "fills": evidence.fills(lines, found, seen, set(samsara_ids), stores),
               "burn": evidence.bought_vs_burned(lines, found, burns, samsara_ids, seen)}
     return {"statements": listed, "statement": chosen, "tree": tree, "checks": checks}
+
+
+# The Cards section: the card agent's state (running, eManager, its batch of jobs, the last tag heard) and its
+# requests, newest first (features/dashboard/card_jobs). Only the database is read: the agent is another program.
+def cards_payload() -> dict:
+    since = cards_settings.AGENT_JOBS_SINCE
+    with db.connect() as conn:
+        pulse = db.agent_pulse(conn)
+        runs = db.agent_runs_since(conn, settings.CARDS_FROM)[:settings.CARDS_LIST_SIZE]
+        done = db.agent_jobs_since(conn, since)
+    agent = card_jobs.agent_state(pulse, datetime.now(timezone.utc), settings.CARDS_SILENT_S, done,
+                                  cards_settings.AGENT_MAX_JOBS, since)
+    return {"agent": agent, "from": settings.CARDS_FROM.isoformat(), "runs": [card_jobs.row(run, since) for run in runs]}
+
+
+# One request of the card agent as its whole conversation, with the truck's purchases since; LookupError (a 404 for the
+# page) when there is no such request.
+def cards_run(chat_id: int, message_id: int) -> dict:
+    with db.connect() as conn:
+        run = db.agent_run(conn, chat_id, message_id)
+        if run is None:
+            raise LookupError(f"The card agent has no request {chat_id}_{message_id}")
+        woke = datetime.fromisoformat(run["woke_at"])
+        lines = [l for l in db.fuel_lines(conn, f"{woke.astimezone(fuel.CENTRAL):%Y-%m-%d}") if l.unit == run["unit"]]
+    return card_jobs.detail(run, cards_settings.AGENT_JOBS_SINCE, lines, settings.CARDS_FILLS_SHOWN)
 
 
 # A dataclass as plain JSON-ready values (datetimes become ISO text).

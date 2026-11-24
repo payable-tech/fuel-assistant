@@ -39,9 +39,6 @@ def register(sub) -> None:
         run=cmd_agent_login)
     sub.add_parser("card-agent", help="run the card agent: answers fuel card requests in the driver groups").set_defaults(
         run=cmd_card_agent)
-    p = sub.add_parser("card-runs", help="write the report of the card agent's live requests (data/card_runs.html)")
-    p.add_argument("--days", type=float, help="how far back (default: since the job count began)")
-    p.set_defaults(run=cmd_card_runs)
     p = sub.add_parser("card-cases", help="save what drivers wrote about their fuel cards as test cases (reads the groups)")
     p.add_argument("--days", type=int, default=14, help="how far back to read (default 14)")
     p.add_argument("--most", type=int, default=60, help="the most cases to save, newest first (default 60)")
@@ -96,16 +93,6 @@ def cmd_card_agent(args) -> None:
     logging.getLogger().addHandler(handler)
     logging.getLogger(__name__).info("Card agent starting (acts: %s)", cards_settings.AGENT_ACT)
     card_agent.run()
-
-
-# Writes the report of the card agent's live requests: each as one conversation, with what it thought and did, and
-# the fuel the truck bought afterwards. Only reads the database.
-def cmd_card_runs(args) -> None:
-    from datetime import timedelta, timezone
-
-    from features.cards import runs
-    since = datetime.now(timezone.utc) - timedelta(days=args.days) if args.days else cards_settings.AGENT_JOBS_SINCE
-    print(f"Report: {runs.report(since)}")
 
 
 # Reads the truck groups' history for what drivers wrote about their fuel cards and saves the cases under

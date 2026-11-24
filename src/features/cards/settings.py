@@ -35,7 +35,7 @@ AGENT_REPEAT_HOURS = 24    # opening a card it already opened this recently is m
 # request to the office (the user, 2026-11-24: five, then we look at them). For another batch move AGENT_JOBS_SINCE
 # to now (UTC) and restart the agent; None for AGENT_MAX_JOBS means no limit.
 AGENT_MAX_JOBS = 5
-AGENT_JOBS_SINCE = datetime(2026, 11, 24, 12, 45, tzinfo=timezone.utc)
+AGENT_JOBS_SINCE = datetime(2026, 11, 24, 11, 45, tzinfo=timezone.utc)  # 06:45 on this PC's clock (Eastern)
 AGENT_OFFICE_CHAT_ID = int(os.getenv("AGENT_OFFICE_CHAT_ID", "").strip() or 0) or None  # its reports; the test group when unset
 # A group that plays a truck's group with a fabricated truck, driver and card (features/cards/emanager/fake_cards): nothing real is read
 # or changed for it. AGENT_TEST_ONLY=1 makes the agent ignore every other group (and skip the eManager window).

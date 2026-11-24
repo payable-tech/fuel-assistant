@@ -81,3 +81,21 @@ export const STATION_COLOR = { "Love's": '--s2', 'Pilot / Flying J / One9': '--s
 
 // What a view says before any fuel purchase is loaded, with the command that loads them.
 export const NO_FUEL_DATA = 'No fuel data yet. Load it with: .venv\\Scripts\\python.exe src\\main.py fuel';
+
+// What became of a request to the card agent (the Cards section): its name, and its tone, which colors its square in
+// the batch, its mark in the list and its chip (the colors are in the styles, by tone).
+export const CARD_KINDS = {
+  opened: { label: 'Card opened', tone: 'good' },
+  open_already: { label: 'Card was already open', tone: 'good' },
+  office: { label: 'Passed to the office', tone: 'warn' },
+  replied: { label: 'Answered, nothing opened', tone: 'info' },
+  nothing: { label: 'Nothing asked', tone: 'off' },
+  paused: { label: 'Agent paused: left for the office', tone: 'warn' },
+  logged_out: { label: 'eManager logged out: left for the office', tone: 'bad' },
+  failed: { label: 'Failed: the office was told', tone: 'bad' },
+  working: { label: 'Working on it', tone: 'info' },
+};
+
+// The card agent's tools in words, as its steps are named.
+export const CARD_TOOLS = { declined_card: 'Open the card', reply_to_driver: 'Reply to the driver',
+  hand_to_office: 'Pass to the office', look_up_card: 'Look the card up' };

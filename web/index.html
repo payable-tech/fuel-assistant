@@ -1,7 +1,7 @@
 <!doctype html>
-<!-- Fuel operations dashboard: two sections picked above the tabs. Fuel has five views (Live, Trends, Recommend,
-     Drivers, Data); Accounting has one view, the EFS statements as a tree. A bell for the messages sent to drivers.
-     js/app.js fills them and keeps them live. -->
+<!-- Fuel operations dashboard: three sections picked above the tabs. Fuel has five views (Live, Trends, Recommend,
+     Drivers, Data); Accounting has one view, the EFS statements as a tree; Cards has one view, the card agent at work.
+     A bell for the messages sent to drivers. js/app.js fills them and keeps them live. -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -31,6 +31,7 @@
     <nav class="sections" aria-label="Sections">
       <button type="button" data-section="fuel">Fuel</button>
       <button type="button" data-section="accounting">Accounting</button>
+      <button type="button" data-section="cards">Cards</button>
     </nav>
     <nav class="views" data-section="fuel" role="tablist" aria-label="Fuel views">
       <button type="button" role="tab" data-view="live">Live</button>
@@ -378,6 +379,28 @@
       <h3 class="acct-sub" id="acct-doubt-title">Doubtful fills</h3>
       <div class="table-wrap"><table class="table" id="acct-doubt"></table></div>
     </article>
+  </section>
+
+  <!-- ===== Cards: the card agent: its state in a strip, the requests it took, and the picked one as a conversation ===== -->
+  <section class="view" id="view-cards" hidden>
+    <div class="view-head">
+      <h2 class="view-title">Card agent</h2>
+      <p class="meta" id="cards-meta"></p>
+    </div>
+    <div class="agent-strip" id="agent-strip"></div>
+    <div class="cards-layout">
+      <aside class="panel cards-list">
+        <header class="panel-head panel-head-row">
+          <div class="list-title"><h2>Requests</h2><span class="count" id="cards-count"></span></div>
+          <div class="seg" role="group" aria-label="Which requests to list" id="cards-show">
+            <button type="button" data-show="cards" aria-pressed="true">About a card</button>
+            <button type="button" data-show="all" aria-pressed="false">Every tag</button>
+          </div>
+        </header>
+        <ol class="units" id="cards-runs"></ol>
+      </aside>
+      <article class="panel cards-talk" id="cards-talk"></article>
+    </div>
   </section>
 </main>
 </body>

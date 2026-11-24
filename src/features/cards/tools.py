@@ -41,6 +41,10 @@ class Request:
         self.steps: list[str] = []
         self.talk: list[dict] = []   # each use of a tool by Claude: what it asked and what it was answered
         self.posts: list[str] = []   # what was posted to the office for this request
+        # what became of the card, for the run's record: `did` (opened, open already, would open, needs a person,
+        # failed), and where known the card's name, the status it was in, whether it was activated, whether it is in
+        # the driver's name, how many minutes ago the agent opened it before, and why a person is needed
+        self.card: dict | None = None
         self.opened: str | None = None
         self.opened_at: datetime | None = None
         self.replied = self.handed = False
@@ -84,15 +88,18 @@ class Request:
             verdict = rules.verdict(card, account, row, own, settings.AGENT_ACT)
         except (NeedsPerson, EfsError) as why:
             self.steps.append(f"declined_card: needs a person, {why}")
+            self.card = {"did": "needs a person", "why": str(why)}
             await self.hand_to_office({"note": wording.note_needs_person(why)})
             return answer(wording.needs_person(why))
         card_name = rules.named(account, row)
+        self.card = {"did": "would open", "name": card_name, "status": card.status, "own": own}
         if verdict == rules.WATCH_ONLY:
             self.steps.append(f"declined_card: would open {card_name} (AGENT_ACT is off)")
             await self.office(wording.would_open(card_name, self.unit, self.text))
             return answer(wording.WATCH_ONLY_CARD)
         if verdict == rules.ALREADY_OPEN:  # nothing to change in eManager; the driver may be told to try again
             self.opened = row.card_id
+            self.card["did"] = "open already"
             self.steps.append(f"declined_card: {card_name} was opened already (override on), nothing changed")
             await self.office(wording.already_open_report(card_name, self.unit, self.text))
             return answer(wording.OPEN_ALREADY)
@@ -163,15 +170,21 @@ class Request:
             after = await emanager(self.efs.set_override, account, row, settings.AGENT_OPEN_FILLS)
         except EfsError as error:
             self.steps.append(f"declined_card: eManager did not open it, {error}")
+            self.card = {"did": "failed", "name": card_name, "status": status, "own": own, "activated": activated,
+                         "why": str(error)}
             await self.hand_to_office({"note": wording.note_open_failed(card_name, error, activated)})
             return answer(wording.OPEN_FAILED)
         if not after.override:
+            self.card = {"did": "failed", "name": card_name, "status": status, "own": own, "activated": activated,
+                         "why": "eManager did not show the card as open afterwards"}
             await self.hand_to_office({"note": wording.note_not_confirmed(card_name)})
             return answer(wording.NOT_CONFIRMED)
         self.opened, self.opened_at = row.card_id, datetime.now(timezone.utc)
         with db.connect() as conn:  # at once: the audit survives a crash after this
             again = rules.repeat(db.agent_last_opened(conn, row.card_id), self.opened_at, settings.AGENT_REPEAT_HOURS)
             db.record_agent_open(conn, self.chat_id, self.message_id, row.card_id, self.opened_at)
+        self.card = {"did": "opened", "name": card_name, "status": status, "own": own, "activated": activated,
+                     "again_min": int(again.total_seconds() // 60) if again else None}
         self.steps.append(f"declined_card: opened {card_name} for {settings.AGENT_OPEN_FILLS} fill"
                           f"{' (activated first)' if activated else ''}")
         await self.office(wording.opened_report(card_name, self.unit, settings.AGENT_OPEN_FILLS,

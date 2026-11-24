@@ -1,9 +1,11 @@
-// Dashboard entry: switches between the sections (Fuel, Accounting) and their views (Fuel: Live, Trends, Recommend,
-// Drivers, Data; Accounting: the EFS statements as a tree), loads their numbers and hands
-// them to each view to draw, and keeps them current: the live numbers and the recommendations every minute, the weekly
-// ones and the fleet status every 5 minutes, habits every 30. The bell in the top bar tells when a message goes to a driver.
+// Dashboard entry: switches between the sections (Fuel, Accounting, Cards) and their views (Fuel: Live, Trends,
+// Recommend, Drivers, Data; Accounting: the EFS statements as a tree; Cards: the card agent at work), loads their numbers
+// and hands them to each view to draw, and keeps them current: the card agent every 20 seconds, the live numbers and the
+// recommendations every minute, the weekly ones and the fleet status every 5 minutes, habits every 30. The bell in the
+// top bar tells when a message goes to a driver.
 import { accountingPath, initAccounting, renderAccounting, showAccountingError } from './accounting.js';
 import { load } from './api.js';
+import { initCards, renderCards, showCardsError } from './cards.js';
 import { renderData } from './data.js';
 import { renderDrivers, showDriversError } from './drivers.js';
 import { initFleet, renderFleet, showFleetError } from './fleet.js';
@@ -18,6 +20,7 @@ import { initTrends, renderTrends } from './trends.js';
 const SECTIONS = {
   fuel: ['live', 'trends', 'recommend', 'drivers', 'data'],
   accounting: ['accounting'],
+  cards: ['cards'],
 };
 const VIEWS = Object.values(SECTIONS).flat();
 // how often each set of numbers is fetched again
@@ -26,6 +29,7 @@ const TRENDS_EVERY_MS = 5 * 60 * 1000;
 const DRIVERS_EVERY_MS = 30 * 60 * 1000;  // habits are worked out once a day
 const FLEET_EVERY_MS = 5 * 60 * 1000;  // Samsara's readings are refreshed every 5 minutes
 const ACCOUNTING_EVERY_MS = 30 * 60 * 1000;  // a new statement comes once a week; this picks it up the same half hour
+const CARDS_EVERY_MS = 20 * 1000;  // the agent answers within seconds: its section follows closely
 const VERSION_EVERY_MS = 60 * 1000;
 // live, baseline: the numbers last loaded; checkedAt: when; failing: the last load failed; version: the page's files
 const state = { live: null, baseline: null, checkedAt: null, failing: false, version: null };
@@ -131,6 +135,16 @@ async function refreshAccounting() {
   }
 }
 
+// Loads the card agent's state and requests and redraws the Cards section.
+async function refreshCards() {
+  try {
+    renderCards(await load('/api/cards'));
+  } catch (error) {
+    showCardsError(error);
+    console.error(error);
+  }
+}
+
 // Reloads the page once its files changed on the server since it was opened (an update), so a dashboard left open
 // all day never runs old code against new numbers. The first look only notes the version.
 async function checkVersion() {
@@ -163,9 +177,12 @@ initRecommend();
 initFleet();
 initNotes();
 initAccounting(refreshAccounting);
+initCards();
 checkVersion();
 setInterval(checkVersion, VERSION_EVERY_MS);
-await Promise.all([refreshLive(), refreshTrends(), refreshRecommend(), refreshDrivers(), refreshFleet(), refreshAccounting()]);
+await Promise.all([refreshLive(), refreshTrends(), refreshRecommend(), refreshDrivers(), refreshFleet(), refreshAccounting(),
+  refreshCards()]);
+setInterval(refreshCards, CARDS_EVERY_MS);
 setInterval(refreshAccounting, ACCOUNTING_EVERY_MS);
 setInterval(refreshLive, LIVE_EVERY_MS);
 setInterval(refreshRecommend, LIVE_EVERY_MS);

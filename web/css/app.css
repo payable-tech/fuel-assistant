@@ -1,6 +1,6 @@
 /* Fuel operations dashboard styles. Always dark. Layout: a sticky top bar with the sections over the view tabs, the bell and the live
    state; each view is a header, a row of figure cards, then a 3-column grid of panels. Below: the parts every view
-   shares, then one section per view (Live, Trends, Drivers, Recommend, Data, Accounting), then narrower screens. */
+   shares, then one section per view (Live, Trends, Drivers, Recommend, Data, Accounting, Cards), then narrower screens. */
 :root {
   color-scheme: dark;
   --bg: #0c1118;
@@ -574,6 +574,118 @@ button.cube:focus-visible { outline: 2px solid var(--s1); outline-offset: 3px; }
 .cube-more { position: absolute; top: 9px; right: 9px; padding: 0 6px; border-radius: 999px; background: var(--line);
   font-size: 11px; font-weight: 600; color: var(--text); }
 
+/* ---------- Cards view: the card agent. A slim strip with its state, then the requests on the left (the list stays in
+   sight while the page scrolls) and the picked request as one conversation on the right ---------- */
+/* a tone (t-good, t-warn, t-bad, t-info, t-off) colors a state dot, a job's square, a request's edge and a chip,
+   the same everywhere in the section */
+.t-good { --tone: var(--good); --tone-bg: rgba(60, 195, 138, 0.12); }
+.t-warn { --tone: var(--warn); --tone-bg: rgba(242, 163, 58, 0.14); }
+.t-bad { --tone: var(--bad); --tone-bg: rgba(242, 103, 107, 0.14); }
+.t-info { --tone: var(--s1); --tone-bg: rgba(91, 156, 245, 0.14); }
+.t-off { --tone: var(--faint); --tone-bg: rgba(142, 154, 174, 0.12); }
+.agent-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-radius: var(--radius); background: var(--panel);
+  border: 1px solid var(--line); overflow: hidden; }
+.agent-cell { display: flex; align-items: flex-start; gap: 10px; min-width: 0; padding: 14px 18px; border-left: 1px solid var(--line); }
+.agent-cell:first-child { border-left: 0; }
+.agent-cell.loud { background: var(--tone-bg); box-shadow: inset 0 2px 0 var(--tone); }  /* stopped, logged out, paused */
+.agent-dot { flex: none; width: 9px; height: 9px; margin-top: 6px; border-radius: 50%; background: var(--tone); }
+.agent-words { display: grid; gap: 2px; min-width: 0; }
+.agent-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.agent-title b { font-size: 15px; font-weight: 600; }
+.agent-cell.loud .agent-title b { color: var(--tone); }
+.agent-words small { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.job-squares { display: inline-flex; gap: 4px; }
+.job-sq { display: block; width: 14px; height: 14px; padding: 0; border-radius: 3px; border: 0; background: var(--tone); }
+button.job-sq { cursor: pointer; }
+button.job-sq:hover, button.job-sq:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+.job-sq.empty { background: none; border: 2px dashed var(--faint); }  /* a job of the batch not done yet */
+
+.cards-layout { display: grid; grid-template-columns: clamp(320px, 26vw, 420px) minmax(0, 1fr); gap: var(--gap); align-items: start; }
+.cards-list { position: sticky; top: calc(var(--topbar-h) + var(--gap)); display: flex; flex-direction: column;
+  max-height: calc(100vh - var(--topbar-h) - 2 * var(--gap)); }
+/* one request in the list: its edge in the tone of what became of it; a tag that asked for nothing is dim */
+.run { border-radius: 10px; background: var(--panel-2); border: 1px solid transparent; border-left: 3px solid var(--tone);
+  transition: border-color 0.15s; }
+.run:hover { border-top-color: var(--line); border-right-color: var(--line); border-bottom-color: var(--line); }
+.run.picked { border-color: rgba(242, 163, 58, 0.45); border-left-color: var(--tone); background: #1e2836; }
+.run.quiet .run-head > :not(.run-foot) { opacity: 0.6; }
+.run.is-new { animation: arrive 4s ease-out; }
+@media (prefers-reduced-motion: reduce) { .run.is-new { animation: none; } }
+.run-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; width: 100%; padding: 10px 12px; border: 0;
+  border-radius: 10px; background: transparent; font: inherit; text-align: left; color: var(--text); cursor: pointer; }
+.run-head:focus-visible { outline: 2px solid var(--s1); outline-offset: -2px; }
+.run-head b { font-size: 14px; font-weight: 600; white-space: nowrap; }
+.run-head time { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.run-who, .run-text, .run-foot { grid-column: 1 / -1; min-width: 0; }
+.run-who { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-text { font-size: 13px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.run-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; font-size: 12px; color: var(--tone); }
+.run-foot small { color: var(--faint); font-size: 12px; }
+.tone-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--tone); }
+.kind-chip { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap;
+  color: var(--tone); background: var(--tone-bg); }
+
+/* the picked request: its heading, what a person should know about the card, then the conversation */
+.cards-talk { gap: 16px; min-height: 320px; scroll-margin-top: calc(var(--topbar-h) + var(--gap)); }
+.talk-empty { max-width: 520px; margin: 48px auto; text-align: center; color: var(--muted); }
+.talk-head { display: grid; gap: 4px; }
+.talk-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.talk-title h2 { font-size: 17px; }
+.talk-remarks { display: flex; flex-wrap: wrap; gap: 6px; }
+.remark { padding: 4px 10px; border-radius: 8px; font-size: 12px; color: var(--tone); background: var(--tone-bg); overflow-wrap: anywhere; }
+.thread { display: grid; gap: 8px; max-width: 860px; }
+.thread-label { margin-top: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line); font-size: 12px; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--faint); }
+.thread-label:first-child { margin-top: 0; }
+/* a message: others on the left, the account and the agent on the right; the one that woke the agent is ringed */
+.bub { justify-self: start; display: grid; gap: 2px; max-width: min(78%, 620px); padding: 8px 12px; border-radius: 12px 12px 12px 4px;
+  background: var(--panel-2); font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.bub-who { display: flex; gap: 8px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.bub-who time { font-weight: 400; color: var(--faint); }
+.bub.woke { box-shadow: 0 0 0 2px var(--brand); }
+.bub.ours, .bub.reply, .bub.office { justify-self: end; border-radius: 12px 12px 4px 12px; }
+.bub.ours { background: #1e2836; color: var(--muted); }
+.bub.reply { background: rgba(91, 156, 245, 0.2); }
+.bub.reply .bub-who { color: var(--s1); }
+.bub.office { background: rgba(242, 163, 58, 0.12); font-size: 13px; }
+.bub.office .bub-who { color: var(--warn); }
+/* a step of the agent that is not a message: a rule on the left in its color, its name, its text */
+.step { display: grid; gap: 3px; margin-left: 16px; padding: 6px 0 6px 14px; border-left: 2px solid var(--tone, var(--s1)); }
+.step-name { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--tone, var(--s1)); }
+.step p { font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.step p.bullet { padding-left: 14px; text-indent: -14px; }
+.step p.bullet::before { content: "•  "; color: var(--faint); }
+.step b { font-weight: 600; }
+.step.thought { --tone: var(--s4); }
+.step.thought p { font-style: italic; color: #cfc6ee; }
+.step.tool { --tone: var(--s1); }
+.step.tool.bad { --tone: var(--bad); }
+.step-answer { color: var(--muted); }
+.step-answer::before { content: "→ "; color: var(--faint); }
+.step.noted, .step.summary { --tone: var(--faint); }
+.step.summary { margin-top: 8px; gap: 6px; }
+.step.summary p { color: var(--muted); }
+/* a part folded away until asked for: the older messages of the chat, the agent's own summary */
+.fold { display: grid; gap: 8px; }
+.fold summary { justify-self: start; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 12px;
+  color: var(--muted); cursor: pointer; list-style: none; }
+.fold summary::-webkit-details-marker { display: none; }
+.fold summary::before { content: "+ "; }
+.fold[open] summary::before { content: "− "; }
+.fold summary:hover { color: var(--text); border-color: var(--faint); }
+.fold summary:focus-visible, .talk-facts summary:focus-visible { outline: 2px solid var(--s1); outline-offset: 1px; }
+.talk-part { display: grid; gap: 8px; max-width: 860px; }
+.bought-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.bought-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 8px 12px; border-radius: 8px;
+  background: var(--panel-2); font-size: 13px; }
+.bought-list time { color: var(--muted); }
+.bought-where { flex: 1; min-width: 160px; }
+.talk-facts { max-width: 860px; font-size: 13px; color: var(--muted); }
+.talk-facts summary { cursor: pointer; }
+.talk-facts summary:hover { color: var(--text); }
+.talk-facts pre { margin: 8px 0 0; padding: 12px 14px; border-radius: 10px; background: var(--panel-2); font: 12px/1.6 var(--font);
+  white-space: pre-wrap; color: var(--text); }
+
 /* ---------- narrower screens ---------- */
 @media (max-width: 1280px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 1100px) {
@@ -583,6 +695,11 @@ button.cube:focus-visible { outline: 2px solid var(--s1); outline-offset: 3px; }
   .rec-list { position: static; max-height: none; }
   .units { flex: none; max-height: 360px; }
   .rec-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cards-layout { grid-template-columns: minmax(0, 1fr); }
+  .cards-list { position: static; max-height: none; }
+  .agent-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .agent-cell:nth-child(odd) { border-left: 0; }
+  .agent-cell:nth-child(n+3) { border-top: 1px solid var(--line); }
   .topbar { grid-template-columns: 1fr auto auto; }
   .live { display: none; }
 }
@@ -592,7 +709,10 @@ button.cube:focus-visible { outline: 2px solid var(--s1); outline-offset: 3px; }
   .msg-row { grid-column: 1 / -1; grid-row: 2; }
 }
 @media (max-width: 700px) {
-  .grid, .kpis, .pair { grid-template-columns: 1fr; }
+  .grid, .kpis, .pair, .agent-strip { grid-template-columns: 1fr; }
+  .agent-cell { border-left: 0; }
+  .agent-cell:nth-child(n+2) { border-top: 1px solid var(--line); }
+  .bub { max-width: 92%; }
   .fleet-bar { grid-template-columns: minmax(0, 1fr); }
   .map { height: 460px; }
   .topbar { grid-template-columns: 1fr; }

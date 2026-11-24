@@ -1,4 +1,6 @@
 # The dashboard's settings: where the page is, who may open it, and how much each tab shows.
+from datetime import datetime, timezone
+
 from base import config
 
 WEB_DIR = config.ROOT / "web"
@@ -35,6 +37,12 @@ DISCOUNT_DAYS, DISCOUNT_WEEKS, DISCOUNT_MONTHS = 15, 13, 7  # the discount chart
 # within NEAR_MI that day. Straight line around where the truck was: the road ahead isn't known, so it is a ceiling.
 NEAR_MI = 25
 SHEET_MAX_AGE_DAYS = 3             # ...on the newest Love's price sheet at most this old (the sheets have gaps)
+
+# The Cards section: the card agent's requests
+CARDS_FROM = datetime(2026, 11, 24, 11, 0, tzinfo=timezone.utc)  # the agent's first live morning: requests listed from here
+CARDS_LIST_SIZE = 100              # newest requests listed
+CARDS_SILENT_S = 120               # the agent notes that it runs every 30 s: silent this long, it is shown as stopped
+CARDS_FILLS_SHOWN = 5              # a truck's purchases listed after a request
 
 # The Live tab's messages sent to drivers, and the fills looked up
 LIVE_FROM = "2026-11-03"           # the first day a driver got a message: the Live tab counts the plans from here

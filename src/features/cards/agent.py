@@ -19,6 +19,7 @@ from features.cards.tools import Request
 log = logging.getLogger(__name__)
 WORKSPACE = config.DATA_DIR / "agent"     # where the Claude runs keep their conversations
 JOIN_MINUTES = 10                         # a bare tag this soon after a request in the same group joins it: no new run
+BEAT_SECONDS = 30                         # how often it notes that it is running (its pulse, for the dashboard)
 _one_run = asyncio.Lock()                 # one request at a time, in the order they came
 
 
@@ -29,9 +30,18 @@ def run() -> None:
     asyncio.run(_main())
 
 
-# The listener and the login keeper side by side; either stopping ends the program (run_agent.bat starts it again).
+# The listener, the pulse and the login keeper side by side; any of them stopping ends the program (run_agent.bat
+# starts it again).
 async def _main() -> None:
-    await asyncio.gather(telegram_agent.listen(on_tag), *([] if settings.AGENT_TEST_ONLY else [_keep_login()]))
+    await asyncio.gather(telegram_agent.listen(on_tag), _beat(), *([] if settings.AGENT_TEST_ONLY else [_keep_login()]))
+
+
+# Forever: notes every BEAT_SECONDS that the agent is running, so the dashboard can tell when it stopped.
+async def _beat() -> None:
+    while True:
+        with db.connect() as conn:
+            db.agent_beat(conn, datetime.now(timezone.utc))
+        await asyncio.sleep(BEAT_SECONDS)
 
 
 # A tag heard. Not in its own office or test chat, only in a group linked to a truck, worth waking for, not a bare tag
@@ -53,9 +63,14 @@ async def on_tag(client, message, named: bool) -> None:
     with db.connect() as conn:
         if rules.only_a_tag(text) and db.agent_run_since(conn, message.chat_id, now - timedelta(minutes=JOIN_MINUTES)):
             # "@desk" again while the request just taken there is worked: it joins that one
-            return _skipped(message, "a bare tag right after a request there: it joins that one")
-        if not db.claim_agent_run(conn, message.chat_id, message.id, truck.unit, now, text[:2000]):
-            return _skipped(message, "this message was already taken")
+            taken = "a bare tag right after a request there: it joins that one"
+        elif not db.claim_agent_run(conn, message.chat_id, message.id, truck.unit, now, text[:2000]):
+            taken = "this message was already taken"
+        else:
+            taken = None
+            db.agent_tag(conn, now, f"unit {truck.unit}: taken")
+    if taken:  # said once the database is let go: the note of it is a write of its own
+        return _skipped(message, taken)
     log.info("Tag in chat %s (message %s), unit %s: working it", message.chat_id, message.id, truck.unit)
     chat = await telegram_agent.chat_before(client, message.chat_id, message.id, settings.AGENT_HISTORY,
                                             settings.AGENT_MAX_PHOTOS)
@@ -63,10 +78,12 @@ async def on_tag(client, message, named: bool) -> None:
         await work(Request(client, message.chat_id, message.id, text, chat[-1].sender if chat else "", truck, drivers), chat)
 
 
-# Logs a tag that is not worked, and why.
+# Logs a tag that is not worked, and why, and notes it in the pulse.
 def _skipped(message, why: str) -> None:
     log.info("Tag in chat %s (message %s) not worked: %s. It said: %s", message.chat_id, message.id, why,
              (message.message or "")[:80])
+    with db.connect() as conn:
+        db.agent_tag(conn, datetime.now(timezone.utc), f"not worked: {why}")
 
 
 # Works one request to its end and records it, with the run's whole record (what Claude read, what it thought, each
@@ -90,6 +107,7 @@ async def work(task: Request, chat: list[ChatLine]) -> None:
                                          f"nothing to do: {said.text[:200]}")
             record = json.dumps({"sender": task.sender, "given": given, "trace": said.trace, "talk": task.talk,
                                  "said": said.text, "problem": said.problem, "cost": said.cost_usd, "office": task.posts,
+                                 "card": task.card,
                                  "chat": [{"at": c.at.isoformat(), "sender": c.sender, "ours": c.ours, "text": c.text,
                                            "photo": bool(c.photo)} for c in chat]}, ensure_ascii=False)
     except Exception as failure:
@@ -147,6 +165,8 @@ async def _keep_login() -> None:
     was = None
     while True:
         alive = await _emanager_alive()
+        with db.connect() as conn:
+            db.agent_emanager(conn, alive, datetime.now(timezone.utc))
         if alive != was:
             (log.info if alive else log.warning)("eManager %s", "logged in" if alive else
                                                  "NOT logged in: log in in its window")
