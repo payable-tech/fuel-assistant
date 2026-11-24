@@ -4,7 +4,8 @@
 # on a driver's. The agent's clock is set to the moment of the driver's message, and what the database learned after it
 # (later purchases, the truck's place and gauge now, the engine's state now) is kept from it, so a case days old is
 # worked as if it had just come in. The result is a report in data/card_cases: each case as one conversation, from the chat before the
-# driver's message, through every tool the agent used and what it was answered, to what the office really did.
+# driver's message, through what the agent thought, every tool it used and what it was answered, to what the office
+# really did.
 import asyncio
 import html
 import json
@@ -74,16 +75,16 @@ def no_telegram(written: list[tuple[int, str, int | None]]) -> None:
     telegram_agent.write, telegram_agent._client, telegram.send, telegram._client = keep, refuse, refuse, refuse
 
 
-# Makes Claude's runs leave a trace: what it was given to read and its last words go into `heard` (one dict, written
-# over at each run). Claude itself runs for real.
+# Makes Claude's runs leave their record: what it was given to read, its trace (thoughts, tools, words, in order) and
+# its last words go into `heard` (one dict, written over at each run). Claude itself runs for real.
 def listen_to_claude(heard: dict) -> None:
     real = claude.run
 
     # The same run, with its input and its last words kept.
     async def run(system, text, photos, tools_given, workspace):
-        heard.update(given=text, photos=len(photos), said="", problem="", cost=None)
+        heard.update(given=text, photos=len(photos), said="", problem="", cost=None, trace=[])
         said = await real(system, text, photos, tools_given, workspace)
-        heard.update(said=said.text, problem=said.problem, cost=said.cost_usd)
+        heard.update(said=said.text, problem=said.problem, cost=said.cost_usd, trace=[list(step) for step in said.trace])
         return said
 
     claude.run = run
@@ -195,7 +196,11 @@ def run(most: int) -> Path:
         cards.restore()
     (cases.CASES_DIR / "replay.json").write_text(json.dumps(results, indent=1, ensure_ascii=False, default=str), encoding="utf-8")
     report = cases.CASES_DIR / "report.html"
-    report.write_text(page(results, cards.changes), encoding="utf-8")
+    note = (f"Nothing was sent to any driver or to the office, and no driver's card was changed: {cards.changes} real changes "
+            "were made, all on the test card, which was put back. The agent's clock was set to each message's own moment, "
+            "and later purchases and today's gauge and place were kept from it. The truck's drivers and the card's state in "
+            "eManager are still today's, not the message's day's.")
+    report.write_text(page(results, note), encoding="utf-8")
     return report
 
 
@@ -233,7 +238,7 @@ async def _one(case: dict, cards: OnTestCard, written: list, heard: dict) -> dic
         recorded = conn.execute("SELECT outcome, error FROM agent_runs WHERE message_id = ?", (case["message_id"],)).fetchone()
     return seen | {"outcome": recorded["outcome"], "error": recorded["error"], "steps": request.steps, "talk": talk,
                    "given": heard.get("given", ""), "said": heard.get("said", ""), "problem": heard.get("problem", ""),
-                   "cost": heard.get("cost"),
+                   "cost": heard.get("cost"), "trace": heard.get("trace", []),
                    "reply": next((text for chat, text, _ in mine if chat == case["chat_id"]), None),
                    "office": [text for chat, text, _ in mine if chat != case["chat_id"]],
                    "drivers_now": [d.full_name for d in drivers]}
@@ -277,21 +282,23 @@ def kind(result: dict) -> str:
     return "did nothing"
 
 
-# Why a case went to the office, in a few words; None when it didn't. A hand-over the agent chose itself (a request
+# Why a case went to the office, in a few words; None when it didn't. The reason is read from what the rules said
+# of the card (the declined_card step), never from the note Claude wrote. A hand-over the agent chose itself (a request
 # that is not a card opening: a money code, a check, a lost card) is named as that.
 def handed_for(result: dict) -> str | None:
     steps = " ".join(result["steps"])
     if "hand_to_office" not in steps and "asked the office" not in steps:
         return None
+    ruled = " ".join(step for step in result["steps"] if step.startswith("declined_card"))
     for words, reason in HANDED_FOR:
-        if words in steps:
+        if words in ruled:
             return reason
     return "not a card opening: the agent has no tool for it"
 
 
-# The report as one HTML page: the counts and the reasons for every hand-over on top, then each case as one
-# conversation. Everything from Telegram and from Claude is escaped.
-def page(results: list[dict], changes: int) -> str:
+# The report as one HTML page: the counts, `note` (how the cases were run) and the reasons for every hand-over on top,
+# then each case as one conversation. Everything from Telegram and from Claude is escaped.
+def page(results: list[dict], note: str) -> str:
     e = html.escape
     counts, reasons = {}, {}
     for r in results:
@@ -310,31 +317,38 @@ h1{{font-size:22px}}h2{{font-size:16px;margin:36px 0 10px;border-top:1px solid #
 .m b{{display:block;font-size:12px;color:#8e9aae;font-weight:600}}.ours{{background:#1a2330}}.case{{outline:2px solid #f2a33a}}
 .agent{{margin-left:auto;background:#17324a}}.office{{margin-left:auto;background:#3a2f12}}.after{{opacity:.75}}
 .step{{margin:6px 0 6px 22%;padding:8px 12px;border-left:3px solid #5b9cf5;background:#10161f;white-space:pre-wrap;font-size:13px}}
-.step b{{color:#5b9cf5}}.refused{{border-color:#f2676b}}.label{{font-size:12px;color:#8e9aae;text-transform:uppercase;letter-spacing:.06em;margin:16px 0 4px}}
+.step b{{color:#5b9cf5}}.refused{{border-color:#f2676b}}.thought{{border-color:#b98ae6;color:#cdbfe6;font-style:italic}}
+.thought b{{color:#b98ae6;font-style:normal}}.label{{font-size:12px;color:#8e9aae;text-transform:uppercase;letter-spacing:.06em;margin:16px 0 4px}}
 details{{margin:8px 0}}summary{{cursor:pointer;color:#8e9aae}}pre{{white-space:pre-wrap;background:#131a24;padding:10px;border-radius:8px}}
 table{{border-collapse:collapse}}td{{padding:3px 12px 3px 0}}</style>
 <h1>Card agent replay: {len(results)} real cases</h1>
 <p>{summary}</p>
-<p>Nothing was sent to any driver or to the office, and no driver's card was changed: {changes} real changes were made, all on the
-test card, which was put back. The agent's clock was set to each message's own moment, and later purchases and today's gauge
-and place were kept from it. The truck's drivers and the card's state in eManager are still today's, not the message's day's.</p>
+<p>{e(note)}</p>
 <div class="label">Why requests went to the office</div><table>{why_rows or '<tr><td>none</td></tr>'}</table>
 {''.join(_conversation(r) for r in results)}"""
 
 
-# One case as a conversation: the chat before the driver's message, what the agent was told, each tool it used with
-# its answer, what it would have written to the driver and the office, and what was really written afterwards.
+# One case as a conversation: the chat before the driver's message, what the agent was told, what it thought and each
+# tool it used with its answer (in order), what it would have written to the driver and the office, its own
+# explanation at the end, and what was really written afterwards.
 def _conversation(r: dict) -> str:
     e = html.escape
     before = "".join(_bubble(c["sender"], c["text"] + (" [photo]" if c["photo"] else ""), c["at"],
                              "ours" if c["ours"] else "", last=i == len(r["chat"]) - 1) for i, c in enumerate(r["chat"]))
-    steps = ""
-    for t in r["talk"]:
-        asked = json.dumps(t["asked"], ensure_ascii=False) if t["asked"] else ""
-        steps += (f'<div class="step{" refused" if t["refused"] else ""}"><b>{e(t["tool"])}</b> {e(asked)}\n'
-                  f'→ {e(t["answer"])}</div>')
-        if t["tool"] == "reply_to_driver" and not t["refused"]:
-            steps += _bubble("Fuel desk (would send to the driver)", t["asked"].get("text", ""), "", "agent")
+    steps, talk = "", list(r["talk"])
+    # a case kept before the trace was: its tools only, in order
+    for step_kind, text in r.get("trace") or [[claude.USED, t["tool"]] for t in talk]:
+        if step_kind == claude.THOUGHT:
+            steps += f'<div class="step thought"><b>it thought</b> {e(text)}</div>'
+        elif step_kind == claude.SAID and text != (r.get("said") or "").strip():  # its last words are shown below
+            steps += f'<div class="step"><b>it noted</b> {e(text)}</div>'
+        elif step_kind == claude.USED:
+            used = next((t for t in talk if t["tool"] == text), None)
+            if used is None:
+                steps += f'<div class="step refused"><b>{e(text)}</b> (the tool did not run)</div>'
+                continue
+            talk.remove(used)
+            steps += _tool(used)
     office = "".join(_bubble("Fuel desk (would post to the office)", text, "", "office") for text in r["office"])
     after = "".join(_bubble(a["sender"], a["text"], a["at"], "after") for a in r["after"])
     cost = f" · ${r['cost']:.2f}" if r.get("cost") else ""
@@ -343,9 +357,21 @@ def _conversation(r: dict) -> str:
 <div class="label">The chat, up to the driver's message</div>{before}
 <details><summary>What the agent was told about the truck</summary><pre>{e(r.get('given', '').split(chr(10) + chr(10) + 'The chat,')[0])}</pre></details>
 <div class="label">What the agent did{e(cost)}</div>{steps or '<div class="step">(it used no tool)</div>'}{office}
-<div class="step"><b>its last words</b> {e(r.get('said') or '(none)')}{' · stopped: ' + e(r['problem']) if r.get('problem') else ''}
+<div class="step"><b>its own explanation at the end</b> {e(r.get('said') or '(none)')}{' · stopped: ' + e(r['problem']) if r.get('problem') else ''}
 <b>recorded outcome</b> {e(str(r['outcome']))}{' · error: ' + e(str(r['error'])) if r.get('error') else ''}</div>
 <div class="label">What was really written afterwards</div>{after or '<div class="m after">(nothing)</div>'}"""
+
+
+# One use of a tool as a report block: what Claude asked of it and what it answered; a reply that went out is also
+# shown as the message the driver would have got.
+def _tool(used: dict) -> str:
+    e = html.escape
+    asked = json.dumps(used["asked"], ensure_ascii=False) if used["asked"] else ""
+    block = (f'<div class="step{" refused" if used["refused"] else ""}"><b>{e(used["tool"])}</b> {e(asked)}\n'
+             f'→ {e(used["answer"])}</div>')
+    if used["tool"] == "reply_to_driver" and not used["refused"]:
+        block += _bubble("Fuel desk (would send to the driver)", used["asked"].get("text", ""), "", "agent")
+    return block
 
 
 # One message of a conversation as a bubble: who, when (hour and minute), and the text.

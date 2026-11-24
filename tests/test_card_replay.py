@@ -99,11 +99,17 @@ def test_report_kinds_and_escaping():
     assert replay.kind(base | {"steps": ["declined_card: needs a person, 0 cards"]}) == "to the office"
     assert replay.kind(base | {"error": "RuntimeError('x')"}) == "failed"
     assert replay.kind(base | {"reply": "ok"}) == "replied only" and replay.kind(base) == "did nothing"
-    text = replay.page([base], 0)
+    text = replay.page([base], "how it was run")
     assert "&lt;b&gt;card&lt;/b&gt;" in text and "<b>card</b>" not in text and "<i>ok</i>" not in text
     team = base | {"steps": ["declined_card: needs a person, this truck has 2 drivers and X is not clearly one of them", "hand_to_office: x"]}
     assert replay.handed_for(team) == "team truck: can't tell which driver wrote" and replay.handed_for(base) is None
     assert replay.handed_for(base | {"steps": ["hand_to_office: wants a money code"]}).startswith("not a card opening")
+    # the reason comes from the rules' own step, not from a word in the note Claude wrote
+    assert replay.handed_for(base | {"steps": ["hand_to_office: his card shows ACTIVE in eManager"]}).startswith("not a card opening")
+    # a case with a trace shows its thoughts between the tools, escaped; its last words are shown once
+    traced = replay.page([base | {"said": "all done", "trace": [["thought", "is it <declined>?"], ["used", "reply_to_driver"],
+                                                               ["said", "all done"]]}], "how")
+    assert traced.index("is it &lt;declined&gt;?") < traced.index("&lt;i&gt;ok&lt;/i&gt;") and traced.count("all done") == 1
 
 
 # During a case the agent's clock is the moment the driver wrote, and purchases are cut off at that moment in Central

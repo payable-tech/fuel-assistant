@@ -168,7 +168,8 @@ def test_reply_guards(world):
 
 
 # How Claude is called: this PC's Claude Code login (no key), none of Claude Code's own tools or settings, only these
-# four tools by their server names, the model and limits from config, the photos as pictures before the text.
+# four tools by their server names, the model and limits from config, the photos as pictures before the text. Its
+# thinking is asked for as text, and the run's trace keeps what it thought, used and wrote, in order.
 def test_claude_call(world, monkeypatch, tmp_path):
     from features.cards import claude
     seen = {}
@@ -176,6 +177,9 @@ def test_claude_call(world, monkeypatch, tmp_path):
     async def fake_query(prompt, options):
         seen["options"] = options
         seen["message"] = [m async for m in prompt]
+        yield claude.AssistantMessage(model="m", content=[
+            claude.ThinkingBlock(thinking="he is at the pump", signature="s"), claude.ThinkingBlock(thinking="", signature="s"),
+            claude.ToolUseBlock(id="1", name="mcp__fuel__declined_card", input={}), claude.TextBlock(text="done")])
         yield claude.ResultMessage(subtype="success", duration_ms=1, duration_api_ms=1, is_error=False, num_turns=1,
                                    session_id="s", total_cost_usd=0.01, result="done")
 
@@ -183,6 +187,8 @@ def test_claude_call(world, monkeypatch, tmp_path):
     got = asyncio.run(claude.run("rules", "the chat", [b"\xff\xd8jpg"], task().tools(), tmp_path / "w"))
     options = seen["options"]
     assert got.text == "done" and got.problem == ""
+    assert got.trace == (("thought", "he is at the pump"), ("used", "declined_card"), ("said", "done"))
+    assert options.thinking == {"type": "adaptive", "display": "summarized"}
     assert options.tools == [] and options.permission_mode == "dontAsk" and options.setting_sources == []
     assert options.allowed_tools == ["mcp__fuel__declined_card", "mcp__fuel__look_up_card", "mcp__fuel__reply_to_driver",
                                      "mcp__fuel__hand_to_office"]
