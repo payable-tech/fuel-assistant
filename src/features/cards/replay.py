@@ -349,7 +349,7 @@ def _conversation(r: dict) -> str:
 <div class="label">What the agent did{e(cost)}</div>{steps or '<div class="step">(it used no tool)</div>'}{office}
 <div class="step"><b>its own explanation at the end</b> {e(r.get('said') or '(none)')}{' · stopped: ' + e(r['problem']) if r.get('problem') else ''}
 <b>recorded outcome</b> {e(str(r['outcome']))}{' · error: ' + e(str(r['error'])) if r.get('error') else ''}</div>
-<div class="label">What was really written afterwards</div>{after or '<div class="m after">(nothing)</div>'}"""
+<div class="label">{e(r.get('after_label') or 'What was really written afterwards')}</div>{after or '<div class="m after">(nothing)</div>'}"""
 
 
 # One use of a tool as a report block: what Claude asked of it and what it answered; a reply that went out is also

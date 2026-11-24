@@ -40,6 +40,7 @@ class Request:
         self.efs = fake_cards if self.test else fuel_cards  # the test group's card is a pretend one
         self.steps: list[str] = []
         self.talk: list[dict] = []   # each use of a tool by Claude: what it asked and what it was answered
+        self.posts: list[str] = []   # what was posted to the office for this request
         self.opened: str | None = None
         self.opened_at: datetime | None = None
         self.replied = self.handed = False
@@ -135,6 +136,7 @@ class Request:
     # Posts to the office's chat (the test group when none is set); a post that fails is logged, never raised.
     async def office(self, text: str) -> None:
         chat = settings.AGENT_OFFICE_CHAT_ID or config.TEST_CHAT_ID
+        self.posts.append(text)
         if not chat:
             log.warning("No office chat for the card agent: %s", text)
             return

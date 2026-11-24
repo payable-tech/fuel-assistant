@@ -89,7 +89,9 @@ async def work(task: Request, chat: list[ChatLine]) -> None:
             outcome = task.outcome() or (f"stopped: {said.problem}" if said.problem else
                                          f"nothing to do: {said.text[:200]}")
             record = json.dumps({"sender": task.sender, "given": given, "trace": said.trace, "talk": task.talk,
-                                 "said": said.text, "problem": said.problem, "cost": said.cost_usd}, ensure_ascii=False)
+                                 "said": said.text, "problem": said.problem, "cost": said.cost_usd, "office": task.posts,
+                                 "chat": [{"at": c.at.isoformat(), "sender": c.sender, "ours": c.ours, "text": c.text,
+                                           "photo": bool(c.photo)} for c in chat]}, ensure_ascii=False)
     except Exception as failure:
         error, outcome = repr(failure)[:500], "failed"
         log.exception("Card agent failed on %s / %s", task.chat_id, task.message_id)

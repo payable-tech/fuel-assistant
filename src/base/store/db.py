@@ -666,6 +666,13 @@ def agent_jobs_since(conn: sqlite3.Connection, since: datetime) -> int:
                         (_ts(since),)).fetchone()[0]
 
 
+# The card agent's runs since a moment, newest first, each as its row.
+def agent_runs_since(conn: sqlite3.Connection, since: datetime) -> list[dict]:
+    return [dict(row) for row in conn.execute(
+        "SELECT chat_id, message_id, unit, woke_at, text, outcome, steps, opened_card, opened_at, error, record "
+        "FROM agent_runs WHERE woke_at >= ? ORDER BY woke_at DESC", (_ts(since),))]
+
+
 # True when the card agent took a request in this chat since a moment (a bare tag right after joins that one).
 def agent_run_since(conn: sqlite3.Connection, chat_id: int, since: datetime) -> bool:
     return conn.execute("SELECT 1 FROM agent_runs WHERE chat_id = ? AND woke_at >= ? LIMIT 1",
