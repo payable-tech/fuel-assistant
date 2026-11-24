@@ -305,7 +305,7 @@ button.msg:hover, button.msg:focus-visible { outline: 2px solid var(--text); out
 .cover-table .msg { width: 11px; height: 11px; border: 0; }
 .cover-table .total th, .cover-table .total td { border-bottom: 0; border-top: 1px solid var(--line); }
 .cover-table .total th { font-weight: 600; }
-.cover { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 2px 8px; min-width: 130px; }
+.cover { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 2px 8px; min-width: 110px; }
 .cover b { font-size: 19px; font-weight: 600; }
 .cover small { color: var(--faint); font-size: 12px; white-space: nowrap; }
 .cover i { grid-column: 1 / -1; display: block; height: 5px; border-radius: 3px; background: var(--grid); overflow: hidden; }
@@ -318,7 +318,6 @@ button.msg:hover, button.msg:focus-visible { outline: 2px solid var(--text); out
 .missing-head b { font-size: 16px; font-weight: 600; }
 .missing li > i { display: block; height: 5px; border-radius: 3px; background: var(--grid); overflow: hidden; }
 .missing u { display: block; height: 100%; border-radius: 3px; }
-.missing small { color: var(--faint); font-size: 12px; }
 .fleet-clear:focus-visible, .fleet-chip:focus-visible, .col-filter:focus-visible { outline: 2px solid var(--s1); outline-offset: 1px; }
 /* each group's color comes from the page's labels (js/labels.js), the same on a box, a group's mark and a row */
 /* over the table: its name, how many trucks it lists, and the filter in words, each part a chip with a cross */
@@ -362,9 +361,12 @@ button.msg:hover, button.msg:focus-visible { outline: 2px solid var(--text); out
 .sort { font: inherit; padding: 0; border: 0; background: none; color: var(--faint); cursor: pointer; white-space: nowrap; }
 .sort:hover, .sort.on { color: var(--text); }
 .fleet-table .msg-kind { cursor: default; }
+.efs-cards { display: inline-flex; flex-wrap: wrap; gap: 2px 12px; }  /* a unit's EFS cards in use, side by side */
+.efs-cards small { color: var(--warn); font-size: 12px; }
 .fleet-table .msg { width: 11px; height: 11px; border: 0; }
 .fleet-table { font-size: 13px; }
-.fleet-table td { padding: 7px 12px; }
+.fleet-table th, .fleet-table td { padding: 7px 8px; }
+.fleet-table td:nth-child(3) { max-width: 250px; overflow: hidden; text-overflow: ellipsis; }  /* a team's two names don't push the table wide */
 .fleet-table .fleet-todo { color: var(--muted); }  /* on one line, so every row is the same height */
 
 /* ---------- Recommend view: the screen's full width; the truck list on the left stays in sight while the page

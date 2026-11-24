@@ -1,13 +1,15 @@
-// The fleet status on top of the Drivers view. On top, a summary of the fleet, a picture only: one bar of the trucks by
-// what they have (Samsara working, a fuel card assigned, both, neither), a grid of driver type against the same, and
-// what is missing, biggest first; for the trucks on duty or for all of them. Under it, the units as a table, one row
-// per truck, and the table is where the filtering is done: every column's heading sorts by it and opens its filter.
-// Several choices in one column are either-or; the columns together narrow the list down.
+// The fleet status on top of the Drivers view, built on the unit master: one row per Datatruck truck with what each
+// source says of it (Datatruck, Samsara, EFS). On top, a summary, a picture only: one bar of the trucks by what they
+// have (Samsara working, an active card in EFS, both, neither), a grid of driver type against the same, and what is
+// missing, biggest first; for the trucks on duty or for all of them. Under it, the units as a table, and the table is
+// where the filtering is done: every column's heading sorts by it and opens its filter. Several choices in one column
+// are either-or; the columns together narrow the list down.
 import { el } from './dom.js';
 import { ago, fmt, personName, plural } from './format.js';
-import { FLEET, TRUCK_STATUS } from './labels.js';
+import { FLEET } from './labels.js';
 
 const HOUR = 3600 * 1000;
+const EFS_COLOR = { ACTIVE: '--good', HOLD: '--warn', 'HOLD FOR FRAUD': '--bad' };  // an EFS card's mark, by its status
 
 // One of the questions asked of every truck, by its key.
 const question = (key) => FLEET.find((q) => q.key === key);
@@ -30,33 +32,27 @@ function age(when) {
   return hours < 1 ? 'hour' : hours < 24 ? 'day' : 'old';
 }
 
-// The choices the gauge is filtered by, and the one a level falls in (10% is the reserve, 25% the level a stop is told at).
-const LEVELS = [{ k: 'low', label: 'Under 10%' }, { k: 'quarter', label: '10% to 25%' }, { k: 'half', label: '25% to 50%' },
-  { k: 'high', label: 'Over 50%' }, { k: 'none', label: 'No reading' }];
-const level = (pct) => (pct == null ? 'none' : pct < 10 ? 'low' : pct < 25 ? 'quarter' : pct < 50 ? 'half' : 'high');
+// Cards as people name them, by their last four digits: "…7539, …0482".
+const numbers = (list) => list.map((n) => `…${n}`).join(', ');
 
-// The choices the diesel bought is filtered by, and the one a truck's gallons fall in.
-const BOUGHT = [{ k: 'none', label: 'None' }, { k: 'some', label: 'Under 500 gal' }, { k: 'more', label: '500 to 1,500 gal' },
-  { k: 'most', label: 'Over 1,500 gal' }];
-const bought = (gallons) => (!gallons ? 'none' : gallons < 500 ? 'some' : gallons < 1500 ? 'more' : 'most');
+// The unit's EFS cards that are in use (any status but INACTIVE), the active ones first.
+const inUse = (t) => t.efs.filter((c) => c.status !== 'INACTIVE').sort((a, b) => (a.status !== 'ACTIVE') - (b.status !== 'ACTIVE'));
 
 // A column filtered by one of the questions: its choices are the question's groups.
 const asked = (key) => ({ key, name: question(key).name, by: (t) => place(key, t), of: (t) => t[key], choices: question(key).parts });
 
-// The table's columns: the heading, what a truck is sorted by, and how it is filtered: `text` (what is typed must be
-// in it), or `choices` with `of` (the choice a truck falls in). A column with neither is not filtered.
+// The table's columns, each from one source: the heading, what a truck is sorted by, and how it is filtered: `text`
+// (what is typed must be in it), or `choices` with `of` (the choice a truck falls in).
 const COLUMNS = [
   { key: 'unit', name: 'Unit', by: (t) => t.unit, text: (t) => t.unit },
-  { key: 'driver', name: 'Driver', by: (t) => personName(t.driver), text: (t) => t.driver || 'no active driver' },
-  asked('status'), asked('duty'), asked('type'), asked('samsara'), asked('card'),
-  { key: 'cards', name: 'Card no.', by: (t) => cardNumbers(t), text: (t) => cardNumbers(t) },
+  asked('type'),
+  { key: 'driver', name: 'Drivers', by: (t) => personName(t.driver), text: (t) => t.driver || 'no active driver' },
+  asked('status'), asked('duty'),
+  { key: 'cards', name: 'Card in Datatruck', by: (t) => numbers(t.cards), text: (t) => numbers(t.cards) },
+  { key: 'efs', name: 'Card in EFS', by: (t) => numbers(inUse(t).map((c) => c.last4)),
+    text: (t) => t.efs.map((c) => `…${c.last4} ${c.status} ${c.name || ''}`).join(' ') },
+  asked('match'), asked('samsara'),
   { key: 'gps', name: 'Last GPS', by: (t) => t.gps_at || '', of: (t) => age(t.gps_at), choices: AGES },
-  { key: 'gauge', name: 'Gauge', by: (t) => t.fuel_pct ?? -1, of: (t) => level(t.fuel_pct), choices: LEVELS },
-  { key: 'read', name: 'Gauge read', by: (t) => t.fuel_at || '', of: (t) => age(t.fuel_at), choices: AGES },
-  { key: 'gallons', name: 'Diesel bought', by: (t) => t.gallons, of: (t) => bought(t.gallons), choices: BOUGHT },
-  { key: 'live', name: 'Fuel messages', by: (t) => (t.live ? 1 : 0), of: (t) => (t.live ? 'yes' : 'no'),
-    choices: [{ k: 'yes', label: 'Gets them' }, { k: 'no', label: 'Does not' }] },
-  { key: 'todo', name: 'What to do', by: (t) => group('samsara', t.samsara).todo || '' },
 ];
 
 let scope = 'duty';                        // the trucks the summary covers: 'duty' (on duty) or 'all'; kept across refreshes
@@ -67,19 +63,16 @@ let open = null;                           // the column whose filter is open, b
 const picked = Object.fromEntries(COLUMNS.map((c) => [c.key, new Set()]));
 const typed = Object.fromEntries(COLUMNS.filter((c) => c.text).map((c) => [c.key, '']));
 
-// True for a truck with Samsara working and a fuel card assigned.
-const both = (t) => t.samsara === 'working' && t.card === 'card';
+// True for a truck with Samsara working and an active card in EFS.
+const both = (t) => t.samsara === 'working' && t.card === 'active';
 
 // What a truck has, in four groups that every truck is in exactly one of.
 const HAVE = [
-  { label: 'Samsara working and a card assigned', color: '--good', has: both },
-  { label: 'A card assigned, Samsara not working', color: '--bad', has: (t) => t.card === 'card' && t.samsara !== 'working' },
-  { label: 'Samsara working, no card assigned', color: '--warn', has: (t) => t.samsara === 'working' && t.card !== 'card' },
-  { label: 'Neither', color: '--s4', has: (t) => t.samsara !== 'working' && t.card !== 'card' },
+  { label: 'Samsara + active card', color: '--good', has: both },
+  { label: 'Card, no Samsara', color: '--bad', has: (t) => t.card === 'active' && t.samsara !== 'working' },
+  { label: 'Samsara, no active card', color: '--warn', has: (t) => t.samsara === 'working' && t.card !== 'active' },
+  { label: 'Neither', color: '--s4', has: (t) => t.samsara !== 'working' && t.card !== 'active' },
 ];
-
-// A truck's cards as people name them, by their last four digits: "…7539, …0482"; nothing without a card.
-const cardNumbers = (t) => (t.cards || []).map((n) => `…${n}`).join(', ');
 
 // Orders two trucks by unit number, numbers by their value ("9" before "10").
 const byUnit = (a, b) => a.unit.localeCompare(b.unit, 'en', { numeric: true });
@@ -94,7 +87,7 @@ function passesColumn(t, c) {
 }
 
 // True when a truck passes every column's filter; `but` leaves one column out (for that column's own counts).
-const passes = (t, but = null) => COLUMNS.every((c) => c.key === but || (!c.text && !c.choices) || passesColumn(t, c));
+const passes = (t, but = null) => COLUMNS.every((c) => c.key === but || passesColumn(t, c));
 
 // Wires what stays on the page: a click outside an open filter, or Escape, closes it. The click's own path is asked,
 // because a click inside the filter redraws it before this is reached.
@@ -111,9 +104,10 @@ export function initFleet() {
 // Draws the fleet status from fresh numbers. A truck's duty is given the same shape as its other groups, and a
 // status the page has no name for becomes "other".
 export function renderFleet(d) {
-  shown = { ...d, trucks: d.trucks.map((t) => ({ ...t, duty: t.on_duty ? 'on' : 'off', status: t.status in TRUCK_STATUS ? t.status : 'other' })) };
-  document.getElementById('fleet-meta').textContent = `${plural(d.trucks.length, 'truck')} in Datatruck `
-    + `· Samsara's newest position ${since(d.samsara_at)} · trucks, drivers and cards synced ${since(d.synced_at)}`;
+  const known = question('status').parts.map((p) => p.k);
+  shown = { ...d, trucks: d.trucks.map((t) => ({ ...t, duty: t.on_duty ? 'on' : 'off', status: known.includes(t.status) ? t.status : 'other' })) };
+  document.getElementById('fleet-meta').textContent = `${plural(d.trucks.length, 'truck')} · one row per unit · read from Datatruck ${since(d.synced_at)}, `
+    + `Samsara ${since(d.samsara_at)}, EFS ${since(d.efs_at)}`;
   drawSummary();
   drawTable();
 }
@@ -138,12 +132,11 @@ function drawSummary() {
   const all = shown.trucks, duty = all.filter((t) => t.on_duty);
   const list = scope === 'duty' ? duty : all;
   document.getElementById('fleet-tools').replaceChildren(
-    seg('Which trucks', [['duty', `On duty  ${duty.length}`], ['all', `All trucks  ${all.length}`]], scope, (k) => { scope = k; drawSummary(); }),
-    el('p', { class: 'meta' }, `The ${plural(list.length, 'truck')} ${scope === 'duty' ? 'on duty: in transit or available, with an active driver' : 'in Datatruck, driven or not'}.`));
+    seg('Which trucks', [['duty', `On duty  ${duty.length}`], ['all', `All trucks  ${all.length}`]], scope, (k) => { scope = k; drawSummary(); }));
   document.getElementById('fleet-board').replaceChildren(have(list), el('div', { class: 'board-pair' }, grid(list), missing(list)));
 }
 
-// The trucks by what they have, as one bar and its key: both Samsara working and a card assigned, one of them, or
+// The trucks by what they have, as one bar and its key: both Samsara working and an active card, one of them, or
 // neither.
 function have(list) {
   const parts = HAVE.map((p) => ({ ...p, n: list.filter(p.has).length })).filter((p) => p.n);
@@ -158,39 +151,38 @@ function have(list) {
 // color runs from red (none) to green (all).
 function cover(n, of) {
   const share = of ? n / of : 0;
-  return el('td', {}, el('div', { class: 'cover' }, el('b', {}, fmt.count(n)), el('small', {}, `of ${fmt.count(of)} · ${fmt.percent(share)}`),
+  return el('td', {}, el('div', { class: 'cover' }, el('b', {}, fmt.count(n)), el('small', {}, fmt.percent(share)),
     el('i', {}, el('u', { style: `width: ${share * 100}%; background: color-mix(in srgb, var(--good) ${share * 100}%, var(--bad))` }))));
 }
 
 // The grid: a row per driver type and one for them all; across, the trucks, then how many of them have Samsara
-// working, a card assigned, and both.
+// working, an active card in EFS, and both.
 function grid(list) {
   const line = (name, trucks, cls = '') => el('tr', { class: cls },
     el('th', { class: 'left' }, name),
-    el('td', {}, el('div', { class: 'cover' }, el('b', {}, fmt.count(trucks.length)), el('small', {}, `${fmt.percent(trucks.length / list.length)} of these trucks`),
+    el('td', {}, el('div', { class: 'cover' }, el('b', {}, fmt.count(trucks.length)), el('small', {}, fmt.percent(trucks.length / list.length)),
       el('i', {}, el('u', { style: `width: ${(trucks.length / list.length) * 100}%; background: var(--s1)` })))),
     cover(trucks.filter((t) => t.samsara === 'working').length, trucks.length),
-    cover(trucks.filter((t) => t.card === 'card').length, trucks.length),
+    cover(trucks.filter((t) => t.card === 'active').length, trucks.length),
     cover(trucks.filter(both).length, trucks.length));
   const rows = question('type').parts.map((p) => ({ p, trucks: list.filter((t) => t.type === p.k) })).filter(({ trucks }) => trucks.length);
   return el('div', { class: 'board-part' }, el('div', { class: 'thread-label' }, 'By driver type'),
     el('table', { class: 'cover-table' },
-      el('thead', {}, el('tr', {}, ...['', 'Trucks', 'Samsara working', 'Fuel card assigned', 'Both'].map((h) => el('th', { class: 'left' }, h)))),
-      el('tbody', {}, ...rows.map(({ p, trucks }) => line(el('span', { class: 'msg-kind', title: p.tip }, mark(p, 'msg'), p.tip || p.label), trucks)),
-        line('All of them', list, 'total'))));
+      el('thead', {}, el('tr', {}, ...['', 'Trucks', 'Samsara working', 'Active card in EFS', 'Both'].map((h) => el('th', { class: 'left' }, h)))),
+      el('tbody', {}, ...rows.map(({ p, trucks }) => line(el('span', { class: 'msg-kind', title: p.tip }, mark(p, 'msg'), p.name || p.label), trucks)),
+        line('All', list, 'total'))));
 }
 
-// What is missing: every group of the Samsara and fuel card questions that is not the good one, biggest first, with
-// its count, a bar against all the trucks covered, and what to do about it.
+// What is missing: every group of the Samsara and card questions that is not the good one, biggest first, with its
+// count and a bar against all the trucks covered. What to do about it shows when it is pointed at.
 function missing(list) {
   const rows = ['samsara', 'card'].flatMap((key) => question(key).parts.slice(1).map((p) => ({ key, p, n: list.filter((t) => t[key] === p.k).length })))
     .filter((r) => r.n).sort((a, b) => b.n - a.n);
   return el('div', { class: 'board-part' }, el('div', { class: 'thread-label' }, 'What is missing'),
-    rows.length ? el('ul', { class: 'missing' }, ...rows.map(({ key, p, n }) => el('li', {},
+    rows.length ? el('ul', { class: 'missing' }, ...rows.map(({ key, p, n }) => el('li', { title: p.todo || p.tip },
       el('div', { class: 'missing-head' }, mark(p, 'msg'), el('span', {}, `${question(key).name}: ${p.label}`), el('b', {}, fmt.count(n))),
-      el('i', {}, el('u', { style: `width: ${(n / list.length) * 100}%; background: var(${p.color})` })),
-      el('small', {}, p.todo || p.tip || ''))))
-      : el('p', { class: 'meta' }, 'Nothing: every truck has Samsara working and a card assigned.'));
+      el('i', {}, el('u', { style: `width: ${(n / list.length) * 100}%; background: var(${p.color})` })))))
+      : el('p', { class: 'meta' }, 'Nothing: every truck has Samsara working and an active card.'));
 }
 
 // A group's color mark: filled in its color, or hollow for the one drawn as an outline; nothing for a choice with no
@@ -231,19 +223,17 @@ function chip(c) {
   return button;
 }
 
-// A column's heading: its name (a click sorts by it; again turns the order) and, when it can be filtered, the button
-// that opens its filter, lit while the column is filtered.
+// A column's heading: its name (a click sorts by it; again turns the order) and the button that opens its filter, lit
+// while the column is filtered.
 function head(c, i) {
   const on = i === sortBy.column;
   const sort = el('button', { type: 'button', class: on ? 'sort on' : 'sort', title: 'Sort by this column' },
     c.name, el('i', { class: 'sort-way' }, on ? (sortBy.down ? '↓' : '↑') : '↕'));
   sort.addEventListener('click', () => { sortBy = { column: i, down: on ? !sortBy.down : false }; drawTable(); });
-  const filter = (c.text || c.choices) && el('button', { type: 'button', class: filtered(c) ? 'col-filter on' : 'col-filter',
+  const filter = el('button', { type: 'button', class: filtered(c) ? 'col-filter on' : 'col-filter',
     'data-col': c.key, 'aria-label': `Filter by ${c.name}`, 'aria-expanded': String(open === c.key), title: `Filter by ${c.name}` });
-  if (filter) {
-    filter.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M4.5 8h7M7 12h2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
-    filter.addEventListener('click', () => { open = open === c.key ? null : c.key; drawTable(); if (!open) closeFilter(); });
-  }
+  filter.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M4.5 8h7M7 12h2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+  filter.addEventListener('click', () => { open = open === c.key ? null : c.key; drawTable(); if (!open) closeFilter(); });
   return el('th', { class: 'left', 'aria-sort': on ? (sortBy.down ? 'descending' : 'ascending') : null },
     el('div', { class: 'col-head' }, sort, filter));
 }
@@ -266,14 +256,13 @@ function drawFilter() {
   clear.addEventListener('click', () => { picked[c.key].clear(); if (c.text) typed[c.key] = ''; drawTable(); });
   const done = el('button', { type: 'button', class: 'fleet-clear' }, 'Done');
   done.addEventListener('click', closeFilter);
-  const typing = pop.contains(document.activeElement) && document.activeElement.tagName === 'INPUT' && document.activeElement.type === 'search';
   pop.replaceChildren(el('div', { class: 'pop-head' }, c.name), body, el('div', { class: 'pop-foot' }, clear, done));
   pop.hidden = false;
   const at = anchor.getBoundingClientRect();
   pop.style.top = `${at.bottom + window.scrollY + 6}px`;
   pop.style.left = `${Math.max(8, Math.min(at.left + window.scrollX - 8, window.scrollX + document.documentElement.clientWidth - pop.offsetWidth - 8))}px`;
   const box = pop.querySelector('input[type="search"]');
-  if (box && (typing || c.text)) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+  if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
 }
 
 // A text column's filter: what is typed must be in the truck's value.
@@ -299,15 +288,28 @@ function choiceFilter(c) {
   }));
 }
 
-// A group's color mark and name, for one truck.
-const tag = (t, key) => el('span', { class: 'msg-kind' }, mark(group(key, t[key]), 'msg'), group(key, t[key]).label);
+// A group's color mark and name, for one truck; what the group means, or what to do about it, shows when pointed at.
+function tag(t, key) {
+  const part = group(key, t[key]);
+  return el('span', { class: 'msg-kind', title: part.todo || part.tip }, mark(part, 'msg'), part.label);
+}
 
-// One truck's line in the table, its cells in the columns' order; a reading older than a day, or none, is in red.
+// A unit's cards in EFS: each card in use by its last four digits with a mark in the color of its status (and the
+// status in words when it is not ACTIVE); the name on the card and its account show when pointed at. With only
+// inactive cards, how many; a dash with none.
+function efsCell(t) {
+  const cards = inUse(t), idle = t.efs.length - cards.length;
+  if (!cards.length) return el('span', { class: 'meta' }, idle ? `${idle} inactive` : '—');
+  return el('span', { class: 'efs-cards' }, ...cards.map((c) => el('span', { class: 'msg-kind', title: `${c.name || 'no name on the card'} · ${c.account}` },
+    el('i', { class: 'msg', style: `background: var(${EFS_COLOR[c.status] || '--s4'})` }), `…${c.last4}`,
+    c.status !== 'ACTIVE' && el('small', {}, c.status.toLowerCase()))));
+}
+
+// One truck's line in the table, its cells in the columns' order; a position older than a day, or none, is in red.
 function row(t) {
-  const old = (when) => (!when || new Date() - new Date(when) > 24 * HOUR ? 'left off' : 'left');
+  const old = !t.gps_at || new Date() - new Date(t.gps_at) > 24 * HOUR;
   const cell = (text, cls = 'left') => el('td', { class: cls }, text);
-  return el('tr', {}, el('td', {}, el('b', {}, t.unit)), cell(personName(t.driver)), cell(group('status', t.status).label),
-    cell(t.on_duty ? 'On duty' : 'Not on duty'), cell(tag(t, 'type')), cell(tag(t, 'samsara')), cell(tag(t, 'card')), cell(cardNumbers(t)),
-    cell(since(t.gps_at), old(t.gps_at)), cell(fmt.level(t.fuel_pct)), cell(since(t.fuel_at), old(t.fuel_at)),
-    cell(fmt.wholeGallons(t.gallons)), cell(t.live ? 'Yes' : ''), cell(group('samsara', t.samsara).todo || '', 'left fleet-todo'));
+  return el('tr', {}, el('td', {}, el('b', {}, t.unit)), cell(tag(t, 'type')), cell(personName(t.driver)), cell(group('status', t.status).label),
+    cell(t.on_duty ? 'Yes' : 'No'), cell(t.cards.length ? numbers(t.cards) : el('span', { class: 'meta' }, '—')), cell(efsCell(t)),
+    cell(tag(t, 'match')), cell(tag(t, 'samsara')), cell(since(t.gps_at), old ? 'left off' : 'left'));
 }

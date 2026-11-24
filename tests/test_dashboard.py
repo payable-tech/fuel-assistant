@@ -99,14 +99,13 @@ def test_truck_list_has_positions():
     assert (row["where"], row["place"], row["fuel_pct"]) == ([30.2, -97.1], "Austin, TX", 40.0)
 
 
-# The fleet status has every Datatruck truck, linked to Samsara or not: a driven truck that reports, one whose only
-# card sits on a driver who left but that bought fuel yesterday, and one in the shop that Samsara names under another VIN.
+# The fleet status has every Datatruck truck, linked to Samsara or not: a driven truck that reports, with two cards in
+# Datatruck of which EFS has one; one whose only Datatruck card sits on a driver who left, with a held card in EFS; and
+# one in the shop that Samsara names under another VIN, with no card anywhere.
 def test_fleet_status():
-    from base.fuel import CENTRAL
-    from base.models import DatatruckDriver, DatatruckTruck, FuelCard, SamsaraLive, SamsaraVehicle
+    from base.models import DatatruckDriver, DatatruckTruck, EfsCardRow, FuelCard, SamsaraLive, SamsaraVehicle
     now = datetime.now(timezone.utc)
-    bought = FuelLine(1, f"{now.astimezone(CENTRAL) - timedelta(days=1):%Y-%m-%d %H:%M}", "fuel", "ULSD", 100, 600, 550, 0.0, False,
-                      "LOVES #7 TRAVEL STOP", "Near", "TX", "TTL", "900", "company", 8, "Gone", "lease", 2)
+    efs = lambda card_id, unit, name, status: EfsCardRow(card_id, f"556748******{card_id[-4:]}", "1", unit, "4455", name, "", status)
     with db.connect() as conn:
         db.replace_dt_trucks(conn, [DatatruckTruck(1, "340", "V", "in_transit", "company"), DatatruckTruck(2, "900", "W", "available", "company"),
                                     DatatruckTruck(3, "901", "X", "shop", None)])
@@ -115,15 +114,16 @@ def test_fleet_status():
         db.replace_fuel_cards(conn, [FuelCard(1, "TTL", "driver", 7, "340", True, "retail_plus_fee", True, "7539"),
                                      FuelCard(3, "TTL", "driver", 7, "340", True, "retail_plus_fee", True, "0482"),
                                      FuelCard(2, "TTL", "driver", 8, "900", True, "retail_plus_fee", True, "1111")])
+        db.replace_efs_cards(conn, "ALIF", [efs("c7539", "340", "ALI", "ACTIVE"), efs("c0001", "340", "OLD DRIVER", "INACTIVE"),
+                                            efs("c1111", "900", "GONE", "HOLD FOR FRAUD"), efs("c9999", "99999", "ALIF UZ CORP", "INACTIVE")])
         db.replace_samsara_vehicles(conn, [SamsaraVehicle("9", "TTL Unit 901", "Z", None, None)])
         db.replace_samsara_live(conn, [SamsaraLive("1", 30.2, -97.1, "Austin, TX", now, 40.0, now)])
-        db.replace_fuel_lines(conn, [bought])
     d = dashboard.fleet_payload()
-    rows = {t["unit"]: (t["on_duty"], t["type"], t["samsara"], t["card"]) for t in d["trucks"]}
-    assert rows == {"340": (True, "LO", "working", "card"), "900": (False, "none", "none", "fueled"),
-                    "901": (False, "none", "mismatch", "nocard")}
-    assert d["samsara_at"] == now.isoformat(timespec="seconds") and d["synced_at"] and d["trucks"][0]["driver"] == "ALI (LO)"
-    # the cards of a truck's active drivers by their last four digits; a card on a driver who left is not the truck's
+    rows = {t["unit"]: (t["on_duty"], t["type"], t["samsara"], t["card"], t["match"]) for t in d["trucks"]}
+    assert rows == {"340": (True, "LO", "working", "active", "differ"), "900": (False, "none", "none", "held", "efs"),
+                    "901": (False, "none", "mismatch", "none", "none")}
+    assert d["samsara_at"] == now.isoformat(timespec="seconds") and d["synced_at"] and d["efs_at"] and d["trucks"][0]["driver"] == "ALI (LO)"
+    # Datatruck's cards are those of the truck's active drivers; EFS's are every card carrying its unit number
     assert {t["unit"]: sorted(t["cards"]) for t in d["trucks"]} == {"340": ["0482", "7539"], "900": [], "901": []}
-    # the diesel each truck bought lately, for its column: unit 900 bought 100 gal yesterday, the others none
-    assert {t["unit"]: t["gallons"] for t in d["trucks"]} == {"340": 0, "900": 100, "901": 0} and d["gallons_days"] == 30
+    assert sorted((c["last4"], c["status"], c["name"], c["account"]) for c in d["trucks"][0]["efs"]) == \
+        [("0001", "INACTIVE", "OLD DRIVER", "ALIF"), ("7539", "ACTIVE", "ALI", "ALIF")]

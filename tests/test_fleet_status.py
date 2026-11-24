@@ -1,16 +1,17 @@
-# Tests the fleet status rules: on duty, the truck's type, whether Samsara works for it, and its fuel card.
+# Tests the fleet status rules: on duty, the truck's type, whether Samsara works for it, how its card stands in EFS, and
+# whether Datatruck's cards and EFS's match.
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
-from base.models import FleetTruck
+from base.models import Unit, UnitCard
 from features.dashboard import fleet_status
 
 NOW = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)
 DAY = timedelta(hours=24)
-# A truck with nothing wrong: driven, linked to Samsara, both readings an hour old, a card assigned.
-GOOD = FleetTruck(unit="101", status="in_transit", driver="ALI (LO)", driver_type="lease", samsara_name="TTL Unit 101",
-                  gps_at=NOW - timedelta(hours=1), fuel_pct=60.0, fuel_at=NOW - timedelta(hours=1), has_card=True,
-                  fueled_at="2026-11-19 08:00")
+MINE = UnitCard("7539", "ACTIVE", "ALI", "ALIF")
+# A unit with nothing wrong: driven, linked to Samsara, both readings an hour old, the same active card on both sides.
+GOOD = Unit(unit="101", status="in_transit", driver="ALI (LO)", driver_type="lease", samsara_name="TTL Unit 101",
+            gps_at=NOW - timedelta(hours=1), fuel_pct=60.0, fuel_at=NOW - timedelta(hours=1), cards=("7539",), efs=(MINE,))
 
 
 # On duty needs both a working status and a driver.
@@ -47,10 +48,22 @@ def test_samsara_state():
     assert state(GOOD) == "working"
 
 
-# A card assigned wins; without one, a purchase on or after the day counted from tells the two other groups apart.
+# The card in EFS: an active one wins; else one on hold; else only inactive ones; else none.
 def test_card_state():
-    since = "2026-11-06 06:00"
-    assert fleet_status.card_state(GOOD, since) == "card"
-    assert fleet_status.card_state(replace(GOOD, has_card=False), since) == "fueled"
-    assert fleet_status.card_state(replace(GOOD, has_card=False, fueled_at="2026-11-01 08:00"), since) == "nocard"
-    assert fleet_status.card_state(replace(GOOD, has_card=False, fueled_at=None), since) == "nocard"
+    old, held = UnitCard("1111", "INACTIVE", "GONE", "ALIF"), UnitCard("2222", "HOLD FOR FRAUD", "ALI", "DT")
+    assert fleet_status.card_state(replace(GOOD, efs=(old, held, MINE))) == "active"
+    assert fleet_status.card_state(replace(GOOD, efs=(old, held))) == "held"
+    assert fleet_status.card_state(replace(GOOD, efs=(old,))) == "inactive"
+    assert fleet_status.card_state(replace(GOOD, efs=())) == "none"
+
+
+# Datatruck's cards against EFS's cards in use, by their last four digits; a leftover inactive card in EFS is not
+# counted.
+def test_cards_match():
+    old, other = UnitCard("1111", "INACTIVE", "GONE", "ALIF"), UnitCard("0482", "HOLD", "ALI", "DT")
+    assert fleet_status.cards_match(replace(GOOD, efs=(MINE, old))) == "match"
+    assert fleet_status.cards_match(replace(GOOD, efs=(MINE, other))) == "differ"
+    assert fleet_status.cards_match(replace(GOOD, efs=(other,))) == "differ"
+    assert fleet_status.cards_match(replace(GOOD, efs=(old,))) == "datatruck"
+    assert fleet_status.cards_match(replace(GOOD, cards=())) == "efs"
+    assert fleet_status.cards_match(replace(GOOD, cards=(), efs=(old,))) == "none"

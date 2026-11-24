@@ -9,7 +9,7 @@ const SOURCE_NAME = {
   dt_orders: 'Active loads', dt_stops: 'Load stops', samsara_vehicles: 'Samsara vehicles', trucks: 'Linked trucks',
   tg_groups: 'Telegram groups', stores: "Love's prices",
   samsara_live: 'Truck positions and fuel', tank_estimates: 'Tank estimates', burn_factors: 'Engine fuel factors', fuel_stops: 'Driver fuel stops',
-  price_history: "Love's price history", price_files: "Love's price sheets read",
+  price_history: "Love's price history", price_files: "Love's price sheets read", efs_cards: 'EFS cards',
 };
 
 // Reads a stored UTC time ("2026-10-19 16:03:33+00:00") as a date.

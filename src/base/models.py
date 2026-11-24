@@ -287,21 +287,30 @@ class Truck:
     pilot: bool                     # one of the trucks you picked for the pilot
 
 
-# One Datatruck truck with what the fleet status is told from: who drives it, its Samsara link and newest readings,
-# its fuel card and its newest purchase. A row of db.fleet_status; unlike `fleet`, trucks with no Samsara link are in.
+# A fuel card as EFS has it on a unit: its last four digits, its status ("ACTIVE", "INACTIVE", "HOLD", "HOLD FOR
+# FRAUD"), the driver name on the card, and its account ("ALIF", "DT").
 @dataclass(frozen=True)
-class FleetTruck:
-    unit: str
+class UnitCard:
+    last4: str
+    status: str
+    name: str | None
+    account: str
+
+
+# One unit of the master (db.units): a Datatruck truck with what each source says of it. Nothing is typed into it; it
+# is put together from the sources' copies each time it is read.
+@dataclass(frozen=True)
+class Unit:
+    unit: str                       # Datatruck
     status: str                     # Datatruck's: "in_transit", "available", "shop", "yard"
-    driver: str | None              # active Datatruck driver(s) of this unit, "A & B" for a team; None when nobody is
-    driver_type: str | None         # the first driver's Datatruck type: "lease", "company_driver", "company_owner", "other"
-    samsara_name: str | None        # the Samsara vehicle linked by VIN; None when no Samsara vehicle has this VIN
-    gps_at: datetime | None         # latest Samsara GPS point
-    fuel_pct: float | None          # latest Samsara gauge reading
+    driver: str | None              # Datatruck: the active driver(s) of this unit, "A & B" for a team; None when nobody is
+    driver_type: str | None         # Datatruck: the first driver's type: "lease", "company_driver", "company_owner", "other"
+    samsara_name: str | None        # Samsara: the vehicle linked by VIN; None when no Samsara vehicle has this VIN
+    gps_at: datetime | None         # Samsara: latest GPS point
+    fuel_pct: float | None          # Samsara: latest gauge reading
     fuel_at: datetime | None
-    has_card: bool                  # an active fuel card on a driver active on this truck, or on the truck itself
-    fueled_at: str | None           # newest fuel purchase, local Central time "YYYY-MM-DD HH:MM"
-    cards: str | None = None        # those cards' last four digits, "7539, 0482"; None with no card (or none read yet)
+    cards: tuple[str, ...] = ()     # Datatruck: last four digits of the active cards on its active drivers, or on the truck itself
+    efs: tuple[UnitCard, ...] = ()  # EFS: the cards carrying this unit number, whatever their status
 
 
 # One diesel stop of a driver (purchases at one place grouped), with the truck's gauge around it. A row of `fuel_stops`.

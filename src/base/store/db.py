@@ -11,9 +11,9 @@ from datetime import datetime, timezone
 
 from base import config
 from base.models import (BurnFactor, DatatruckDriver, DatatruckTruck, EfsCardRow, EfsLine, EfsStatement, FillEvidence, FillLookup,
-                         FleetTruck, FuelCard, FuelLine, FuelStop, Order, Problem, Recommendation, Region,
+                         FuelCard, FuelLine, FuelStop, Order, Problem, Recommendation, Region,
                          SamsaraLive, SamsaraVehicle, SourceHealth, Stop, Store, SyncedTruck, TankEstimate, TelegramGroup,
-                         Truck, TruckBurn, Trip, TruckWatch, UsualLevel)
+                         Truck, TruckBurn, Trip, TruckWatch, Unit, UnitCard, UsualLevel)
 from base.store import schema
 
 _schema_lock = threading.Lock()
@@ -63,7 +63,8 @@ def _add_column(conn: sqlite3.Connection, table: str, column: str, kind: str) ->
 
 # Drops every refreshed table (its job refills it) and stamps the new schema version. Manual settings stay.
 def _rebuild(conn: sqlite3.Connection) -> None:
-    conn.executescript("BEGIN IMMEDIATE; DROP VIEW IF EXISTS holes; DROP VIEW IF EXISTS fleet; DROP VIEW IF EXISTS active_vehicles;"
+    conn.executescript("BEGIN IMMEDIATE; DROP VIEW IF EXISTS holes; DROP VIEW IF EXISTS fleet; DROP VIEW IF EXISTS units; "
+                       "DROP VIEW IF EXISTS active_vehicles;"
                        + "".join(f"DROP TABLE IF EXISTS {t};" for t in schema.SYNCED_TABLES)
                        + f"PRAGMA user_version = {schema.SCHEMA_VERSION}; COMMIT;")
 
@@ -318,39 +319,13 @@ def _truck(row: sqlite3.Row) -> Truck:
     return Truck(**{**row, "fuel_at": _dt(row["fuel_at"]), "gps_at": _dt(row["gps_at"]), "pilot": bool(row["pilot"])})
 
 
-# Returns every Datatruck truck for the fleet status, one row each, linked to Samsara or not: its active drivers (a
-# team's type is its first driver's), its Samsara readings, whether it has an active fuel card (and those cards' last
-# four digits), its newest purchase.
-# A card counts when its driver is active on this truck, or when it has no driver and is assigned to this unit: a
-# card's unit alone doesn't count, because many active cards still sit on drivers who left.
-def fleet_status(conn: sqlite3.Connection) -> list[FleetTruck]:
-    rows = conn.execute("""
-        WITH active AS (SELECT unit, driver_id, full_name, driver_type FROM dt_drivers
-                        WHERE employee_status = 'active' AND unit IS NOT NULL),
-             -- the units with a card, worked out once (asking the cards again for every truck takes seconds)
-             carded AS (SELECT a.unit, c.last4 FROM fuel_cards c JOIN active a ON a.driver_id = c.driver_id WHERE c.active
-                        UNION SELECT unit, last4 FROM fuel_cards WHERE active AND driver_id IS NULL AND unit IS NOT NULL),
-             fueled AS (SELECT unit, MAX(fueled_at) AS fueled_at FROM fuel_lines GROUP BY unit)
-        SELECT d.unit, d.status,
-               (SELECT group_concat(full_name, ' & ') FROM active WHERE unit = d.unit) AS driver,
-               (SELECT driver_type FROM active WHERE unit = d.unit ORDER BY driver_id LIMIT 1) AS driver_type,
-               t.name AS samsara_name, l.gps_at, l.fuel_pct, l.fuel_at,
-               d.unit IN (SELECT unit FROM carded) AS has_card, f.fueled_at,
-               (SELECT group_concat(last4, ', ') FROM carded WHERE unit = d.unit) AS cards
-        FROM dt_trucks d
-        LEFT JOIN trucks t ON t.unit = d.unit
-        LEFT JOIN samsara_live l ON l.samsara_id = t.samsara_id
-        LEFT JOIN fueled f ON f.unit = d.unit
-        ORDER BY d.unit""")
-    return [FleetTruck(**{**row, "gps_at": _dt(row["gps_at"]), "fuel_at": _dt(row["fuel_at"]), "has_card": bool(row["has_card"])})
-            for row in rows]
-
-
-# The diesel gallons each unit bought on or after a local day ("YYYY-MM-DD"), by unit.
-def diesel_by_unit(conn: sqlite3.Connection, since_day: str) -> dict[str, float]:
-    return {unit: gallons for unit, gallons in conn.execute(
-        "SELECT unit, SUM(gallons) FROM fuel_lines WHERE fueled_at >= ? AND transaction_type = 'fuel' AND product = 'ULSD' "
-        "AND gallons > 0 AND unit IS NOT NULL GROUP BY unit", (since_day,))}
+# The unit master: every Datatruck truck, one row each, with what Datatruck, Samsara and EFS say of it (the `units`
+# view), ordered by unit.
+def units(conn: sqlite3.Connection) -> list[Unit]:
+    return [Unit(**{**row, "gps_at": _dt(row["gps_at"]), "fuel_at": _dt(row["fuel_at"]),
+                    "cards": tuple(row["cards"].split(",")) if row["cards"] else (),
+                    "efs": tuple(UnitCard(**card) for card in json.loads(row["efs"]))})
+            for row in conn.execute("SELECT * FROM units ORDER BY unit")]
 
 
 # Returns every data gap as rows of (hole, item, detail), sorted so each kind of hole comes together.

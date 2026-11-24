@@ -407,7 +407,30 @@ MPG_LOW, MPG_HIGH = config.MPG_RANGE
 VIEWS = f"""
 DROP VIEW IF EXISTS holes;
 DROP VIEW IF EXISTS fleet;
+DROP VIEW IF EXISTS units;
 DROP VIEW IF EXISTS active_vehicles;
+
+-- The unit master: one row per Datatruck truck with what each source says of it. From Datatruck its status, its active
+-- drivers (a team's type is its first driver's) and its cards: an active card counts when its driver is active on this
+-- truck, or when it has no driver and is assigned to this unit (a card's unit alone doesn't count: many active cards
+-- still sit on drivers who left). From Samsara the vehicle linked by VIN and its latest readings. From EFS every card
+-- that carries this unit number, as JSON. Nothing is typed into it.
+CREATE VIEW units AS
+WITH active AS (SELECT unit, driver_id, full_name, driver_type FROM dt_drivers
+                WHERE employee_status = 'active' AND unit IS NOT NULL),
+     -- the units' cards, worked out once (asking the cards again for every truck takes seconds)
+     carded AS (SELECT a.unit, c.last4 FROM fuel_cards c JOIN active a ON a.driver_id = c.driver_id WHERE c.active
+                UNION SELECT unit, last4 FROM fuel_cards WHERE active AND driver_id IS NULL AND unit IS NOT NULL)
+SELECT d.unit, d.status,
+       (SELECT group_concat(full_name, ' & ') FROM active WHERE unit = d.unit) AS driver,
+       (SELECT driver_type FROM active WHERE unit = d.unit ORDER BY driver_id LIMIT 1) AS driver_type,
+       t.name AS samsara_name, l.gps_at, l.fuel_pct, l.fuel_at,
+       (SELECT group_concat(last4, ',') FROM carded WHERE unit = d.unit AND last4 IS NOT NULL) AS cards,
+       (SELECT json_group_array(json_object('last4', last4, 'status', status, 'name', driver_name, 'account', account))
+        FROM efs_cards WHERE unit = d.unit) AS efs
+FROM dt_trucks d
+LEFT JOIN trucks t ON t.unit = d.unit
+LEFT JOIN samsara_live l ON l.samsara_id = t.samsara_id;
 
 -- Samsara vehicles that reported GPS recently; parked-for-good and retired trucks drop out.
 CREATE VIEW active_vehicles AS

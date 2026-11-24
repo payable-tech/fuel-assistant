@@ -17,15 +17,16 @@ export const BECAME = [
 // The fleet status on top of the Drivers view: the questions asked of every truck, each with its groups in the
 // order they are drawn. `key` is the truck's field holding its group; a group's `todo` is what to do about it, its
 // `tip` what it means, its `color` the color token of its mark, its bar segment and its tiles (`hollow`: drawn as an
-// outline). The 24 h and the 14 days in the words are copies of the server's ACTIVE_HOURS and FLEET_FUELED_DAYS:
-// change both together.
+// outline). The 24 h in the words is a copy of the server's ACTIVE_HOURS: change both together. A type's `name` is
+// its name in full, for where there is room.
 const SENDER = 'Check the fuel sender connection to the Samsara device';
 export const FLEET = [
   { key: 'type', name: 'Type', note: 'driver type', parts: [
-    { k: 'LO', label: 'LO', color: '--s1', tip: 'Lease operator' }, { k: 'C', label: 'C', color: '--s2', tip: 'Company driver' },
-    { k: 'OO', label: 'OO', color: '--s3', tip: 'Company owner' },
-    { k: 'Other', label: 'Other', color: '--s4', tip: "Datatruck's type 'other' (mostly LP)" },
-    { k: 'none', label: 'No driver', color: '--line', tip: 'No active driver assigned in Datatruck' }] },
+    { k: 'LO', label: 'LO', name: 'Lease operator', color: '--s1', tip: 'Lease operator' },
+    { k: 'C', label: 'C', name: 'Company driver', color: '--s2', tip: 'Company driver' },
+    { k: 'OO', label: 'OO', name: 'Company owner', color: '--s3', tip: 'Company owner' },
+    { k: 'Other', label: 'Other', name: 'Other', color: '--s4', tip: "Datatruck's type 'other' (mostly LP)" },
+    { k: 'none', label: 'No driver', name: 'No driver', color: '--line', tip: 'No active driver assigned in Datatruck' }] },
   { key: 'samsara', name: 'Samsara', note: 'working or not', parts: [
     { k: 'working', label: 'Working', color: '--good', tip: 'GPS and fuel gauge both reported in the last 24 h' },
     { k: 'none', label: 'No device', color: '--bad', todo: 'Install a Samsara device, or add the truck to Samsara' },
@@ -33,10 +34,17 @@ export const FLEET = [
     { k: 'nogps', label: 'No GPS 24 h+', color: '--warn', todo: 'Check the device: unplugged, or the truck is powered off (home time?)' },
     { k: 'never', label: 'Gauge never reports', color: '--s1', todo: SENDER },
     { k: 'silent', label: 'Gauge silent 24 h+', color: '--s1', hollow: true, todo: SENDER }] },
-  { key: 'card', name: 'Fuel card', note: 'active card', parts: [
-    { k: 'card', label: 'Card assigned', color: '--good', tip: 'An active card on a driver who is active on this truck, or on the truck itself' },
-    { k: 'fueled', label: 'No card assigned, fueled lately', color: '--warn', tip: 'No card is assigned in Datatruck, yet the truck bought fuel in the last 14 days' },
-    { k: 'nocard', label: 'No card, no fuel lately', color: '--bad', tip: 'No card assigned and no purchase in the last 14 days' }] },
+  { key: 'card', name: 'Card in EFS', note: 'on this unit number', parts: [
+    { k: 'active', label: 'Active', color: '--good', tip: 'EFS has an ACTIVE card carrying this unit number' },
+    { k: 'none', label: 'No card', color: '--bad', todo: 'No EFS card carries this unit number: put a card on the unit' },
+    { k: 'inactive', label: 'Inactive only', color: '--s4', todo: 'Every EFS card on this unit number is INACTIVE: activate one, or put another card on the unit' },
+    { k: 'held', label: 'On hold', color: '--warn', todo: 'EFS holds the card (HOLD or HOLD FOR FRAUD): the pump refuses it until it is overridden or released' }] },
+  { key: 'match', name: 'Cards match', note: 'Datatruck against EFS', parts: [
+    { k: 'match', label: 'Match', color: '--good', tip: 'Datatruck and EFS show the same cards for this unit' },
+    { k: 'differ', label: 'Differ', color: '--bad', tip: 'Both show cards for this unit, not the same ones' },
+    { k: 'datatruck', label: 'Datatruck only', color: '--warn', tip: 'Datatruck shows a card for this unit; EFS has none in use on this unit number' },
+    { k: 'efs', label: 'EFS only', color: '--warn', tip: 'EFS has a card in use on this unit number; Datatruck shows none' },
+    { k: 'none', label: 'No card', color: '--line', tip: 'Neither Datatruck nor EFS shows a card in use for this unit' }] },
   { key: 'status', name: 'Status', note: 'in Datatruck', parts: [
     { k: 'in_transit', label: 'In transit', color: '--s1', tip: "Datatruck's status: in transit" },
     { k: 'available', label: 'Available', color: '--s3', tip: "Datatruck's status: available" },
@@ -47,9 +55,6 @@ export const FLEET = [
     { k: 'on', label: 'On duty', color: '--good', tip: 'In transit or available, with an active driver' },
     { k: 'off', label: 'Not on duty', color: '--line', tip: 'Nobody is driving it, or it is in the shop or the yard' }] },
 ];
-
-// Datatruck's truck statuses in words.
-export const TRUCK_STATUS = { in_transit: 'In transit', available: 'Available', shop: 'In shop', yard: 'In yard' };
 
 // Fuel levels the Recommend view colors by, % of the tank: red at or under the reserve the plans keep (a copy of the
 // engine's RESERVE_PCT, which the page's numbers don't carry: change both together), amber at or under a quarter tank.
