@@ -35,27 +35,38 @@ async def _main() -> None:
 
 
 # A tag heard. Not in its own office or test chat, only in a group linked to a truck, worth waking for, not a bare tag
-# right after a request there, and never the same message twice; then the chat is read and the request worked.
+# right after a request there, and never the same message twice; then the chat is read and the request worked. A tag
+# that is not worked is logged with the reason.
 async def on_tag(client, message, named: bool) -> None:
     text = message.message or ""
     test = message.chat_id == settings.AGENT_TEST_CHAT_ID
     if (settings.AGENT_TEST_ONLY and not test) or not rules.woken(text, named):
-        return
+        return _skipped(message, "not tagged by name and no card words" if not rules.woken(text, named)
+                        else "only the test group is worked (AGENT_TEST_ONLY)")
     if not test and message.chat_id in (settings.AGENT_OFFICE_CHAT_ID, config.TEST_CHAT_ID):
-        return  # its reports go there: a reply in them is the office's, not a driver's
+        # its reports go there: a reply in them is the office's, not a driver's
+        return _skipped(message, "this is the agent's own office or test chat")
     truck, drivers = _truck_of(message.chat_id)
-    if truck is None:
-        return  # a group linked to no truck: its chat is never sent anywhere
+    if truck is None:  # its chat is never sent anywhere
+        return _skipped(message, "this group is linked to no truck")
     now = datetime.now(timezone.utc)
     with db.connect() as conn:
         if rules.only_a_tag(text) and db.agent_run_since(conn, message.chat_id, now - timedelta(minutes=JOIN_MINUTES)):
-            return  # "@desk" again while the request just taken there is worked: it joins that one
+            # "@desk" again while the request just taken there is worked: it joins that one
+            return _skipped(message, "a bare tag right after a request there: it joins that one")
         if not db.claim_agent_run(conn, message.chat_id, message.id, truck.unit, now, text[:2000]):
-            return
+            return _skipped(message, "this message was already taken")
+    log.info("Tag in chat %s (message %s), unit %s: working it", message.chat_id, message.id, truck.unit)
     chat = await telegram_agent.chat_before(client, message.chat_id, message.id, settings.AGENT_HISTORY,
                                             settings.AGENT_MAX_PHOTOS)
     async with _one_run:
         await work(Request(client, message.chat_id, message.id, text, chat[-1].sender if chat else "", truck, drivers), chat)
+
+
+# Logs a tag that is not worked, and why.
+def _skipped(message, why: str) -> None:
+    log.info("Tag in chat %s (message %s) not worked: %s. It said: %s", message.chat_id, message.id, why,
+             (message.message or "")[:80])
 
 
 # Works one request to its end and records it. Without eManager no card can be fixed: the office is told and Claude
