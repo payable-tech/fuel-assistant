@@ -167,6 +167,8 @@ class Request:
             if activate:
                 await emanager(self.efs.set_status, account, row, "ACTIVE")
                 activated = True
+                with db.connect() as conn:  # the copy of EFS's cards learns it at once
+                    db.set_efs_card_status(conn, account, row.card_id, "ACTIVE")
             after = await emanager(self.efs.set_override, account, row, settings.AGENT_OPEN_FILLS)
         except EfsError as error:
             self.steps.append(f"declined_card: eManager did not open it, {error}")

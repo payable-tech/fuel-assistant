@@ -366,3 +366,30 @@ def test_paused_after_its_jobs(world, monkeypatch):
     with db.connect() as conn:
         outcomes = [r[0] for r in conn.execute("SELECT outcome FROM agent_runs WHERE message_id IN (3, 4) ORDER BY message_id")]
     assert outcomes == ["paused after 1 jobs: left for the office"] * 2
+
+
+# The copy of EFS's cards: each account's list replaces its old copy (last four digits only, no driver ID); an account
+# that can't be read or comes back empty keeps what it had; an activation is noted in the copy at once.
+def test_efs_cards_are_copied(world, monkeypatch):
+    lists = {"ALIF": [card("a10001", "3189", "JOHN DOE")[0], card("a20002", "99999", "ALIF UZ CORP", "INACTIVE")[0]],
+             "DT": [card("d30003", "777", "MARY ROE", "HOLD")[0]]}
+
+    def listed(account, by, text=""):
+        assert by == "all"
+        if isinstance(lists[account], Exception):
+            raise lists[account]
+        return lists[account]
+
+    monkeypatch.setattr(agent.fuel_cards, "cards", listed)
+    asyncio.run(agent.copy_cards())
+    with db.connect() as conn:
+        rows = [tuple(r) for r in conn.execute("SELECT account, card_id, last4, status, unit, driver_name FROM efs_cards ORDER BY card_id")]
+    assert rows == [("ALIF", "a10001", "0001", "ACTIVE", "3189", "JOHN DOE"), ("ALIF", "a20002", "0002", "INACTIVE", "99999", "ALIF UZ CORP"),
+                    ("DT", "d30003", "0003", "HOLD", "777", "MARY ROE")]
+    lists["ALIF"], lists["DT"] = RuntimeError("eManager is not logged in"), []
+    asyncio.run(agent.copy_cards())
+    with db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM efs_cards").fetchone()[0] == 3
+        db.set_efs_card_status(conn, "DT", "d30003", "ACTIVE")
+        assert conn.execute("SELECT status FROM efs_cards WHERE card_id = 'd30003'").fetchone()[0] == "ACTIVE"
+        assert "driver_id" not in [r[1] for r in conn.execute("PRAGMA table_info(efs_cards)")]

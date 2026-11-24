@@ -376,6 +376,20 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     PRIMARY KEY (chat_id, message_id)
 );
 
+-- Writer: the card agent, which holds the eManager window. One row per EFS card as Card Lookup lists it: its account,
+-- its last four digits, its status, and the unit and the driver name on the card. The driver ID (what the driver types
+-- at the pump) is never stored.
+CREATE TABLE IF NOT EXISTS efs_cards (
+    account     TEXT NOT NULL,
+    card_id     TEXT NOT NULL,
+    last4       TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    unit        TEXT,
+    driver_name TEXT,
+    synced_at   TEXT NOT NULL,
+    PRIMARY KEY (account, card_id)
+);
+
 -- Writer: the card agent. One row, its pulse, for the dashboard: when it last said it is running, whether eManager is
 -- logged in and since when, and the last tag it heard with what it did about it.
 CREATE TABLE IF NOT EXISTS agent_pulse (
@@ -487,4 +501,4 @@ FROM fleet WHERE pilot AND (fuel_at IS NULL OR fuel_at < datetime('now', '-{conf
 # Your pilot list (pilot_trucks), fill_lookups and job_runs are not in this list, so they are never dropped.
 SYNCED_TABLES = ["samsara_vehicles", "samsara_live", "dt_trucks", "dt_drivers", "tg_groups", "dt_orders", "dt_stops",
                  "stores", "price_history", "price_files", "fuel_lines", "fuel_cards", "trucks",
-                 "tank_estimates", "fuel_stops", "burn_factors", "efs_statements", "efs_lines"]
+                 "tank_estimates", "fuel_stops", "burn_factors", "efs_statements", "efs_lines", "efs_cards"]

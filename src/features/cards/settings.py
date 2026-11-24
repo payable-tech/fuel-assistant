@@ -10,6 +10,7 @@ from base import config
 EMANAGER_CHROME_PORT = 9224                 # Chrome listens on this local port only
 EMANAGER_PROFILE = config.DATA_DIR / "efs-chrome"  # that window's own Chrome profile, apart from anyone's own Chrome
 EMANAGER_HEARTBEAT_SECONDS = 240            # eManager logs out after 90 idle minutes; every login ends after 24 hours
+EFS_COPY_MINUTES = 30                       # how often the agent copies EFS's whole card list into the database
 # The eManager user that acts for each account; one login switches between them. Bob's login: card work moved here
 # from bob-agent, which no longer uses it (the user, 2026-11-22).
 EMANAGER_USERS = {"ALIF": "Bobalif", "DT": "BOB_DT"}

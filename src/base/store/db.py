@@ -10,7 +10,7 @@ from dataclasses import asdict, fields
 from datetime import datetime, timezone
 
 from base import config
-from base.models import (BurnFactor, DatatruckDriver, DatatruckTruck, EfsLine, EfsStatement, FillEvidence, FillLookup,
+from base.models import (BurnFactor, DatatruckDriver, DatatruckTruck, EfsCardRow, EfsLine, EfsStatement, FillEvidence, FillLookup,
                          FleetTruck, FuelCard, FuelLine, FuelStop, Order, Problem, Recommendation, Region,
                          SamsaraLive, SamsaraVehicle, SourceHealth, Stop, Store, SyncedTruck, TankEstimate, TelegramGroup,
                          Truck, TruckBurn, Trip, TruckWatch, UsualLevel)
@@ -650,7 +650,20 @@ def status(conn: sqlite3.Connection) -> list[tuple[str, int, str | None]]:
     return [(t, *conn.execute(f"SELECT COUNT(*), MAX(synced_at) FROM {t}").fetchone()) for t in schema.SYNCED_TABLES]
 
 
-# ===== The card agent's runs =====
+# ===== The card agent's runs, its pulse and its copy of EFS's cards =====
+
+
+# Replaces one account's copy of EFS's cards with the list Card Lookup gave: of each card its id, last four digits,
+# status, and the unit and driver name on it.
+def replace_efs_cards(conn: sqlite3.Connection, account: str, cards: list[EfsCardRow]) -> None:
+    conn.execute("DELETE FROM efs_cards WHERE account = ?", (account,))
+    _insert(conn, "efs_cards", [{"account": account, "card_id": c.card_id, "last4": c.number[-4:], "status": c.status,
+                                 "unit": c.unit.strip() or None, "driver_name": c.driver_name.strip() or None} for c in cards])
+
+
+# Notes a card's status right after the agent changed it, so the copy doesn't wait for its next round.
+def set_efs_card_status(conn: sqlite3.Connection, account: str, card_id: str, status: str) -> None:
+    conn.execute("UPDATE efs_cards SET status = ? WHERE account = ? AND card_id = ?", (status, account, card_id))
 
 
 # Claims a message that woke the card agent, so each is handled once (a restart or a repeat event finds it taken).
