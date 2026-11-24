@@ -120,8 +120,9 @@ def drivers_payload() -> dict:
             "stops": [[s.gauge_before, s.gauge_after, s.loves] for s in stops if s.gauge_before is not None]}
 
 
-# The fleet status on top of the Drivers view: every Datatruck truck with its type, whether Samsara works for it and
-# whether it has a fuel card (features/dashboard/fleet_status), and how fresh each part is. The page does the counting.
+# The fleet status on top of the Drivers view: every Datatruck truck with its type, whether Samsara works for it,
+# whether it has a fuel card (features/dashboard/fleet_status) and the diesel it bought lately, and how fresh each
+# part is. The page does the counting.
 def fleet_payload() -> dict:
     now = datetime.now(timezone.utc)
     with db.connect() as conn:
@@ -129,11 +130,13 @@ def fleet_payload() -> dict:
         named = fleet_status.named_units([v.name for v in db.samsara_vehicles(conn)])
         samsara_at = db.newest_data(conn)[0]
         refreshed = {table: at for table, _, at in db.status(conn)}
+        gallons = db.diesel_by_unit(conn, (today() - timedelta(days=settings.FLEET_GALLONS_DAYS)).isoformat())
     stale = timedelta(hours=config.ACTIVE_HOURS)
     fueled_since = f"{now.astimezone(fuel.CENTRAL) - timedelta(days=settings.FLEET_FUELED_DAYS):%Y-%m-%d %H:%M}"
     copies = [refreshed[t] for t in ("dt_trucks", "dt_drivers", "fuel_cards") if refreshed[t]]
     return {"samsara_at": samsara_at.isoformat() if samsara_at else None, "synced_at": min(copies, default=None),
-            "trucks": [_fleet_row(t, named, now, stale, fueled_since) for t in trucks]}
+            "gallons_days": settings.FLEET_GALLONS_DAYS,
+            "trucks": [_fleet_row(t, named, now, stale, fueled_since) | {"gallons": round(gallons.get(t.unit, 0.0))} for t in trucks]}
 
 
 # One truck of the fleet status: what Datatruck and Samsara say of it, and the keys of its three groups.

@@ -257,8 +257,9 @@
     </div>
   </section>
 
-  <!-- ===== Drivers: the whole fleet's status (type, Samsara, fuel card), then how each driver usually fuels, from
-       their stops and the gauge around them ===== -->
+  <!-- ===== Drivers: the whole fleet's status: a summary (the trucks by what they have, by driver type, and what is
+       missing; a picture only), then the units as a table filtered and sorted from its column headings; then how
+       each driver usually fuels, from their stops and the gauge around them ===== -->
   <section class="view" id="view-drivers" hidden>
     <div class="view-head">
       <h2 class="view-title">Fleet status</h2>
@@ -266,10 +267,16 @@
     </div>
     <div class="grid">
       <article class="panel span-3">
-        <div class="fleet-bars" id="fleet-bars"></div>
-        <div class="msg-pick" id="fleet-pick" aria-live="polite"></div>
+        <div class="fleet-tools" id="fleet-tools"></div>
         <div class="fleet-board" id="fleet-board"></div>
-        <div class="fleet-list" id="fleet-list" hidden></div>
+        <div class="fleet-filter">
+          <h2>Units</h2>
+          <span class="count" id="fleet-count" aria-live="polite"></span>
+          <div class="fleet-chips" id="fleet-chips"></div>
+          <button type="button" class="fleet-clear" id="fleet-clear" hidden>Clear filters</button>
+        </div>
+        <div class="fleet-list" id="fleet-list"></div>
+        <div class="fleet-pop" id="fleet-pop" role="dialog" aria-label="Column filter" hidden></div>
       </article>
     </div>
     <div class="view-head">

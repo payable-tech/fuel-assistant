@@ -281,61 +281,91 @@ button.msg:hover, button.msg:focus-visible { outline: 2px solid var(--text); out
 .table .off { color: var(--bad); }
 .badge { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 11px;
   background: rgba(91, 156, 245, 0.16); color: var(--s1); }
-/* fleet status: three bars (a question each: its name, a segment per group, the groups with their counts), then one
-   square per truck (the Live view's .msg square) in clusters by status, and the picked group's trucks as a table */
-.fleet-bars { display: grid; gap: 6px; }
-.fleet-bar { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 6px 14px; align-items: start; padding: 10px 12px;
-  border-radius: 10px; border: 1px solid transparent; }
-.fleet-bar.on { background: var(--panel-2); border-color: var(--line); }  /* the question that colors the squares */
-.fleet-name { font: inherit; font-weight: 600; text-align: left; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; }
-.fleet-name small { display: block; font-weight: 400; font-size: 11px; color: var(--faint); }
-.fleet-bar.on .fleet-name, .fleet-name:hover { color: var(--text); }
-.fleet-bar-body { display: grid; gap: 8px; min-width: 0; }
-.fleet-segs { display: flex; gap: 2px; height: 14px; border-radius: 5px; overflow: hidden; }
-.fleet-segs i { display: block; height: 100%; min-width: 3px; border-radius: 3px; }
-.fleet-groups { display: flex; flex-wrap: wrap; gap: 6px 8px; }
-.fleet-group { font: inherit; font-size: 13px; display: inline-flex; align-items: baseline; gap: 7px; padding: 3px 9px; border-radius: 999px;
-  border: 1px solid transparent; background: none; color: var(--muted); cursor: pointer; }
-.fleet-group:hover { border-color: var(--line); color: var(--text); }
-.fleet-group[aria-pressed="true"] { border-color: var(--text); color: var(--text); }  /* the group listed below */
-.fleet-group i { flex: none; align-self: center; width: 11px; height: 11px; border-radius: 3px; }
-.fleet-group b { color: var(--text); font-weight: 600; }
-.fleet-group small { color: var(--faint); font-size: 12px; }
-.fleet-group.zero { opacity: 0.5; }
-.fleet-name:focus-visible, .fleet-group:focus-visible, .fleet-clear:focus-visible { outline: 2px solid var(--s1); outline-offset: 1px; }
-/* each group's color, the same on a segment, a group's mark and a square; the two gauge groups share blue, the
-   silent one hollow */
-.f-type-LO { background: var(--s1); }
-.f-type-C { background: var(--s2); }
-.f-type-OO { background: var(--s3); }
-.f-type-Other { background: var(--s4); }
-.f-type-none { background: var(--line); }
-.f-samsara-working, .f-card-card { background: var(--good); }
-.f-samsara-none, .f-card-nocard { background: var(--bad); }
-.f-samsara-mismatch { background: var(--s4); }
-.f-samsara-nogps, .f-card-fueled { background: var(--warn); }
-.f-samsara-never { background: var(--s1); }
-.f-samsara-silent { box-shadow: inset 0 0 0 2px var(--s1); }
-.msg.f-samsara-silent { box-shadow: none; border-color: var(--s1); }  /* a square has its own border to color */
-.msg.dim { opacity: 0.16; }  /* not in the picked group */
-.fleet-board { display: flex; flex-wrap: wrap; gap: 20px 36px; align-items: start; }
-.fleet-duty { display: grid; gap: 10px; min-width: 0; }
-.fleet-duty-head { padding-bottom: 6px; border-bottom: 1px solid var(--line); font-size: 12px; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--faint); }
-.fleet-duty-head b { color: var(--text); font-weight: 600; }
-.fleet-clusters { display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: start; }
-.fleet-cluster { display: grid; gap: 8px; }
-.fleet-cluster-head { font-size: 13px; color: var(--muted); }
-.fleet-cluster-head b { margin-left: 5px; color: var(--text); font-weight: 600; }
-.fleet-squares { display: flex; flex-wrap: wrap; gap: 3px; width: calc(var(--cols) * 16px - 3px); max-width: 100%; }  /* 13px square + 3px gap */
+/* fleet status: a summary of the fleet (a picture only), then the units as a table filtered and sorted from its
+   column headings */
+.fleet-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+/* the summary: one bar of the trucks by what they have, then the grid by driver type beside what is missing */
+.fleet-board { display: grid; gap: 22px; }
+.have { display: grid; gap: 10px; }
+.have-bar { display: flex; gap: 3px; height: 38px; border-radius: 9px; overflow: hidden; }
+.have-bar i { display: grid; place-items: center; min-width: 4px; border-radius: 4px; font-style: normal; font-size: 15px; font-weight: 600;
+  color: var(--bg); }
+.have-key { display: flex; flex-wrap: wrap; gap: 6px 26px; font-size: 13px; color: var(--muted); }
+.have-key span { display: inline-flex; align-items: baseline; gap: 7px; }
+.have-key i { align-self: center; flex: none; width: 11px; height: 11px; border-radius: 3px; }
+.have-key b { color: var(--text); font-size: 15px; font-weight: 600; }
+.have-key small { color: var(--faint); font-size: 12px; }
+.board-pair { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+.board-part { display: grid; gap: 10px; min-width: 0; }
+.cover-table { width: 100%; border-collapse: collapse; }
+.cover-table th, .cover-table td { padding: 9px 14px 9px 0; text-align: left; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+.cover-table thead th { font-size: 12px; font-weight: 500; color: var(--faint); }
+.cover-table tbody th { font-size: 13px; font-weight: 500; white-space: nowrap; }
+.cover-table .msg-kind { cursor: default; }
+.cover-table .msg { width: 11px; height: 11px; border: 0; }
+.cover-table .total th, .cover-table .total td { border-bottom: 0; border-top: 1px solid var(--line); }
+.cover-table .total th { font-weight: 600; }
+.cover { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 2px 8px; min-width: 130px; }
+.cover b { font-size: 19px; font-weight: 600; }
+.cover small { color: var(--faint); font-size: 12px; white-space: nowrap; }
+.cover i { grid-column: 1 / -1; display: block; height: 5px; border-radius: 3px; background: var(--grid); overflow: hidden; }
+.cover u { display: block; height: 100%; border-radius: 3px; }
+.missing { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.missing li { display: grid; gap: 4px; }
+.missing-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.missing-head .msg { width: 11px; height: 11px; border: 0; }
+.missing-head span { flex: 1; min-width: 0; }
+.missing-head b { font-size: 16px; font-weight: 600; }
+.missing li > i { display: block; height: 5px; border-radius: 3px; background: var(--grid); overflow: hidden; }
+.missing u { display: block; height: 100%; border-radius: 3px; }
+.missing small { color: var(--faint); font-size: 12px; }
+.fleet-clear:focus-visible, .fleet-chip:focus-visible, .col-filter:focus-visible { outline: 2px solid var(--s1); outline-offset: 1px; }
+/* each group's color comes from the page's labels (js/labels.js), the same on a box, a group's mark and a row */
+/* over the table: its name, how many trucks it lists, and the filter in words, each part a chip with a cross */
+.fleet-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; min-height: 30px; padding-top: 16px;
+  border-top: 1px solid var(--line); }
+.fleet-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fleet-chip { font: inherit; font-size: 12px; display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px 3px 10px;
+  border-radius: 999px; border: 1px solid rgba(242, 163, 58, 0.5); background: rgba(242, 163, 58, 0.1); color: var(--text); cursor: pointer; }
+.fleet-chip span { color: var(--muted); font-size: 15px; line-height: 1; }
+.fleet-chip:hover span { color: var(--text); }
+/* a column's heading: its name sorts, the button beside it opens the column's filter and is lit while it filters */
+.col-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sort-way { margin-left: 5px; font-style: normal; font-size: 11px; opacity: 0.45; }
+.sort.on .sort-way { opacity: 1; color: var(--brand); }
+.col-filter { display: grid; place-items: center; flex: none; width: 22px; height: 22px; padding: 0; border-radius: 6px;
+  border: 1px solid transparent; background: none; color: var(--faint); cursor: pointer; }
+.col-filter svg { width: 14px; height: 14px; }
+.col-filter:hover, .col-filter[aria-expanded="true"] { color: var(--text); border-color: var(--line); background: var(--panel-2); }
+.col-filter.on { color: var(--bg); background: var(--brand); border-color: var(--brand); }
+/* the open filter, under its button: a box to type in, or the column's choices to tick with their counts */
+.fleet-pop { position: absolute; z-index: 30; display: grid; gap: 10px; width: 280px; padding: 12px; border-radius: 12px;
+  background: var(--panel-2); border: 1px solid var(--line); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5); }
+.pop-head { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+.fleet-pop .search { margin-top: 0; background: var(--panel); }
+.pop-list { display: grid; gap: 1px; max-height: 320px; overflow: auto; }
+.pop-choice { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: 8px; font-size: 13px; cursor: pointer; }
+.pop-choice:hover { background: var(--panel); }
+.pop-choice input { accent-color: var(--brand); width: 15px; height: 15px; margin: 0; flex: none; cursor: pointer; }
+.pop-choice i { flex: none; width: 10px; height: 10px; border-radius: 3px; }
+.pop-choice span { flex: 1; min-width: 0; }
+.pop-choice b { font-weight: 600; color: var(--muted); }
+.pop-choice.zero { opacity: 0.45; }
+.pop-foot { display: flex; justify-content: space-between; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
 .fleet-list { display: grid; gap: 10px; }
-.fleet-list-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
-.fleet-clear { font: inherit; font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); background: none;
+.fleet-list .table-wrap { max-height: max(560px, calc(100vh - var(--topbar-h) - 120px)); }  /* as tall as the screen allows */
+.fleet-clear { font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: none;
   color: var(--muted); cursor: pointer; }
 .fleet-clear:hover { color: var(--text); border-color: var(--text); }
+.sort:focus-visible { outline: 2px solid var(--s1); outline-offset: 1px; }
+/* a column's heading is a button: a click sorts by it, again turns the order */
+.sort { font: inherit; padding: 0; border: 0; background: none; color: var(--faint); cursor: pointer; white-space: nowrap; }
+.sort:hover, .sort.on { color: var(--text); }
+.fleet-table .msg-kind { cursor: default; }
+.fleet-table .msg { width: 11px; height: 11px; border: 0; }
 .fleet-table { font-size: 13px; }
 .fleet-table td { padding: 7px 12px; }
-.fleet-table .fleet-todo { white-space: normal; min-width: 240px; color: var(--muted); }
+.fleet-table .fleet-todo { color: var(--muted); }  /* on one line, so every row is the same height */
 
 /* ---------- Recommend view: the screen's full width; the truck list on the left stays in sight while the page
    scrolls; the truck's figures, map, messages, Love's ahead and gauge stacked on the right ---------- */
@@ -713,7 +743,7 @@ button.job-sq:hover, button.job-sq:focus-visible { outline: 2px solid var(--text
   .agent-cell { border-left: 0; }
   .agent-cell:nth-child(n+2) { border-top: 1px solid var(--line); }
   .bub { max-width: 92%; }
-  .fleet-bar { grid-template-columns: minmax(0, 1fr); }
+  .board-pair { grid-template-columns: minmax(0, 1fr); }
   .map { height: 460px; }
   .topbar { grid-template-columns: 1fr; }
   .glossary dl { grid-template-columns: 1fr; }

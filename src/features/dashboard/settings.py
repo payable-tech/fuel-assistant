@@ -25,6 +25,7 @@ TOP_OFF_GAL = 50           # a stop buying less than this is a top-off
 
 # Fleet status (the top of the Drivers tab)
 FLEET_FUELED_DAYS = 14     # a truck with no card assigned that bought fuel within this many days is shown apart
+FLEET_GALLONS_DAYS = 30    # a truck's tile can be sized by the diesel it bought in this many days
 
 # Live view
 LIVE_FEED_SIZE = 30                # newest purchases listed

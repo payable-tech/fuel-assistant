@@ -343,6 +343,13 @@ def fleet_status(conn: sqlite3.Connection) -> list[FleetTruck]:
             for row in rows]
 
 
+# The diesel gallons each unit bought on or after a local day ("YYYY-MM-DD"), by unit.
+def diesel_by_unit(conn: sqlite3.Connection, since_day: str) -> dict[str, float]:
+    return {unit: gallons for unit, gallons in conn.execute(
+        "SELECT unit, SUM(gallons) FROM fuel_lines WHERE fueled_at >= ? AND transaction_type = 'fuel' AND product = 'ULSD' "
+        "AND gallons > 0 AND unit IS NOT NULL GROUP BY unit", (since_day,))}
+
+
 # Returns every data gap as rows of (hole, item, detail), sorted so each kind of hole comes together.
 def holes(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM holes ORDER BY hole, item").fetchall()

@@ -14,27 +14,38 @@ export const BECAME = [
   { key: 'off', label: 'Called off by us', tip: 'The road was remade without this stop, or the load ended before it.' },
 ];
 
-// The fleet status on top of the Drivers view: the three questions asked of every truck, each with its groups in the
+// The fleet status on top of the Drivers view: the questions asked of every truck, each with its groups in the
 // order they are drawn. `key` is the truck's field holding its group; a group's `todo` is what to do about it, its
-// `tip` what it means. The colors are in the styles, by `f-<key>-<group>`. The 24 h and the 14 days in the words are
-// copies of the server's ACTIVE_HOURS and FLEET_FUELED_DAYS: change both together.
+// `tip` what it means, its `color` the color token of its mark, its bar segment and its tiles (`hollow`: drawn as an
+// outline). The 24 h and the 14 days in the words are copies of the server's ACTIVE_HOURS and FLEET_FUELED_DAYS:
+// change both together.
 const SENDER = 'Check the fuel sender connection to the Samsara device';
 export const FLEET = [
   { key: 'type', name: 'Type', note: 'driver type', parts: [
-    { k: 'LO', label: 'LO', tip: 'Lease operator' }, { k: 'C', label: 'C', tip: 'Company driver' },
-    { k: 'OO', label: 'OO', tip: 'Company owner' }, { k: 'Other', label: 'Other', tip: "Datatruck's type 'other' (mostly LP)" },
-    { k: 'none', label: 'No driver', tip: 'No active driver assigned in Datatruck' }] },
+    { k: 'LO', label: 'LO', color: '--s1', tip: 'Lease operator' }, { k: 'C', label: 'C', color: '--s2', tip: 'Company driver' },
+    { k: 'OO', label: 'OO', color: '--s3', tip: 'Company owner' },
+    { k: 'Other', label: 'Other', color: '--s4', tip: "Datatruck's type 'other' (mostly LP)" },
+    { k: 'none', label: 'No driver', color: '--line', tip: 'No active driver assigned in Datatruck' }] },
   { key: 'samsara', name: 'Samsara', note: 'working or not', parts: [
-    { k: 'working', label: 'Working', tip: 'GPS and fuel gauge both reported in the last 24 h' },
-    { k: 'none', label: 'No device', todo: 'Install a Samsara device, or add the truck to Samsara' },
-    { k: 'mismatch', label: 'VIN mismatch', todo: 'Correct the VIN in Datatruck, or move the device to the truck the driver is in' },
-    { k: 'nogps', label: 'No GPS 24 h+', todo: 'Check the device: unplugged, or the truck is powered off (home time?)' },
-    { k: 'never', label: 'Gauge never reports', todo: SENDER },
-    { k: 'silent', label: 'Gauge silent 24 h+', todo: SENDER }] },
+    { k: 'working', label: 'Working', color: '--good', tip: 'GPS and fuel gauge both reported in the last 24 h' },
+    { k: 'none', label: 'No device', color: '--bad', todo: 'Install a Samsara device, or add the truck to Samsara' },
+    { k: 'mismatch', label: 'VIN mismatch', color: '--s4', todo: 'Correct the VIN in Datatruck, or move the device to the truck the driver is in' },
+    { k: 'nogps', label: 'No GPS 24 h+', color: '--warn', todo: 'Check the device: unplugged, or the truck is powered off (home time?)' },
+    { k: 'never', label: 'Gauge never reports', color: '--s1', todo: SENDER },
+    { k: 'silent', label: 'Gauge silent 24 h+', color: '--s1', hollow: true, todo: SENDER }] },
   { key: 'card', name: 'Fuel card', note: 'active card', parts: [
-    { k: 'card', label: 'Card assigned', tip: 'An active card on a driver who is active on this truck, or on the truck itself' },
-    { k: 'fueled', label: 'No card assigned, fueled lately', tip: 'No card is assigned in Datatruck, yet the truck bought fuel in the last 14 days' },
-    { k: 'nocard', label: 'No card, no fuel lately', tip: 'No card assigned and no purchase in the last 14 days' }] },
+    { k: 'card', label: 'Card assigned', color: '--good', tip: 'An active card on a driver who is active on this truck, or on the truck itself' },
+    { k: 'fueled', label: 'No card assigned, fueled lately', color: '--warn', tip: 'No card is assigned in Datatruck, yet the truck bought fuel in the last 14 days' },
+    { k: 'nocard', label: 'No card, no fuel lately', color: '--bad', tip: 'No card assigned and no purchase in the last 14 days' }] },
+  { key: 'status', name: 'Status', note: 'in Datatruck', parts: [
+    { k: 'in_transit', label: 'In transit', color: '--s1', tip: "Datatruck's status: in transit" },
+    { k: 'available', label: 'Available', color: '--s3', tip: "Datatruck's status: available" },
+    { k: 'shop', label: 'In shop', color: '--warn', tip: "Datatruck's status: in the shop" },
+    { k: 'yard', label: 'In yard', color: '--s6', tip: "Datatruck's status: in the yard" },
+    { k: 'other', label: 'Other status', color: '--faint', tip: 'A Datatruck status the page has no name for' }] },
+  { key: 'duty', name: 'On duty', note: 'working now', parts: [
+    { k: 'on', label: 'On duty', color: '--good', tip: 'In transit or available, with an active driver' },
+    { k: 'off', label: 'Not on duty', color: '--line', tip: 'Nobody is driving it, or it is in the shop or the yard' }] },
 ];
 
 // Datatruck's truck statuses in words.

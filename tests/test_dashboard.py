@@ -122,3 +122,5 @@ def test_fleet_status():
     assert rows == {"340": (True, "LO", "working", "card"), "900": (False, "none", "none", "fueled"),
                     "901": (False, "none", "mismatch", "nocard")}
     assert d["samsara_at"] == now.isoformat(timespec="seconds") and d["synced_at"] and d["trucks"][0]["driver"] == "ALI (LO)"
+    # the diesel each truck bought lately, for its column: unit 900 bought 100 gal yesterday, the others none
+    assert {t["unit"]: t["gallons"] for t in d["trucks"]} == {"340": 0, "900": 100, "901": 0} and d["gallons_days"] == 30
