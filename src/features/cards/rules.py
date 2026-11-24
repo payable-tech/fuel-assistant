@@ -17,7 +17,8 @@ CARD_WORDS = re.compile(r"card|declin|open|override|pump|activ|not work|doesn.?t
 # card already in override mode is open as it is. WATCH_ONLY: the agent's switch is off, it says what it would do.
 OPEN, ACTIVATE_AND_OPEN, ALREADY_OPEN, WATCH_ONLY = "open", "activate and open", "already open", "watch only"
 # Why a reply to the driver may not go out (reply_refused).
-ALREADY_REPLIED, HAS_NUMBER, NOT_OPENED = "already replied", "has a number", "not opened"
+NOT_A_CARD_REQUEST, ALREADY_REPLIED, HAS_NUMBER, NOT_OPENED = ("not a card request", "already replied", "has a number",
+                                                               "not opened")
 
 
 # A request the rules can't settle on their own; the message says why, for the person who will.
@@ -88,15 +89,19 @@ def repeat(last_opened: datetime | None, now: datetime, hours: float) -> timedel
     return None
 
 
-# Why a reply may not go to the driver, or None when it may: one reply to a request; never empty and never a long
-# number (a card number, a driver ID); never "open", "ready" or "try again" when no card was opened for this request.
-def reply_refused(text: str, replied: bool, opened: bool) -> str | None:
+# Why a reply may not go to the driver, or None when it may: only to a card request (`card_request`: declined_card was
+# called; the user, 2026-11-24: anything else gets no answer); only when the card is open (the user, 2026-11-24: an
+# opening that failed gets no reply, only an alarm to the office); one reply to a request; never empty and never a
+# long number (a card number, a driver ID).
+def reply_refused(text: str, card_request: bool, replied: bool, opened: bool) -> str | None:
+    if not card_request:
+        return NOT_A_CARD_REQUEST
+    if not opened:
+        return NOT_OPENED
     if replied:
         return ALREADY_REPLIED
     if not text or re.search(r"\d{5,}", text):
         return HAS_NUMBER
-    if not opened and re.search(r"\b(open|ready|try again)\b", text, re.IGNORECASE):
-        return NOT_OPENED
     return None
 
 

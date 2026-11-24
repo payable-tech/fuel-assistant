@@ -274,7 +274,8 @@ def kind(result: dict) -> str:
 
 # Why a case went to the office, in a few words; None when it didn't. The reason is read from what the rules said
 # of the card (the declined_card step), never from the note Claude wrote. A hand-over the agent chose itself (a request
-# that is not a card opening: a money code, a check, a lost card) is named as that.
+# that is not a card opening: a money code, a check, a lost card) is named as that; only runs before 2026-11-24 have
+# one, since Claude no longer has the tool.
 def handed_for(result: dict) -> str | None:
     steps = " ".join(result["steps"])
     if "hand_to_office" not in steps and "asked the office" not in steps:

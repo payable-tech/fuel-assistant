@@ -72,8 +72,10 @@ def set_status(account: str, row: EfsCardRow, status: str) -> EfsCard:
 
 # Puts a card in override mode for 1-9 transactions, always for All Locations (the user, 2026-11-22), whatever its
 # status but INACTIVE (the user, 2026-11-24: an override works on a held or fraud-flagged card too; an inactive card
-# is activated first). hand_enter ticks "Allow Hand Enter". "Product/Limit Override" is never ticked: it opens a limits page first, not
-# recorded yet (seen live 2026-11-22).
+# is activated first). hand_enter ticks "Allow Hand Enter". "Product/Limit Override" is never ticked: it opens a
+# limits page first, not recorded yet (seen live 2026-11-22). A card held for fraud gets EFS's own override page
+# instead: a warning (the company answers for any fraud while it is open; a new card is due) and one button, no
+# times, places or hand enter to choose; pressing it puts the card in override and leaves it FRAUD (live, 2026-11-24).
 def set_override(account: str, row: EfsCardRow, times: int, hand_enter: bool = False) -> EfsCard:
     if not 1 <= times <= MOST_TIMES:
         raise EfsError(f"An override lasts 1 to {MOST_TIMES} transactions, not {times}.")
@@ -84,12 +86,14 @@ def set_override(account: str, row: EfsCardRow, times: int, hand_enter: bool = F
         raise EfsError(f"An inactive card cannot be overridden; activate card {row.number} first.")
     if before.override:
         raise EfsError(f"Card {row.number} is already in override mode; remove that override first.")
-    form = site.fetch(f"/cards/CardPromptManagement.action?overrideCard=overrideCard&cardOverride=-1"
-                         f"&card.cardId={quote(row.card_id)}&card.displayNumber={quote(row.number)}"
-                         ).form_with("overrideCard")
+    opened = site.fetch(f"/cards/CardPromptManagement.action?overrideCard=overrideCard&cardOverride=-1"
+                        f"&card.cardId={quote(row.card_id)}&card.displayNumber={quote(row.number)}")
+    fraud = any("overrideFraudCard" in form.buttons for form in opened.forms)
+    button = "overrideFraudCard" if fraud else "overrideCard"
+    form = opened.form_with(button)
     if form.fields.get("card.cardId") != row.card_id:
         raise EfsError(f"eManager opened the override for a different card than {row.number}.")
-    answer = site.send(form, _override_fields(form.fields, times, hand_enter), "overrideCard")
+    answer = site.send(form, form.fields if fraud else _override_fields(form.fields, times, hand_enter), button)
     # eManager shows no page with the number of times afterwards (checked 2026-11-22): only override mode is confirmed
     return _confirm(row, answer, _header(page), override=True)
 

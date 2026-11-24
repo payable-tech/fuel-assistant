@@ -1,7 +1,8 @@
-# What Claude may do for one request: three tools. Each gathers what it needs, asks the rules (features/cards/rules)
-# and only then acts, so no chat text can make it act on another truck, open a card twice, or send a number. The words it
-# answers and reports are in features/cards/wording. Every opening is reported to the office and kept in `agent_runs`,
-# and every use of a tool is noted with its answer (`talk`), for the run's record.
+# What Claude may do for one request: two tools, opening the card and one reply about it. Each gathers what it needs,
+# asks the rules (features/cards/rules) and only then acts, so no chat text can make it act on another truck, open a
+# card twice, send a number, or answer what is not a card request. The words it answers and reports are in
+# features/cards/wording. Every opening is reported to the office and kept in `agent_runs`, and every use of a tool is
+# noted with its answer (`talk`), for the run's record.
 import asyncio
 import logging
 import re
@@ -12,7 +13,7 @@ from base.models import DatatruckDriver, EfsCardRow, Truck
 from base.store import db
 from features.cards import rules, settings, telegram_agent, wording
 from features.cards.claude import Tool, answer
-from features.cards.emanager import fake_cards, fuel_cards
+from features.cards.emanager import fake_cards, fuel_cards, window
 from features.cards.emanager.window import EfsError
 from features.cards.rules import NeedsPerson
 
@@ -21,10 +22,16 @@ ACCOUNTS = tuple(settings.EMANAGER_USERS)   # the eManager accounts a card can b
 _efs = asyncio.Lock()                     # one eManager window: one call at a time (the tools and the login keeper)
 
 
-# Makes one call to eManager, never two at once.
+# Makes one call to eManager, never two at once: not within this program, nor beside another one (window.held).
 async def emanager(call, *args):
     async with _efs:
-        return await asyncio.to_thread(call, *args)
+        return await asyncio.to_thread(_held, call, *args)
+
+
+# One call to eManager while this program holds the window.
+def _held(call, *args):
+    with window.held():
+        return call(*args)
 
 
 # One request being worked: where it came from, who wrote it, the truck, and what was done. Its tools are what Claude
@@ -50,11 +57,11 @@ class Request:
         self.replied = self.handed = False
 
     # The tools Claude may call, with what each does as Claude reads it. look_up_card is not among them for now (the
-    # user, 2026-11-24: its one job is opening the card; looking first only made it hesitate).
+    # user, 2026-11-24: its one job is opening the card; looking first only made it hesitate), nor hand_to_office (the
+    # user, 2026-11-24: a request that is not a card opening gets no answer at all, not a pass to the office).
     def tools(self) -> list[Tool]:
         given = (("declined_card", wording.DECLINED_CARD_TOOL, wording.NO_INPUT, self.declined_card),
-                 ("reply_to_driver", wording.REPLY_TOOL, wording.REPLY_INPUT, self.reply_to_driver),
-                 ("hand_to_office", wording.HAND_TO_OFFICE_TOOL, wording.NOTE_INPUT, self.hand_to_office))
+                 ("reply_to_driver", wording.REPLY_TOOL, wording.REPLY_INPUT, self.reply_to_driver))
         return [Tool(name, described, takes, self._noted(name, run)) for name, described, takes, run in given]
 
     # A tool's run that also notes each use in `talk`: what Claude asked of it and what it was answered.
@@ -110,18 +117,18 @@ class Request:
         try:
             found = await self._lookup()
             on_unit = [(a, r) for a, r in found if r.unit.strip() == self.unit]
-            async with _efs:
-                lines = [wording.card_view(a, r, await asyncio.to_thread(self.efs.card, a, r)) for a, r in on_unit]
+            lines = [wording.card_view(a, r, await emanager(self.efs.card, a, r)) for a, r in on_unit]
         except EfsError as error:
             return answer(wording.emanager_down(error), error=True)
         self.steps.append(f"look_up_card: {len(lines)} card(s)")
         return answer("\n".join(lines) or wording.no_card(self.unit))
 
-    # Tool: the one answer in the driver's group, when the rules let it out (rules.reply_refused: never a long number,
-    # never "open"/"ready" unless a card was opened).
+    # Tool: the one answer in the driver's group, when the rules let it out (rules.reply_refused: only after
+    # declined_card opened the card or found it open, never a long number). `self.card` is set by every path of
+    # declined_card, so it tells whether this request was a card request.
     async def reply_to_driver(self, args: dict) -> dict:
         text = (args.get("text") or "").strip()
-        refused = rules.reply_refused(text, self.replied, bool(self.opened))
+        refused = rules.reply_refused(text, self.card is not None, self.replied, bool(self.opened))
         if refused:
             return answer(wording.REPLY_REFUSED[refused], error=True)
         self.replied = True
@@ -132,7 +139,8 @@ class Request:
         await telegram_agent.write(self.client, self.chat_id, text, reply_to=self.message_id)
         return answer(wording.SENT)
 
-    # Tool: passes the request to a person in the office chat.
+    # Raises the alarm in the office chat (the test group while none is set) when declined_card can't open the card;
+    # the driver gets no reply then (rules.reply_refused). Not a tool of Claude's (see tools()).
     async def hand_to_office(self, args: dict) -> dict:
         self.handed = True
         note = re.sub(rf"^\s*unit {re.escape(self.unit)}\s*:\s*", "", args.get("note") or "", flags=re.IGNORECASE)
@@ -154,8 +162,7 @@ class Request:
 
     # The cards Card Lookup finds on this truck's unit, in both accounts.
     async def _lookup(self) -> list[tuple[str, EfsCardRow]]:
-        async with _efs:
-            return [(a, r) for a in ACCOUNTS for r in await asyncio.to_thread(self.efs.cards, a, "unit", self.unit)]
+        return [(a, r) for a in ACCOUNTS for r in await emanager(self.efs.cards, a, "unit", self.unit)]
 
     # Opens the card for one fill at all locations (`activate`: it is inactive, so it is set ACTIVE first), records it
     # the moment eManager confirms, and reports it with what a person should know: the status it was in, whether it
@@ -187,8 +194,8 @@ class Request:
             db.record_agent_open(conn, self.chat_id, self.message_id, row.card_id, self.opened_at)
         self.card = {"did": "opened", "name": card_name, "status": status, "own": own, "activated": activated,
                      "again_min": int(again.total_seconds() // 60) if again else None}
-        self.steps.append(f"declined_card: opened {card_name} for {settings.AGENT_OPEN_FILLS} fill"
-                          f"{' (activated first)' if activated else ''}")
-        await self.office(wording.opened_report(card_name, self.unit, settings.AGENT_OPEN_FILLS,
+        how = wording.opened_how(status, settings.AGENT_OPEN_FILLS)
+        self.steps.append(f"declined_card: opened {card_name} {how}{' (activated first)' if activated else ''}")
+        await self.office(wording.opened_report(card_name, self.unit, how,
                                                 wording.remarks(status, activated, own, again), self.text))
         return answer(wording.OPENED)

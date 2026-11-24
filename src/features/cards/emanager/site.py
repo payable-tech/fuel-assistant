@@ -11,10 +11,11 @@ from features.cards.emanager.page import Form, Page, parse
 BASE = "https://emgr.efsllc.com"
 # The call eManager's own page makes while a person is active; it resets the 90-minute idle logout.
 HEARTBEAT = "/security/Logon.action?resetSessionTimeout="
-# The only buttons ever pressed: look up cards, save a card, put a card in override mode, take it out, open a prompt's
-# edit form and update the prompt. Delete card, delete prompt, transfer, reset PIN and the rest are never sent.
-BUTTONS = {"searchCard", "saveCardInformation", "overrideCard", "deleteCardOverride", "editInformation",
-           "updateCardPrompt"}
+# The only buttons ever pressed: look up cards, save a card, put a card in override mode (a fraud-held card has its
+# own button for it), take it out, open a prompt's edit form and update the prompt. Delete card, delete prompt,
+# transfer, reset PIN and the rest are never sent.
+BUTTONS = {"searchCard", "saveCardInformation", "overrideCard", "overrideFraudCard", "deleteCardOverride",
+           "editInformation", "updateCardPrompt"}
 
 
 # Keeps the login alive. True when eManager still has someone logged in.

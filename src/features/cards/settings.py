@@ -33,9 +33,9 @@ AGENT_MAX_PHOTOS = 3       # the newest photos among them it looks at (a decline
 AGENT_OPEN_FILLS = 1       # an opening lasts this many transactions, always All Locations (features/cards/emanager/fuel_cards)
 AGENT_REPEAT_HOURS = 24    # opening a card it already opened this recently is marked as a repeat in the office report
 # It does this many real jobs (requests it used a tool for) counted from AGENT_JOBS_SINCE, then leaves every later
-# request to the office (the user, 2026-11-24: five, then we look at them). For another batch move AGENT_JOBS_SINCE
-# to now (UTC) and restart the agent; None for AGENT_MAX_JOBS means no limit.
-AGENT_MAX_JOBS = 5
+# request to the office. None means no limit: the user, 2026-11-24, after the first five ("remove the card agent
+# limit"). For a batch again set a number, move AGENT_JOBS_SINCE to now (UTC) and restart the agent.
+AGENT_MAX_JOBS = None
 AGENT_JOBS_SINCE = datetime(2026, 11, 24, 11, 45, tzinfo=timezone.utc)  # 06:45 on this PC's clock (Eastern)
 AGENT_OFFICE_CHAT_ID = int(os.getenv("AGENT_OFFICE_CHAT_ID", "").strip() or 0) or None  # its reports; the test group when unset
 # A group that plays a truck's group with a fabricated truck, driver and card (features/cards/emanager/fake_cards): nothing real is read

@@ -331,8 +331,9 @@ default.
 ### 5.8 The card agent (`features/cards/agent.py`, `tools.py`, `rules.py`, `wording.py`, `claude.py`, `telegram_agent.py`; the user's go 2026-11-23)
 Built the way bob-agent's Telegram agent works (`D:/bob-agent/src/agent`, `src/workers/fuel_cards`).
 - **Claude** runs through the Claude Agent SDK on this PC's Claude Code login (the plan, not API billing), `AGENT_MODEL`,
-  with none of Claude Code's own tools or settings: only three tools (`declined_card`, `reply_to_driver`,
-  `hand_to_office`), at most 12 turns or $2 a run. Its thinking is kept as a summary in each run's trace.
+  with none of Claude Code's own tools or settings: only two tools (`declined_card`, `reply_to_driver`), at most 12
+  turns or $2 a run. A request that is not a card opening (an advance, a money code, a check, a load) gets nothing: no
+  reply, no office post (the user, 2026-11-24); a reply is refused in code unless `declined_card` ran. Its thinking is kept as a summary in each run's trace.
 - **Wakes** when the assistant's account is tagged in a truck's group (or answered with card words); never in its office
   or test chat or a group with no truck; each message once; a bare tag within 10 min of a request there joins it.
   Reads the last `AGENT_HISTORY` messages and up to `AGENT_MAX_PHOTOS` photos, plus the truck's facts (drivers, fuel,
@@ -341,14 +342,19 @@ Built the way bob-agent's Telegram agent works (`D:/bob-agent/src/agent`, `src/w
   without the office), Claude only passes its line on: whose card is the group's truck's driver (a team: the one
   writing, by name); his card is the one on the unit in his name, in ALIF or DT, else the one card in use on the unit;
   it is opened for `AGENT_OPEN_FILLS` fill, all locations, now, whatever its status (HOLD and FRAUD included); an
-  INACTIVE card in his name is activated first; a card already in override mode is left as it is. Only when no one card
-  can be told does it go to the office. Every opening is posted to the office (`AGENT_OFFICE_CHAT_ID`, else the test group; last four digits only) and
+  INACTIVE card in his name is activated first; a card already in override mode is left as it is. A FRAUD card ("Hold
+  For Fraud") has EFS's own override page: a warning (the company answers for fraud while it is open, a new card is
+  due) and one button, no fills or locations; pressing it opens the card and leaves it FRAUD (pressed live 2026-11-24).
+  When no one card can be told or eManager fails, a 🚨 alarm goes to the office and the driver gets no reply (the
+  user, 2026-11-24). Every opening is posted to the office (`AGENT_OFFICE_CHAT_ID`, else the test group; last four digits only) and
   written to `agent_runs` the moment eManager confirms it.
-- **The driver** gets one short line, as a dispatcher writes ("Card is ready, try again now."): never a long number,
-  never "ready"/"open" unless a card was opened. `AGENT_ACT = False` makes it watch-only.
+- **The driver** gets one short line, as a dispatcher writes ("Card is ready, try again now."), only when his card is
+  open (opened now or found open), never a long number. `AGENT_ACT = False` makes it watch-only.
 - **Runs** as its own program (`card-agent`, `run_agent.bat`); it opens the eManager window and keeps its login alive
   (log in there by hand, every 24 hours). Not done yet: everything but opening (money codes, checks, moving a card to
   another truck), closing an override nobody used.
+- **One window, two programs:** every eManager call of the agent and of the card cleanup holds `window.held()`, a lock
+  on `data/efs-window.lock` that Windows lets go when its program ends; the other waits (one change, about 5 s).
 
 ### 5.2 Commands (`.venv\Scripts\python.exe src\main.py <command>`)
 

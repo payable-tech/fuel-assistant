@@ -37,6 +37,7 @@ def world(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "TEST_CHAT_ID", -555)
     monkeypatch.setattr(cards_settings, "AGENT_OFFICE_CHAT_ID", None)
     monkeypatch.setattr(cards_settings, "AGENT_ACT", True)
+    monkeypatch.setattr(tools.window, "LOCK", tmp_path / "efs-window.lock")
     w = SimpleNamespace(cards={}, opened=[], activated=[], writes=[])
     for c in (card("c10001", "3189", "JOHN DOE"), card("c20002", "3189", "MARY ROE"), card("c30003", "31890", "JOHN DOE")):
         w.cards[c[0].card_id] = c
@@ -170,6 +171,8 @@ def test_held_fraud_and_inactive_cards_are_opened(world):
         world.cards["c10001"] = card("c10001", "3189", "JOHN DOE", status)
         assert "try again now" in said(task().declined_card({}))
         assert world.activated == [] and f"Its status is {status}" in world.writes[-1][1]
+    fraud = world.writes[-1][1]   # the fraud-held one: opened through EFS's own override, and the office is warned
+    assert "through EFS's fraud override" in fraud and "1 fill" not in fraud and "a new card is due" in fraud
     world.cards["c10001"] = card("c10001", "3189", "JOHN DOE", "INACTIVE")
     t = task()
     assert "try again now" in said(t.declined_card({}))
@@ -185,8 +188,10 @@ def test_a_failed_opening_after_activating_says_so(world, monkeypatch):
 
     monkeypatch.setattr(tools.fuel_cards, "set_override", refuse)
     world.cards["c10001"] = card("c10001", "3189", "JOHN DOE", "INACTIVE")
-    assert "Opening failed" in said(task().declined_card({}))
-    assert "is ACTIVE now, but not open" in world.writes[-1][1]
+    t = task()
+    assert "Do not reply" in said(t.declined_card({}))
+    assert world.writes[-1][1].startswith("🚨") and "is ACTIVE now, but not open" in world.writes[-1][1]
+    assert "no card was opened" in said(t.reply_to_driver({"text": "Checking your card."}))
 
 
 # A card already open is left as it is and the driver may be told to try again; a card opened by the agent an hour
@@ -218,17 +223,27 @@ def test_open_already_again_another_name_and_watch_only(world, monkeypatch):
     assert "Would open" in world.writes[-1][1]
 
 
-# A reply never carries a long number, and never says the card is ready when none was opened.
+# A request that is not a card opening (declined_card never called) gets no reply at all, nor one whose card was not
+# opened (the user, 2026-11-24: the office gets an alarm instead). A reply about an open card never carries a long
+# number.
 def test_reply_guards(world):
-    t = task()
-    assert "Not sent" in said(t.reply_to_driver({"text": "Your driver ID is 445566"}))
-    assert "Not sent" in said(t.reply_to_driver({"text": "Card is ready, try again"}))
-    assert world.writes == []
-    assert said(t.reply_to_driver({"text": "Checking your card, the office will write shortly."})) == "Sent."
+    advance = task("Jim Poe", text="Am I able to get a $200 advance on my EFS?")
+    assert "not a card opening" in said(advance.reply_to_driver({"text": "Got it, the office will check it."}))
+    assert world.writes == [] and advance.outcome() == ""
+    t = task("Someone Else", (JOHN, MARY))   # neither driver clearly: a person must tell which card
+    assert said(t.declined_card({})).startswith("Needs a person")
+    assert world.writes[-1][0] == -555 and world.writes[-1][1].startswith("🚨")   # the alarm, in the test group
+    sent_before = len(world.writes)
+    for text in ("Checking your card, the office will write shortly.", "Card is ready, try again"):
+        assert "no card was opened" in said(t.reply_to_driver({"text": text}))
+    assert len(world.writes) == sent_before and "replied" not in t.outcome()
+    opened = task()
+    assert "try again now" in said(opened.declined_card({}))
+    assert "Not sent" in said(opened.reply_to_driver({"text": "Your driver ID is 445566"}))
 
 
 # How Claude is called: this PC's Claude Code login (no key), none of Claude Code's own tools or settings, only these
-# three tools by their server names, the model and limits from config, the photos as pictures before the text. Its
+# two tools by their server names (no tool to pass a request to the office), the model and limits from config, the photos as pictures before the text. Its
 # thinking is asked for as text, and the run's trace keeps what it thought, used and wrote, in order.
 def test_claude_call(world, monkeypatch, tmp_path):
     from features.cards import claude
@@ -250,7 +265,7 @@ def test_claude_call(world, monkeypatch, tmp_path):
     assert got.trace == (("thought", "he is at the pump"), ("used", "declined_card"), ("said", "done"))
     assert options.thinking == {"type": "adaptive", "display": "summarized"}
     assert options.tools == [] and options.permission_mode == "dontAsk" and options.setting_sources == []
-    assert options.allowed_tools == ["mcp__fuel__declined_card", "mcp__fuel__reply_to_driver", "mcp__fuel__hand_to_office"]
+    assert options.allowed_tools == ["mcp__fuel__declined_card", "mcp__fuel__reply_to_driver"]
     assert options.model == cards_settings.AGENT_MODEL and options.max_turns == claude.MAX_TURNS
     content = seen["message"][0]["message"]["content"]
     assert content[0]["type"] == "image" and content[-1] == {"type": "text", "text": "the chat"}

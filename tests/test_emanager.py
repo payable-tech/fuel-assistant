@@ -80,6 +80,10 @@ def edit_page(user, card_id, index, prompt, status):
             f"<input name='cancel' type='submit' value='Cancel' />{TOKENS}</form>")
 
 
+# The statuses a card page offers; a card held for fraud shows FRAUD as its choice too.
+STATUSES = ("ACTIVE", "INACTIVE", "HOLD")
+
+
 # A card's own page: its settings form, the buttons it offers, and its prompts.
 def card_page(user, card_id, status, hand_enter="DISALLOW", override=False, prompts=PROMPTS):
     return (f"{header(user)}"
@@ -93,7 +97,7 @@ def card_page(user, card_id, status, hand_enter="DISALLOW", override=False, prom
             "<option value='2' selected='selected'>2</option></select>"
             "<input name='card.header.companyXRef' type='text' disabled />"
             "<select name='policy.header.contractId' disabled><option value='794698' selected>794698</option></select>"
-            + radios("card.header.status", status, ("ACTIVE", "INACTIVE", "HOLD"))
+            + radios("card.header.status", status, STATUSES + (("FRAUD",) if status == "FRAUD" else ()))
             + radios("card.header.handEnter", hand_enter, ("ALLOW", "DISALLOW", "POLICY"))
             + radios("card.header.infoSource", "BOTH", ("CARD", "POLICY", "BOTH"))
             + radios("card.header.mobileTransaction", "DISALLOW", ("ALLOW", "DISALLOW", "POLICY"))
@@ -120,6 +124,19 @@ def override_page(user, card_id):
             f"<input name='cancelVelocityOverride' type='submit' value='Cancel' />{TOKENS}</form>")
 
 
+# The override page of a card held for fraud, as eManager showed it (card …0509, 2026-11-24): a warning and one
+# button with no value, no times or places to choose.
+def fraud_override_page(user, card_id):
+    return (f"{header(user)}<form method='post' action='/cards/CardPromptManagement.action'>"
+            f"<input name='card.cardId' type='hidden' value='{card_id}' />"
+            "<input name='useNewVersion' type='hidden' value='false' />"
+            "Your card is currently in hold for fraud for 30 minutes. Disclaimer: You are overriding a card that has "
+            "been flagged for fraudulent activity - you will be responsible for any fraudulent activity on the card "
+            "while in override. A new card should be issued to this driver immediately."
+            "<input name='overrideFraudCard' type='submit' title='Override Card' class='primaryButton' />"
+            f"<input name='cancelVelocityOverride' type='submit' value='Cancel' />{TOKENS}</form>")
+
+
 # A pretend eManager: one session, one card, answering the way the real site did in the recordings.
 class Site:
     # One card in a status, maybe in override mode; saves_hand_enter makes a save change hand enter too.
@@ -142,11 +159,12 @@ class Site:
         if not url.path.endswith("CardPromptManagement.action"):
             return pages.parse(path, header(self.user))
         if query.get("overrideCard"):
-            return pages.parse(path, override_page(self.user, ROW.card_id))
+            shown = fraud_override_page if self.status == "FRAUD" else override_page
+            return pages.parse(path, shown(self.user, ROW.card_id))
         if "saveCardInformation" in fields:
             self.status = fields["card.header.status"]
             self.hand_enter = self.saves_hand_enter or fields["card.header.handEnter"]
-        if "overrideCard" in fields:
+        if "overrideCard" in fields or "overrideFraudCard" in fields:
             self.override = True
         if "deleteCardOverride" in fields:
             self.override = False
@@ -266,6 +284,19 @@ def test_an_override_ticks_hand_enter_only_when_asked_and_never_product_limits(m
     (fields,) = site.posted("overrideCard")
     assert (fields["cardOverride"], fields["locationOverrideRadio"]) == ("3", "ALL")
     assert fields["handOverride"] == "true" and "promptOverride" not in fields
+
+
+# A card held for fraud is overridden through its own page: its one button pressed, no times or places sent. It is
+# then in override mode and still FRAUD.
+def test_a_fraud_held_card_is_overridden_through_its_own_page(monkeypatch):
+    site = Site(status="FRAUD")
+    monkeypatch.setattr(real_site, "fetch", site.fetch)
+    after = fuel_cards.set_override("ALIF", ROW, 1)
+    assert after.override and after.status == "FRAUD"
+    (fields,) = site.posted("overrideFraudCard")
+    assert fields["overrideFraudCard"] == "" and fields["card.cardId"] == ROW.card_id
+    assert not {"cardOverride", "locationOverrideRadio", "cancelVelocityOverride"} & set(fields)
+    assert site.posted("overrideCard") == []
 
 
 # An inactive card is not overridden (it is activated first), nor one already in override mode.
