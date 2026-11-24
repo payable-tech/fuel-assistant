@@ -30,6 +30,12 @@ ROUTES = {
 }
 
 
+# The dashboard's server: one thread per request, and room for a page's whole burst of requests to wait while the
+# program is busy (the default of 5 waiting was too few: a page opened right after a restart lost some of its numbers).
+class Server(ThreadingHTTPServer):
+    request_queue_size = 64
+
+
 # Serves files from web/, plus the JSON routes (ROUTES) the page reads its numbers from.
 class Handler(SimpleHTTPRequestHandler):
     # Windows can map .js to text/plain from the registry; browsers need the real types.
@@ -86,7 +92,7 @@ class Handler(SimpleHTTPRequestHandler):
 # DASHBOARD_HOST allows) until stopped with Ctrl+C. `start_jobs`: what starts the automatic jobs, called once the
 # server is set up (None: only show the data).
 def serve(port: int, start_jobs=None) -> None:
-    server = ThreadingHTTPServer((settings.DASHBOARD_HOST, port), partial(Handler, directory=str(settings.WEB_DIR)))
+    server = Server((settings.DASHBOARD_HOST, port), partial(Handler, directory=str(settings.WEB_DIR)))
     _stay_awake()
     _no_click_pause()
     if start_jobs:
