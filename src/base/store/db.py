@@ -50,6 +50,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         _add_column(conn, "recommendations", "sent_at", "TEXT")
         _add_column(conn, "recommendations", "lat", "REAL")
         _add_column(conn, "recommendations", "lng", "REAL")
+        _add_column(conn, "agent_runs", "record", "TEXT")
         _schema_ready.add(str(config.DB_PATH))
 
 
@@ -650,12 +651,19 @@ def claim_agent_run(conn: sqlite3.Connection, chat_id: int, message_id: int, uni
                         (chat_id, message_id, unit, _ts(at), text)).rowcount == 1
 
 
-# Records how a card agent run ended: its outcome, the tools it used (JSON), the card it opened and when, or its error.
+# Records how a card agent run ended: its outcome, the tools it used (JSON), the card it opened and when, its error,
+# and the run's whole record (JSON; None when Claude was not asked).
 def finish_agent_run(conn: sqlite3.Connection, chat_id: int, message_id: int, outcome: str, steps: str,
-                     opened_card: str | None, opened_at: datetime | None, error: str | None) -> None:
-    conn.execute("UPDATE agent_runs SET outcome = ?, steps = ?, opened_card = ?, opened_at = ?, error = ? "
+                     opened_card: str | None, opened_at: datetime | None, error: str | None, record: str | None) -> None:
+    conn.execute("UPDATE agent_runs SET outcome = ?, steps = ?, opened_card = ?, opened_at = ?, error = ?, record = ? "
                  "WHERE chat_id = ? AND message_id = ?",
-                 (outcome, steps, opened_card, _ts(opened_at) if opened_at else None, error, chat_id, message_id))
+                 (outcome, steps, opened_card, _ts(opened_at) if opened_at else None, error, record, chat_id, message_id))
+
+
+# How many jobs the card agent did since a moment: the requests it used a tool for (a thank-you it only read is none).
+def agent_jobs_since(conn: sqlite3.Connection, since: datetime) -> int:
+    return conn.execute("SELECT COUNT(*) FROM agent_runs WHERE woke_at >= ? AND steps IS NOT NULL AND steps != '[]'",
+                        (_ts(since),)).fetchone()[0]
 
 
 # True when the card agent took a request in this chat since a moment (a bare tag right after joins that one).

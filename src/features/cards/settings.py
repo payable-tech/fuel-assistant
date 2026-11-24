@@ -1,6 +1,7 @@
 # The card agent's settings: the eManager window it works in, and the agent itself (its Telegram login, its Claude
 # model, what it may do). Its secrets come from .env, which base/config loads.
 import os
+from datetime import datetime, timezone
 
 from base import config
 
@@ -30,6 +31,11 @@ AGENT_HISTORY = 10         # messages of the chat it reads, the one that tagged 
 AGENT_MAX_PHOTOS = 3       # the newest photos among them it looks at (a declined receipt, a pump screen)
 AGENT_OPEN_FILLS = 1       # an opening lasts this many transactions, always All Locations (features/cards/emanager/fuel_cards)
 AGENT_REPEAT_HOURS = 24    # opening a card it already opened this recently is marked as a repeat in the office report
+# It does this many real jobs (requests it used a tool for) counted from AGENT_JOBS_SINCE, then leaves every later
+# request to the office (the user, 2026-11-24: five, then we look at them). For another batch move AGENT_JOBS_SINCE
+# to now (UTC) and restart the agent; None for AGENT_MAX_JOBS means no limit.
+AGENT_MAX_JOBS = 5
+AGENT_JOBS_SINCE = datetime(2026, 11, 24, 12, 45, tzinfo=timezone.utc)
 AGENT_OFFICE_CHAT_ID = int(os.getenv("AGENT_OFFICE_CHAT_ID", "").strip() or 0) or None  # its reports; the test group when unset
 # A group that plays a truck's group with a fabricated truck, driver and card (features/cards/emanager/fake_cards): nothing real is read
 # or changed for it. AGENT_TEST_ONLY=1 makes the agent ignore every other group (and skip the eManager window).

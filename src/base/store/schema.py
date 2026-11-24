@@ -358,7 +358,8 @@ CREATE TABLE IF NOT EXISTS health_alerts (
 );
 
 -- Writer: the card agent (features/cards/agent). One row per message that woke it: the truck of that group, what it decided,
--- the tools it used, and the card it opened. Kept: the audit of every card it changed, and its cooldown.
+-- the tools it used, the card it opened, and the run's whole record (JSON: what Claude read, what it thought, each tool
+-- with its answer). Kept: the audit of every card it changed.
 CREATE TABLE IF NOT EXISTS agent_runs (
     chat_id     INTEGER NOT NULL,
     message_id  INTEGER NOT NULL,
@@ -370,6 +371,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     opened_card TEXT,
     opened_at   TEXT,
     error       TEXT,
+    record      TEXT,
     PRIMARY KEY (chat_id, message_id)
 );
 """

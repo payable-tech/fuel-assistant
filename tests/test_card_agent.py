@@ -3,6 +3,7 @@
 # once for one fill, one reply, never a number, every opening reported), what wakes it, and how Claude is called (the Claude Code login, no
 # built-in tools). eManager, Telegram and Claude are fakes here.
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -289,7 +290,7 @@ def test_work(world, monkeypatch):
         by = {t.name: t for t in tools}
         await by["declined_card"].run({})
         await by["reply_to_driver"].run({"text": "Card is ready, try again now."})
-        return SimpleNamespace(text="", problem="", cost_usd=0.01)
+        return SimpleNamespace(text="", problem="", cost_usd=0.01, trace=(("thought", "he is at the pump"),))
 
     alive = [True]
 
@@ -303,6 +304,9 @@ def test_work(world, monkeypatch):
     with db.connect() as conn:
         assert tuple(conn.execute("SELECT outcome, opened_card FROM agent_runs WHERE message_id = 42").fetchone()) == \
             ("opened c10001, replied", "c10001")
+        kept = json.loads(conn.execute("SELECT record FROM agent_runs WHERE message_id = 42").fetchone()[0])
+    assert kept["trace"] == [["thought", "he is at the pump"]] and kept["sender"] == "John Doe"
+    assert [t["tool"] for t in kept["talk"]] == ["declined_card", "reply_to_driver"] and "try again now" in kept["talk"][0]["answer"]
 
     alive[0] = False
     t = task()
@@ -326,3 +330,39 @@ def test_work(world, monkeypatch):
     with db.connect() as conn:
         assert conn.execute("SELECT outcome FROM agent_runs WHERE message_id = 44").fetchone()[0] == "failed"
     assert "could not finish" in world.writes[-1][1]
+
+
+# After its set number of jobs the agent is paused: a card request goes to the office and Claude isn't asked; a
+# message with no card words is left without a word. A run that used no tool is not a job.
+def test_paused_after_its_jobs(world, monkeypatch):
+    asked = []
+
+    async def model(system, text, photos, tools, workspace):
+        asked.append(text)
+        if "declined" in text:
+            await {t.name: t for t in tools}["declined_card"].run({})
+        return SimpleNamespace(text="", problem="", cost_usd=0.01, trace=())
+
+    async def alive():
+        return True
+
+    monkeypatch.setattr(agent.claude, "run", model)
+    monkeypatch.setattr(agent, "_emanager_alive", alive)
+    monkeypatch.setattr(agent, "prompt", lambda t, chat: t.text)
+    monkeypatch.setattr(cards_settings, "AGENT_MAX_JOBS", 1)
+    monkeypatch.setattr(cards_settings, "AGENT_JOBS_SINCE", NOW - timedelta(hours=1))
+
+    def request(message_id: int, text: str) -> tools.Request:
+        with db.connect() as conn:
+            db.claim_agent_run(conn, -100, message_id, "3189", NOW, text)
+        return tools.Request(None, -100, message_id, text, "John Doe", TRUCK, [JOHN])
+
+    asyncio.run(agent.work(request(1, "thanks"), []))             # read only: not a job
+    asyncio.run(agent.work(request(2, "card declined"), []))      # the one job
+    asyncio.run(agent.work(request(3, "card declined again"), []))
+    asyncio.run(agent.work(request(4, "ok thanks"), []))
+    assert len(asked) == 2 and world.opened == [("DT", "c10001", 1)]
+    assert "done its 1 jobs and is paused" in world.writes[-1][1] and "card declined again" in world.writes[-1][1]
+    with db.connect() as conn:
+        outcomes = [r[0] for r in conn.execute("SELECT outcome FROM agent_runs WHERE message_id IN (3, 4) ORDER BY message_id")]
+    assert outcomes == ["paused after 1 jobs: left for the office"] * 2

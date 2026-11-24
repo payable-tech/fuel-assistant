@@ -179,6 +179,7 @@ def run(most: int) -> Path:
     _copy_database(copy)
     config.DB_PATH = copy
     settings.AGENT_ACT = True  # the whole path, as live; its writes are kept, its changes land on the test card
+    settings.AGENT_MAX_JOBS = None  # every case is worked: the live agent's pause is not the replay's
     row, before = test_card()
     if not at_rest(row, before):
         raise ReplayError(f"the test card is not at rest (status {before.status}, override {before.override}, unit "
@@ -230,32 +231,18 @@ async def _one(case: dict, cards: OnTestCard, written: list, heard: dict) -> dic
         db.claim_agent_run(conn, case["chat_id"], case["message_id"], truck.unit, wrote_at, case["text"][:2000])
     request = tools.Request(None, case["chat_id"], case["message_id"], case["text"], case["sender"], truck, drivers)
     request.efs = cards
-    talk: list[dict] = []
-    its_tools = request.tools
-    request.tools = lambda: [replace(tool, run=_recorded(tool, talk)) for tool in its_tools()]
     heard.clear()
     start = len(written)
     await agent.work(request, cases.chat_of(case))
     mine = written[start:]
     with db.connect() as conn:
         recorded = conn.execute("SELECT outcome, error FROM agent_runs WHERE message_id = ?", (case["message_id"],)).fetchone()
-    return seen | {"outcome": recorded["outcome"], "error": recorded["error"], "steps": request.steps, "talk": talk,
+    return seen | {"outcome": recorded["outcome"], "error": recorded["error"], "steps": request.steps, "talk": request.talk,
                    "given": heard.get("given", ""), "said": heard.get("said", ""), "problem": heard.get("problem", ""),
                    "cost": heard.get("cost"), "trace": heard.get("trace", []),
                    "reply": next((text for chat, text, _ in mine if chat == case["chat_id"]), None),
                    "office": [text for chat, text, _ in mine if chat != case["chat_id"]],
                    "drivers_now": [d.full_name for d in drivers]}
-
-
-# A tool that also writes down each use: what Claude asked of it and what it answered.
-def _recorded(tool, talk: list[dict]):
-    # The tool's own run, with the call and its answer added to `talk`.
-    async def run(args: dict) -> dict:
-        answer = await tool.run(args)
-        talk.append({"tool": tool.name, "asked": args, "answer": answer["content"][0]["text"], "refused": bool(answer.get("is_error"))})
-        return answer
-
-    return run
 
 
 # Copies the live database (read only) for the replay to work on.

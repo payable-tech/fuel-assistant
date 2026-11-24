@@ -69,27 +69,43 @@ def _skipped(message, why: str) -> None:
              (message.message or "")[:80])
 
 
-# Works one request to its end and records it. Without eManager no card can be fixed: the office is told and Claude
-# isn't asked. A failure of Claude or Telegram goes to the office too.
+# Works one request to its end and records it, with the run's whole record (what Claude read, what it thought, each
+# tool with its answer). After its set number of jobs it is paused: a card request is left for the office and Claude
+# isn't asked. Without eManager no card can be fixed: the office is told and Claude isn't asked. A failure of Claude or
+# Telegram goes to the office too.
 async def work(task: Request, chat: list[ChatLine]) -> None:
-    outcome, error = "", None
+    outcome, error, record = "", None, None
     try:
-        if not task.test and not await _emanager_alive():
+        if not task.test and _paused():
+            if rules.CARD_WORDS.search(task.text):
+                await task.office(wording.limit_reached(task.unit, settings.AGENT_MAX_JOBS, task.text))
+            outcome = f"paused after {settings.AGENT_MAX_JOBS} jobs: left for the office"
+        elif not task.test and not await _emanager_alive():
             await task.office(wording.not_logged_in(task.unit, task.text))
             outcome = "eManager not logged in: left for the office"
         else:
-            said = await claude.run(wording.SYSTEM, prompt(task, chat), [c.photo for c in chat if c.photo], task.tools(),
-                                    WORKSPACE)
+            given = prompt(task, chat)
+            said = await claude.run(wording.SYSTEM, given, [c.photo for c in chat if c.photo], task.tools(), WORKSPACE)
             outcome = task.outcome() or (f"stopped: {said.problem}" if said.problem else
                                          f"nothing to do: {said.text[:200]}")
+            record = json.dumps({"sender": task.sender, "given": given, "trace": said.trace, "talk": task.talk,
+                                 "said": said.text, "problem": said.problem, "cost": said.cost_usd}, ensure_ascii=False)
     except Exception as failure:
         error, outcome = repr(failure)[:500], "failed"
         log.exception("Card agent failed on %s / %s", task.chat_id, task.message_id)
         await task.office(wording.could_not_finish(task.unit, type(failure).__name__, task.text))
     with db.connect() as conn:
         db.finish_agent_run(conn, task.chat_id, task.message_id, outcome, json.dumps(task.steps), task.opened,
-                            task.opened_at, error)
+                            task.opened_at, error, record)
     log.info("Card agent, unit %s: %s", task.unit, outcome)
+
+
+# True once the agent has done its set number of jobs since the count began (settings.AGENT_MAX_JOBS; None: no limit).
+def _paused() -> bool:
+    if settings.AGENT_MAX_JOBS is None:
+        return False
+    with db.connect() as conn:
+        return db.agent_jobs_since(conn, settings.AGENT_JOBS_SINCE) >= settings.AGENT_MAX_JOBS
 
 
 # What Claude is given to read for a request: what the database knows of the truck (its engine state, the Love's near

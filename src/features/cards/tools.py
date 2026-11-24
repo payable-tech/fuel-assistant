@@ -1,6 +1,7 @@
 # What Claude may do for one request: three tools. Each gathers what it needs, asks the rules (features/cards/rules)
 # and only then acts, so no chat text can make it act on another truck, open a card twice, or send a number. The words it
-# answers and reports are in features/cards/wording. Every opening is reported to the office and kept in `agent_runs`.
+# answers and reports are in features/cards/wording. Every opening is reported to the office and kept in `agent_runs`,
+# and every use of a tool is noted with its answer (`talk`), for the run's record.
 import asyncio
 import logging
 import re
@@ -38,6 +39,7 @@ class Request:
         self.test = chat_id == settings.AGENT_TEST_CHAT_ID
         self.efs = fake_cards if self.test else fuel_cards  # the test group's card is a pretend one
         self.steps: list[str] = []
+        self.talk: list[dict] = []   # each use of a tool by Claude: what it asked and what it was answered
         self.opened: str | None = None
         self.opened_at: datetime | None = None
         self.replied = self.handed = False
@@ -45,9 +47,21 @@ class Request:
     # The tools Claude may call, with what each does as Claude reads it. look_up_card is not among them for now (the
     # user, 2026-11-24: its one job is opening the card; looking first only made it hesitate).
     def tools(self) -> list[Tool]:
-        return [Tool("declined_card", wording.DECLINED_CARD_TOOL, wording.NO_INPUT, self.declined_card),
-                Tool("reply_to_driver", wording.REPLY_TOOL, wording.REPLY_INPUT, self.reply_to_driver),
-                Tool("hand_to_office", wording.HAND_TO_OFFICE_TOOL, wording.NOTE_INPUT, self.hand_to_office)]
+        given = (("declined_card", wording.DECLINED_CARD_TOOL, wording.NO_INPUT, self.declined_card),
+                 ("reply_to_driver", wording.REPLY_TOOL, wording.REPLY_INPUT, self.reply_to_driver),
+                 ("hand_to_office", wording.HAND_TO_OFFICE_TOOL, wording.NOTE_INPUT, self.hand_to_office))
+        return [Tool(name, described, takes, self._noted(name, run)) for name, described, takes, run in given]
+
+    # A tool's run that also notes each use in `talk`: what Claude asked of it and what it was answered.
+    def _noted(self, name: str, run):
+        # The tool's own run, then the note.
+        async def noted(args: dict) -> dict:
+            reply = await run(args)
+            self.talk.append({"tool": name, "asked": args, "answer": reply["content"][0]["text"],
+                              "refused": bool(reply.get("is_error"))})
+            return reply
+
+        return noted
 
     # How the request ended, in words, when a tool did something; "" when nothing was done.
     def outcome(self) -> str:

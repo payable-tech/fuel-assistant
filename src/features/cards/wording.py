@@ -154,6 +154,12 @@ def not_logged_in(unit: str, driver_wrote: str) -> str:
             f"Log in in its window. Driver wrote: {driver_wrote[:300]}")
 
 
+# The office report of a card request that came after the agent did its set number of jobs.
+def limit_reached(unit: str, most: int, driver_wrote: str) -> str:
+    return (f"🙋 Unit {unit}: the card agent has done its {most} jobs and is paused, so this one is for a person. "
+            f"Driver wrote: {driver_wrote[:300]}")
+
+
 # The office report of a request the agent could not finish (`failure`: the kind of error).
 def could_not_finish(unit: str, failure: str, driver_wrote: str) -> str:
     return (f"🙋 Unit {unit}: the card agent could not finish this request "
