@@ -32,7 +32,7 @@ function span(seconds) {
 // A moment as "07:12" on the company's clock.
 const clock = (when) => new Date(when).toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hourCycle: 'h23', hour: '2-digit', minute: '2-digit' });
 
-// A card's short name from its full one: "card …0503 (ALIF, unit 1871, PAUL WISLY)" -> "card …0503".
+// A card's short name from its full one: "card …0806 (DT, unit 3189, JOHN DOE)" -> "card …0806".
 const shortCard = (card) => (card && card.name ? card.name.split(' (')[0] : null);
 
 // Wires the switch between the card requests and everything heard, once.
