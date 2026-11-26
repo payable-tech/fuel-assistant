@@ -44,6 +44,11 @@ def register(sub) -> None:
         run=cmd_card_agent)
     sub.add_parser("checker-login", help="log the card checker's own Telegram login in, once (Bob's account)").set_defaults(
         run=cmd_checker_login)
+    p = sub.add_parser("card-off", help="turn off every ACTIVE card whose latest check says off (home time: X-Ref "
+                                        "HOMETIME; terminated: parked, X-Ref QUIT); shows them unless --send")
+    p.add_argument("--send", action="store_true", help="make the changes")
+    p.add_argument("--most", type=int, help="at most this many cards")
+    p.set_defaults(run=cmd_card_off)
     p = sub.add_parser("card-check", help="check every ACTIVE card: read its truck's group and say whether the card "
                                           "should be on; changes nothing")
     p.add_argument("--most", type=int, help="check at most this many cards (a trial)")
@@ -134,6 +139,25 @@ def cmd_card_agent(args) -> None:
     _log_to("agent.log")
     logging.getLogger(__name__).info("Card agent starting (acts: %s)", cards_settings.AGENT_ACT)
     card_agent.run()
+
+
+# Lists the cards due to be turned off and what each gets; with --send, turns them off (features/cards/card_off),
+# then copies EFS's list again so the dashboard shows them as they are now.
+def cmd_card_off(args) -> None:
+    from features.cards import card_off
+    planned = card_off.plan()[:args.most]
+    for card, kind, xref in planned:
+        print(f"…{card['last4']} {card['account']} unit {card['unit']}: {kind}, X-Ref {xref!r} ({card['why']})")
+    if not args.send:
+        print(f"{len(planned)} cards would be turned off. Add --send to do it.")
+        return
+    window.start()
+    try:
+        done = card_off.run(args.most)
+    finally:
+        print(f"Log: {card_off.LOG}")
+    print(", ".join(f"{n} {what}" for what, n in done.most_common()) or "nothing to turn off")
+    card_list.copy()
 
 
 # Logs the card checker's own Telegram login in, once: Telegram asks for Bob's phone, then the code it sends there.

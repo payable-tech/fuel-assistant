@@ -678,7 +678,7 @@ def efs_card_list(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         "                 FROM card_checks) "
         "SELECT c.account, c.card_id, c.last4, c.status, c.unit, c.driver_id, c.driver_name, c.xref, p.last_used, p.override, "
         "       p.synced_at AS page_at, k.card_id AS dt_card_id, k.assigned_to AS dt_assigned_to, k.number, "
-        "       d.full_name AS dt_driver, d.employee_status AS dt_driver_status, "
+        "       k.driver_id AS dt_driver_id, d.full_name AS dt_driver, d.employee_status AS dt_driver_status, "
         "       CASE WHEN k.assigned_to = 'truck' THEN k.unit ELSE COALESCE(d.unit, k.unit) END AS dt_unit, "
         "       h.should_be, h.why, h.sure, h.evidence, h.checked_at "
         "FROM efs_cards c "

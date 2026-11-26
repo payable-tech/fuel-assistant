@@ -396,6 +396,15 @@ Built the way bob-agent's Telegram agent works (`D:/bob-agent/src/agent`, `src/w
   and the reason with the date in the card's X-Ref (`fuel_cards.set_xref`, `efs-card ... --xref`), e.g.
   `HOMETIME 11-26`; Card Lookup searches by it. eManager keeps at most 15 letters, digits, spaces and hyphens (a "/"
   is dropped, a longer one not saved), so anything else is refused before sending. Tried on the test card …0672.
+- **The rule for turning a card off (the user, 2026-11-26), for the step that does it:** home time: INACTIVE, unit /
+  driver ID / name left as they are, X-Ref `HOMETIME 11-26` (switched back on when he returns). Terminated: parked
+  (INACTIVE, 99999 / 99999 / ALIF UZ CORP, as the cleanup does), X-Ref `QUIT 17481 1126`: QUIT, the Datatruck
+  driver ID (the card's own driver ID is the unit on 201 of 202 cards in use), month and day (the year doesn't fit
+  in 15 characters; the full date and the card's before-state go in our own log). Starts as flags the user approves.
+- **`card-off`** (`features/cards/card_off.py`, `card_off_rules.py`): turns off every ACTIVE card whose check of the
+  last 24 h says off, by that rule (parked only when Datatruck has the driver as inactive); each card read again first
+  and logged as it was in `data/card-off/log.csv`; `--send` to act. First run 2026-11-26 on the user's go: 27 cards
+  (22 home time, 5 parked); one X-Ref eManager didn't keep the first time was written on a second try.
 - **Full card numbers** come from Datatruck (`fuel_cards.number`, kept since 2026-11-26): the page copies one on a click.
 - **Next (the user's order):** a "why" per card from an agent that reads every card's driver group about 3 times a
   day (the user gives real cases first), then the agent turning cards off itself, starting as flags the user approves.
