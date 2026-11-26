@@ -79,6 +79,15 @@ LIVE_UNITS = ("0530", "14755", "0226", "1553", "51506", "5502", "4482", "516773"
               "3068", "4296", "551803", "77299", "211214",
               "3625", "3077", "2030", "4333", "3058", "831648", "1518", "1620", "208103", "5881",
               "309923", "1903", "212530", "6333", "539874", "9606", "101..", "14649", "19704", "3532")
+# Every DT truck paused 2026-11-26 on the user's word ("pause the all DT drivers"), while we check whether someone else
+# also tells DT drivers where to fuel: its group is titled "DT:" or it buys on DT National cards (50779's group says
+# "TTL:" but its cards are DT's). They stay in the pilot: copies still go to the test group. Back on the user's go.
+DT_PAUSED = ("14755", "4482", "4214", "252602", "4217", "50779", "209420", "8829", "1081", "3346", "714200", "3526",
+             "211183", "3498", "554326", "211250", "4275", "772796", "211146", "4422", "4470", "228551", "528118",
+             "3715", "294179", "4276", "772272", "208104", "4191", "513245", "4615", "4178", "104", "555246", "4169",
+             "211289", "14734", "4596", "3068", "4296", "3625", "3077", "2030", "4333", "3058", "831648", "208103",
+             "309923", "539874", "101..", "3532")
+LIVE_UNITS = tuple(u for u in LIVE_UNITS if u not in DT_PAUSED)
 # Batch 10, 2026-11-16 ~14:00 UTC on the user's go ("go, and add only active, real units"): 12 ready once Bob's account
 # added Migo to 8 groups (3625 3077 2030 4333 3058 831648 0140 208103), and 8 whose group was linked by hand (set-chat,
 # Migo in each; 212530 6333 539874 9606 101.. 14649 19704 3532). All 20 checked active: an active driver in Datatruck,
