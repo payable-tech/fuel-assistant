@@ -135,7 +135,9 @@ def test_fleet_status():
 # used; and one Datatruck doesn't have.
 def test_all_cards(monkeypatch):
     from base.models import DatatruckDriver, EfsCardRow, FuelCard
+    from base.sources import task_scheduler
     monkeypatch.setattr(dashboard, "today", lambda: date(2026, 11, 26))
+    monkeypatch.setattr(task_scheduler, "next_run", lambda name: ("Ready", datetime(2026, 11, 26, 23, 0, tzinfo=timezone.utc)))
     efs = lambda card_id, unit, name, status: EfsCardRow(card_id, f"556748******{card_id[-4:]}", "1", unit, "4455", name, "", status)
     with db.connect() as conn:
         db.replace_dt_drivers(conn, [DatatruckDriver(7, "ALI (LO)", "lease", "active", "TTL", "340"),
@@ -165,6 +167,8 @@ def test_all_cards(monkeypatch):
                     "5555": ("ALIF", "ACTIVE", False, False, False, None, "none", None, None),
                     "0001": ("DT", "HOLD", False, True, False, None, "truck", None, "12")}
     assert d["efs_at"] and d["pages_at"] and d["links"] == {"done": 4, "of": 4} and d["cards"][0]["driver_id"] == "4455"
+    # the checker's latest check, and its next run as Windows' Task Scheduler has it
+    assert d["check"] == {"last_at": "2026-11-26 10:00:00+00:00", "state": "Ready", "next_at": "2026-11-26T23:00:00+00:00"}
     # the latest check counts, set against the status: on a load and ACTIVE agrees; ACTIVE but the driver left should be
     # off; never checked
     checked = {c["last4"]: (c["verdict"], c["why"], c["sure"]) for c in d["cards"]}

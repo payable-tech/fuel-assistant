@@ -3,7 +3,7 @@
 // use by the day EFS last saw them used. Under it, the cards as a table filtered and sorted from its column headings
 // (table.js).
 import { el } from './dom.js';
-import { ago, fmt, personName, plural } from './format.js';
+import { ago, dayClock, fmt, personName, plural, until } from './format.js';
 import { filterTable, mark } from './table.js';
 
 // A card's state: its status in EFS, with the inactive cards the cleanup parked apart.
@@ -100,12 +100,26 @@ export function renderAllCards(d) {
   const linking = d.links.done < d.links.of ? ` · Datatruck's cards found in EFS: ${fmt.count(d.links.done)} of ${fmt.count(d.links.of)}` : '';
   document.getElementById('allcards-meta').textContent = `${plural(d.cards.length, 'card')} · one row per EFS card · `
     + `EFS's list copied ${since(d.efs_at)}, card pages read ${since(d.pages_at)}${linking}`;
+  showChecker(d.check);
   const inUse = d.cards.filter((c) => c.status !== 'INACTIVE');
   document.getElementById('allcards-board').replaceChildren(el('div', { class: 'board-pair even' },
     bars('By account · every card', d.cards, STATES, state),
     bars('Status against its check · every card', d.cards, VERDICTS, (c) => c.verdict),
     bars('Cards in use · by when EFS last saw them used', inUse, USES.filter((u) => u.k !== 'unread'), use)));
   drawTable(d.cards);
+}
+
+// The card checker's chip on top: running now, or when it runs next (US Central) and when it last checked; red when
+// Windows' Task Scheduler has it off or doesn't have it.
+function showChecker(check) {
+  const chip = document.getElementById('allcards-check');
+  const last = `last ${since(check.last_at)}`;
+  const [tone, text] = check.state === 'Running' ? ['--warn', 'Card check running now']
+    : check.next_at ? ['--good', `Next card check ${dayClock(check.next_at)} (${until(check.next_at)}) · ${last}`]
+      : ['--bad', `Card check ${check.state ? 'off in Task Scheduler' : 'not scheduled'} · ${last}`];
+  chip.replaceChildren(el('i', { style: `background: var(${tone})` }), text);
+  chip.title = "Windows' Task Scheduler runs the card checker; it reads each active card's group and changes no card";
+  chip.hidden = false;
 }
 
 // Says on the view's top line that it can't be loaded, and why.

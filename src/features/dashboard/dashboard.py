@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from base import config, fuel, geo
 from base.models import (FuelLine, FuelStop, Order, Picture, Recommendation, Store, StoreOnRoute, TrackPoint,
                          Trip, Truck, TruckNow, TruckWatch, Unit, Zone)
-from base.sources import samsara
+from base.sources import samsara, task_scheduler
 from base.store import db
 from features.accounting import accounting, evidence, fill_checks, settings as accounting_settings
 from features.cards import settings as cards_settings
@@ -445,7 +445,15 @@ def all_cards_payload() -> dict:
         linked, of = db.card_links_done(conn)
     day = today()
     return {"efs_at": refreshed["efs_cards"], "pages_at": refreshed["efs_card_pages"],
-            "links": {"done": linked, "of": of}, "cards": [_efs_card(card, day) for card in cards]}
+            "links": {"done": linked, "of": of}, "check": _checker(cards), "cards": [_efs_card(card, day) for card in cards]}
+
+
+# The card checker's runs: when it last saved a check, and from Windows' Task Scheduler its state ("Ready" between
+# runs, "Running", "Disabled"; None: no such task) and when it runs next (None: no next run).
+def _checker(cards) -> dict:
+    state, next_at = task_scheduler.next_run(cards_settings.CHECK_TASK)
+    return {"last_at": max((c["checked_at"] for c in cards if c["checked_at"]), default=None), "state": state,
+            "next_at": next_at.isoformat() if next_at else None}
 
 
 # One EFS card as the All cards view shows it: `days` since EFS last saw it used (None: never, or its page not read);

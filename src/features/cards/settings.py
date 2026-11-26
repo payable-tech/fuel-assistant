@@ -49,6 +49,7 @@ AGENT_TEST_ONLY = os.getenv("AGENT_TEST_ONLY", "").strip() == "1"
 # The card checker (features/cards/card_check, the user's go 2026-11-26): three times a day (Windows' Task Scheduler,
 # run_checker.bat) it reads each ACTIVE card's truck group and says whether the card should be on. Only reads.
 CHECKER_SESSION_PATH = config.DATA_DIR / "checker-bob.session"  # its own login on Bob's account (`main.py checker-login`)
+CHECK_TASK = "Fuel card checker"  # its name in Windows' Task Scheduler (the All cards view shows its next run)
 CHECK_MESSAGES = 40        # the group's latest messages it reads, whatever their age: a busy group's last hours, a
                            # quiet group's last weeks (the user, 2026-11-26)
 CHECK_SCAN = 200           # ...looked for among at most this many (bots' posts are skipped)

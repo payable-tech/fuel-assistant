@@ -8,7 +8,7 @@ import pytest
 from base import config
 from base.fleet import copies
 from base.models import TelegramGroup
-from base.sources import datatruck, loves
+from base.sources import datatruck, loves, task_scheduler
 from base.store import db
 
 
@@ -18,6 +18,22 @@ def test_active_orders_kept_once(monkeypatch):
     monkeypatch.setattr(datatruck, "_client", contextlib.nullcontext)
     monkeypatch.setattr(datatruck, "_results", lambda client, path, params: iter([raw, dict(raw)]))
     assert [o.order_id for o in datatruck.active_orders()] == [7]
+
+
+# A scheduled task's next run is read on this PC's clock; a task that is off has none, and a missing task is nothing.
+def test_task_scheduler_next_run(monkeypatch):
+    answers = {"on": (0, '"\\Fuel card checker","11/26/2026 7:00:00 PM","Ready"\n'
+                         '"\\Fuel card checker","11/26/2026 7:00:00 PM","Ready"\n'),
+               "off": (0, '"\\Fuel card checker","N/A","Disabled"\n'), "missing": (1, "")}
+    answer = lambda which: lambda *a, **k: task_scheduler.subprocess.CompletedProcess(a, *answers[which])
+    monkeypatch.setattr(task_scheduler.subprocess, "run", answer("on"))
+    state, at = task_scheduler.next_run("Fuel card checker")
+    assert state == "Ready" and (at.hour, at.minute, at.tzinfo is not None) == (19, 0, True)
+    monkeypatch.setattr(task_scheduler.subprocess, "run", answer("off"))
+    assert task_scheduler.next_run("Fuel card checker") == ("Disabled", None)
+    monkeypatch.setattr(task_scheduler.subprocess, "run", answer("missing"))
+    assert task_scheduler.next_run("Fuel card checker") == (None, None)
+
 
 HEADER = ["City", "Loves Store No.", "State", "Latitude", "Longitude", "Retail Price", "Best Discounted Price",
           "Effective Date", "Extra Column"]

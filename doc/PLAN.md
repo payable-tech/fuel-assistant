@@ -406,6 +406,10 @@ Built the way bob-agent's Telegram agent works (`D:/bob-agent/src/agent`, `src/w
   and logged as it was in `data/card-off/log.csv`; `--send` to act. First run 2026-11-26 on the user's go: 27 cards
   (22 home time, 5 parked); one X-Ref eManager didn't keep the first time was written on a second try.
 - **Full card numbers** come from Datatruck (`fuel_cards.number`, kept since 2026-11-26): the page copies one on a click.
+- **Next card check** (the user, 2026-11-26): a chip on top of All cards, read live from Windows' Task Scheduler
+  (`base/sources/task_scheduler`): running now, or the next run and when the last check was saved; red when the task
+  is off or missing. `run_checker.bat` ends with `exit`: without it the task's window stayed open, Windows counted the
+  run as still going and skipped the next one (13:00 that day).
 - **Next (the user's order):** a "why" per card from an agent that reads every card's driver group about 3 times a
   day (the user gives real cases first), then the agent turning cards off itself, starting as flags the user approves.
 

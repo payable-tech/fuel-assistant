@@ -57,6 +57,15 @@ export function ago(when, now = new Date()) {
   return `${Math.round(minutes / 1440)} days ago`;
 }
 
+// How long until a time, in words: "in 12 min", "in 4 h", "in 2 days"; "now" once it is due.
+export function until(when, now = new Date()) {
+  const minutes = Math.round((new Date(when) - now) / 60000);
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return `in ${minutes} min`;
+  if (minutes < 48 * 60) return `in ${Math.round(minutes / 60)} h`;
+  return `in ${Math.round(minutes / 1440)} days`;
+}
+
 // "BAYTOWN" -> "Baytown": each word with a capital first letter.
 const capitalized = (text) => text.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 
