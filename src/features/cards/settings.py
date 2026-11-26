@@ -10,7 +10,10 @@ from base import config
 EMANAGER_CHROME_PORT = 9224                 # Chrome listens on this local port only
 EMANAGER_PROFILE = config.DATA_DIR / "efs-chrome"  # that window's own Chrome profile, apart from anyone's own Chrome
 EMANAGER_HEARTBEAT_SECONDS = 240            # eManager logs out after 90 idle minutes; every login ends after 24 hours
-EFS_COPY_MINUTES = 30                       # how often the agent copies EFS's whole card list into the database
+EFS_COPY_MINUTES = 30                       # how often EFS's whole card list is copied into the database (card_list)
+EFS_PAGE_HOURS = 3                          # ...and how often each card in use has its own page read again
+# What a parked card carries: the card cleanup's rule (the user, 2026-11-24), also how the dashboard tells one.
+PARKED_PROMPTS = {"unit": "99999", "driver-id": "99999", "driver": "ALIF UZ CORP"}
 # The eManager user that acts for each account; one login switches between them. Bob's login: card work moved here
 # from bob-agent, which no longer uses it (the user, 2026-11-22).
 EMANAGER_USERS = {"ALIF": "Bobalif", "DT": "BOB_DT"}

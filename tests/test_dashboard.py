@@ -127,3 +127,46 @@ def test_fleet_status():
     assert {t["unit"]: sorted(t["cards"]) for t in d["trucks"]} == {"340": ["0482", "7539"], "900": [], "901": []}
     assert sorted((c["last4"], c["status"], c["name"], c["account"]) for c in d["trucks"][0]["efs"]) == \
         [("0001", "INACTIVE", "OLD DRIVER", "ALIF"), ("7539", "ACTIVE", "ALI", "ALIF")]
+
+
+# The All cards view lists every EFS card with its driver ID and whom Datatruck assigns the same card to: a working
+# card with its page read (days since EFS saw it used, override) on an active driver, Datatruck holding its number
+# twice (the active one counts); a parked one whose page isn't read, on a driver who left; one in use on a truck, never
+# used; and one Datatruck doesn't have.
+def test_all_cards(monkeypatch):
+    from base.models import DatatruckDriver, EfsCardRow, FuelCard
+    monkeypatch.setattr(dashboard, "today", lambda: date(2026, 11, 26))
+    efs = lambda card_id, unit, name, status: EfsCardRow(card_id, f"556748******{card_id[-4:]}", "1", unit, "4455", name, "", status)
+    with db.connect() as conn:
+        db.replace_dt_drivers(conn, [DatatruckDriver(7, "ALI (LO)", "lease", "active", "TTL", "340"),
+                                     DatatruckDriver(8, "GONE", "lease", "inactive", "TTL", "900")])
+        db.replace_fuel_cards(conn, [FuelCard(1, "TTL", "driver", 7, None, True, "retail_plus_fee", True, "7539"),
+                                     FuelCard(2, "TTL", "driver", 8, None, True, "retail_plus_fee", False, "7539"),
+                                     FuelCard(3, "TTL", "driver", 8, None, True, "retail_plus_fee", False, "9999"),
+                                     FuelCard(4, "TTL", "truck", None, "12", True, "retail_plus_fee", True, "0001")])
+        db.replace_efs_cards(conn, "ALIF", [efs("c7539", "340", "ALI", "ACTIVE"), efs("c9999", "99999", "ALIF UZ CORP", "INACTIVE"),
+                                            efs("c5555", "55", "NOBODY", "ACTIVE")])
+        db.replace_efs_cards(conn, "DT", [efs("d0001", "12.", "MARY", "HOLD")])
+        for dt_card, last4, account, efs_card in ((1, "7539", "ALIF", "c7539"), (2, "7539", "ALIF", "c7539"),
+                                                  (3, "9999", "ALIF", "c9999"), (4, "0001", "DT", "d0001")):
+            db.save_card_link(conn, dt_card, last4, account, efs_card)
+        db.save_efs_card_page(conn, "ALIF", "c7539", "2026-11-20", True)
+        db.save_efs_card_page(conn, "DT", "d0001", None, False)
+        checks = [("ALIF", "c7539", "2026-11-25 10:00:00+00:00", "off", "Home time", "low"),
+                  ("ALIF", "c7539", "2026-11-26 10:00:00+00:00", "on", "On a load", "high"),
+                  ("ALIF", "c5555", "2026-11-26 10:00:00+00:00", "off", "Driver left", "high"),
+                  ("ALIF", "c9999", "2026-11-26 10:00:00+00:00", "unsure", "Nothing recent", "low")]
+        conn.executemany("INSERT INTO card_checks (account, card_id, checked_at, should_be, why, sure) VALUES (?, ?, ?, ?, ?, ?)", checks)
+    d = dashboard.all_cards_payload()
+    rows = {c["last4"]: (c["account"], c["status"], c["parked"], c["read"], c["override"], c["days"], c["datatruck"], c["dt_driver"],
+                         c["dt_unit"]) for c in d["cards"]}
+    assert rows == {"7539": ("ALIF", "ACTIVE", False, True, True, 6, "driver", "ALI (LO)", "340"),
+                    "9999": ("ALIF", "INACTIVE", True, False, False, None, "left", "GONE", "900"),
+                    "5555": ("ALIF", "ACTIVE", False, False, False, None, "none", None, None),
+                    "0001": ("DT", "HOLD", False, True, False, None, "truck", None, "12")}
+    assert d["efs_at"] and d["pages_at"] and d["links"] == {"done": 4, "of": 4} and d["cards"][0]["driver_id"] == "4455"
+    # the latest check counts, set against the status: on a load and ACTIVE agrees; ACTIVE but the driver left should be
+    # off; never checked
+    checked = {c["last4"]: (c["verdict"], c["why"], c["sure"]) for c in d["cards"]}
+    assert checked == {"7539": ("agree", "On a load", "high"), "5555": ("off", "Driver left", "high"),
+                       "9999": ("unsure", "Nothing recent", "low"), "0001": ("unchecked", None, None)}

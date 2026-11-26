@@ -12,7 +12,7 @@ import pytest
 from base import config
 from base.models import ChatLine, DatatruckDriver, EfsCard, EfsCardRow, Store, Truck
 from base.store import db
-from features.cards import agent, rules, settings as cards_settings, tools, wording
+from features.cards import agent, card_list, rules, settings as cards_settings, tools, wording
 from features.cards.rules import NeedsPerson
 
 NOW = datetime(2026, 11, 23, 15, 0, tzinfo=timezone.utc)
@@ -383,11 +383,14 @@ def test_paused_after_its_jobs(world, monkeypatch):
     assert outcomes == ["paused after 1 jobs: left for the office"] * 2
 
 
-# The copy of EFS's cards: each account's list replaces its old copy (last four digits only, no driver ID); an account
-# that can't be read or comes back empty keeps what it had; an activation is noted in the copy at once.
+# The copy of EFS's cards (card_list): each account's list replaces its old copy (last four digits, unit, driver ID, name);
+# then each card in use has its page read, once per EFS_PAGE_HOURS (a page that fails is skipped and tried next round);
+# an account that can't be read or comes back empty keeps what it had and has no page read; an activation is noted in
+# the copy at once.
 def test_efs_cards_are_copied(world, monkeypatch):
     lists = {"ALIF": [card("a10001", "3189", "JOHN DOE")[0], card("a20002", "99999", "ALIF UZ CORP", "INACTIVE")[0]],
              "DT": [card("d30003", "777", "MARY ROE", "HOLD")[0]]}
+    pages = []
 
     def listed(account, by, text=""):
         assert by == "all"
@@ -395,16 +398,80 @@ def test_efs_cards_are_copied(world, monkeypatch):
             raise lists[account]
         return lists[account]
 
-    monkeypatch.setattr(agent.fuel_cards, "cards", listed)
-    asyncio.run(agent.copy_cards())
+    def page(account, row):
+        pages.append(row.card_id)
+        if row.card_id == "d30003" and len(pages) < 3:
+            raise RuntimeError("the card page did not load")
+        return card(row.card_id, row.unit, row.driver_name, row.status, override=row.card_id == "a10001")[1]
+
+    monkeypatch.setattr(card_list.fuel_cards, "cards", listed)
+    monkeypatch.setattr(card_list.fuel_cards, "card", page)
+    card_list.copy()
     with db.connect() as conn:
         rows = [tuple(r) for r in conn.execute("SELECT account, card_id, last4, status, unit, driver_name FROM efs_cards ORDER BY card_id")]
+        read = [tuple(r) for r in conn.execute("SELECT account, card_id, last_used, override FROM efs_card_pages ORDER BY card_id")]
     assert rows == [("ALIF", "a10001", "0001", "ACTIVE", "3189", "JOHN DOE"), ("ALIF", "a20002", "0002", "INACTIVE", "99999", "ALIF UZ CORP"),
                     ("DT", "d30003", "0003", "HOLD", "777", "MARY ROE")]
+    assert pages == ["a10001", "d30003"] and read == [("ALIF", "a10001", "2026-11-20", 1)]
+    card_list.copy()  # the page read a moment ago is not read again; the one that failed is
+    with db.connect() as conn:
+        read = [tuple(r) for r in conn.execute("SELECT account, card_id, last_used, override FROM efs_card_pages ORDER BY card_id")]
+    assert pages == ["a10001", "d30003", "d30003"] and read[1] == ("DT", "d30003", "2026-11-20", 0)
     lists["ALIF"], lists["DT"] = RuntimeError("eManager is not logged in"), []
-    asyncio.run(agent.copy_cards())
+    monkeypatch.setattr(cards_settings, "EFS_PAGE_HOURS", 0)  # every page due: still none read without its list
+    card_list.copy()
+    assert len(pages) == 3
     with db.connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM efs_cards").fetchone()[0] == 3
         db.set_efs_card_status(conn, "DT", "d30003", "ACTIVE")
         assert conn.execute("SELECT status FROM efs_cards WHERE card_id = 'd30003'").fetchone()[0] == "ACTIVE"
-        assert "driver_id" not in [r[1] for r in conn.execute("PRAGMA table_info(efs_cards)")]
+        assert conn.execute("SELECT driver_id FROM efs_cards WHERE card_id = 'a10001'").fetchone()[0] == "4455"
+
+
+# The day a card page prints ("Nov 5, 2026") is stored as a date; a card never used has none; other text is an error.
+def test_card_page_day():
+    assert card_list._day("Nov 5, 2026") == "2026-11-05" and card_list._day(" ") is None
+    with pytest.raises(ValueError):
+        card_list._day("11/05/2026")
+
+
+# Datatruck's cards are found in EFS by their full number, in the account whose numbers start the same way: one found,
+# one EFS doesn't have, one whose start no account has (both linked to no card); a linked card isn't searched again
+# unless its last four digits change. An eManager error stops the linking; the next round carries on.
+def test_datatruck_cards_are_linked_to_efs(world, monkeypatch):
+    from base.models import FuelCard
+    with db.connect() as conn:
+        db.replace_fuel_cards(conn, [FuelCard(1, "TTL", "driver", 7, None, True, "retail_plus_fee", True, "0506"),
+                                     FuelCard(2, "TTL", "driver", 8, None, True, "retail_plus_fee", True, "0999"),
+                                     FuelCard(3, "TTL", "truck", None, "77", True, "retail_plus_fee", True, "1234")])
+    numbers = {1: "5567480000000506", 2: "5567481111110999", 3: "7777770000001234"}
+    asked = []
+
+    def search(account, by, text=""):
+        if by == "all":
+            return [card("a10506", "3189", "JOHN DOE")[0]] if account == "ALIF" else []
+        asked.append((account, by, text[-4:]))
+        return [card("a10506", "3189", "JOHN DOE")[0]] if text.endswith("0506") else []
+
+    def fail(account, number):
+        raise RuntimeError("eManager is not logged in")
+
+    monkeypatch.setattr(card_list.fuel_cards, "cards", search)
+    monkeypatch.setattr(card_list.fuel_cards, "card", lambda account, row: card(row.card_id, "3189", "JOHN DOE")[1])
+    monkeypatch.setattr(card_list.datatruck_web, "fuel_card_numbers", lambda: numbers)
+    card_list.copy()
+    with db.connect() as conn:
+        links = [tuple(r) for r in conn.execute("SELECT dt_card_id, last4, account, efs_card_id FROM card_links ORDER BY dt_card_id")]
+        assert db.card_links_done(conn) == (3, 3)
+    assert asked == [("ALIF", "card", "0506"), ("ALIF", "card", "0999")]
+    assert links == [(1, "0506", "ALIF", "a10506"), (2, "0999", None, None), (3, "1234", None, None)]
+    card_list.copy()  # all linked: nothing is searched again
+    assert len(asked) == 2
+    numbers[2] = "5567481111110998"
+    with db.connect() as conn:
+        conn.execute("UPDATE fuel_cards SET last4 = '0998' WHERE card_id = 2")
+    monkeypatch.setattr(card_list, "_search", fail)
+    card_list.copy()  # the changed card is due again; the error leaves its old link as it was
+    with db.connect() as conn:
+        assert conn.execute("SELECT last4 FROM card_links WHERE dt_card_id = 2").fetchone()[0] == "0999"
+        assert db.card_links_done(conn) == (2, 3)

@@ -10,6 +10,7 @@ const SOURCE_NAME = {
   tg_groups: 'Telegram groups', stores: "Love's prices",
   samsara_live: 'Truck positions and fuel', tank_estimates: 'Tank estimates', burn_factors: 'Engine fuel factors', fuel_stops: 'Driver fuel stops',
   price_history: "Love's price history", price_files: "Love's price sheets read", efs_cards: 'EFS cards',
+  efs_card_pages: 'EFS card pages (cards in use)',
 };
 
 // Reads a stored UTC time ("2026-10-19 16:03:33+00:00") as a date.

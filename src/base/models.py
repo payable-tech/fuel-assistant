@@ -186,6 +186,9 @@ class EfsCard:
     last_used: str                  # as the page prints it; "" when never used
     override: bool                  # in override mode: locked until the override is removed
     prompts: tuple[tuple[str, str, str], ...]  # (prompt, validation, value): ("Unit Number", "Exact Match", "3189")
+    # the prompts set on the card itself, the only ones its page lets edit; the others come from its policy (a stock
+    # card shows the policy's "AddUnitNumber")
+    own_prompts: tuple[str, ...] = ()
 
 
 # A group Bob's Telegram account is in. A row of `tg_groups`.

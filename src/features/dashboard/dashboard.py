@@ -435,6 +435,54 @@ def cards_run(chat_id: int, message_id: int) -> dict:
     return card_jobs.detail(run, cards_settings.AGENT_JOBS_SINCE, lines, settings.CARDS_FILLS_SHOWN)
 
 
+# The All cards view: every EFS card in the copy, with what its own page showed when last read (the cards in use) and
+# whom Datatruck assigns the same card to; and how many of Datatruck's cards are linked to EFS yet. Only the database
+# is read: the copying is the card agent's or efs-login's.
+def all_cards_payload() -> dict:
+    with db.connect() as conn:
+        cards = db.efs_card_list(conn)
+        refreshed = {table: at for table, _, at in db.status(conn)}
+        linked, of = db.card_links_done(conn)
+    day = today()
+    return {"efs_at": refreshed["efs_cards"], "pages_at": refreshed["efs_card_pages"],
+            "links": {"done": linked, "of": of}, "cards": [_efs_card(card, day) for card in cards]}
+
+
+# One EFS card as the All cards view shows it: `days` since EFS last saw it used (None: never, or its page not read);
+# parked when it carries the cleanup's prompts (unit 99999, ALIF UZ CORP); `datatruck` whom Datatruck assigns the same
+# card to: "driver" (an active one), "left" (a driver no longer active), "truck", "nobody", or "none" (no such card);
+# its latest check with how that stands against its status (`verdict`).
+def _efs_card(card, day: date) -> dict:
+    parked = cards_settings.PARKED_PROMPTS
+    if card["dt_card_id"] is None:
+        datatruck = "none"
+    elif card["dt_assigned_to"] == "truck":
+        datatruck = "truck"
+    elif card["dt_driver"] is None:
+        datatruck = "nobody"
+    else:
+        datatruck = "driver" if card["dt_driver_status"] == "active" else "left"
+    return {"account": card["account"], "last4": card["last4"], "status": card["status"], "unit": card["unit"],
+            "driver_id": card["driver_id"], "driver": card["driver_name"],
+            "parked": card["unit"] == parked["unit"] and (card["driver_name"] or "").upper() == parked["driver"],
+            "datatruck": datatruck, "dt_driver": card["dt_driver"], "dt_unit": card["dt_unit"],
+            "verdict": _verdict(card["status"], card["should_be"]), "why": card["why"], "sure": card["sure"],
+            "evidence": card["evidence"], "checked_at": card["checked_at"],
+            "read": card["page_at"] is not None, "override": bool(card["override"]), "last_used": card["last_used"],
+            # EFS's day can be ahead of Central's late in the evening: never "-1 d ago"
+            "days": max(0, (day - date.fromisoformat(card["last_used"])).days) if card["last_used"] else None}
+
+
+# How a card's latest check stands against its status: "agree", "off" (it should be off and isn't), "on" (it should
+# be on and isn't), "unsure", or "unchecked" (never checked). On is ACTIVE: the pump refuses a held card too.
+def _verdict(status: str, should_be: str | None) -> str:
+    if should_be is None:
+        return "unchecked"
+    if should_be == "unsure":
+        return "unsure"
+    return "agree" if (should_be == "on") == (status == "ACTIVE") else should_be
+
+
 # A dataclass as plain JSON-ready values (datetimes become ISO text).
 def _plain(obj) -> dict:
     return json.loads(json.dumps(asdict(obj), default=lambda value: value.isoformat()))

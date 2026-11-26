@@ -1,15 +1,16 @@
-# The card commands of `main.py`: keeping the eManager login alive, listing fuel cards and changing one by hand, and
-# starting the card agent and its Telegram login. main.py only lists them (register).
+# The card commands of `main.py`: keeping the eManager login alive, listing fuel cards and changing one by hand, the
+# card cleanup, and starting the card agent and its Telegram login. main.py only lists them (register).
 import argparse
 import logging
 import time
 from collections import Counter
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from base import config
 from base.models import EfsCard, EfsCardRow
-from features.cards import settings as cards_settings
+from features.cards import card_list, settings as cards_settings
 from features.cards.emanager import fuel_cards, site, window
 from features.cards.emanager.window import EfsError
 
@@ -46,19 +47,53 @@ def register(sub) -> None:
     p = sub.add_parser("card-replay", help="play the saved cases to the card agent on the real eManager; sends nothing")
     p.add_argument("--most", type=int, default=10, help="how many cases, newest first (default 10)")
     p.set_defaults(run=cmd_card_replay)
+    p = sub.add_parser("efs-cleanup", help="the card cleanup: plan which EFS cards each Datatruck unit keeps and which "
+                                           "are parked (99999 / ALIF UZ CORP), read only; --park PLAN parks them")
+    do = p.add_mutually_exclusive_group()
+    do.add_argument("--park", type=Path, metavar="PLAN", help="park the 'park' cards of this plan file in eManager")
+    do.add_argument("--undo", metavar="CARD_ID", help="put one parked card's prompts back as the log has them")
+    p.add_argument("--most", type=int, default=5, help="with --park: the most cards to park this run (default 5)")
+    p.set_defaults(run=cmd_efs_cleanup)
 
 
-# Opens the eManager window and keeps its login alive until Ctrl+C. eManager still ends every login after 24 hours.
+# The card cleanup: by default writes the plan and says what is in it (changes no card); --park parks a plan's cards,
+# a few at a time; --undo puts one card back. Both of those need the eManager window logged in (the card agent's).
+def cmd_efs_cleanup(args) -> None:
+    from features.cards import cleanup, cleanup_rules
+    if args.park or args.undo:
+        window.start()
+        if args.undo:
+            print(cleanup.undo(args.undo))
+            return
+        try:
+            done = cleanup.park(args.park, args.most)
+        finally:
+            print(f"Log: {cleanup.LOG}")
+        print(", ".join(f"{n} {what}" for what, n in done.most_common()) or "nothing to park")
+        return
+    path, counts, no_card, copied_at = cleanup.plan()
+    print(f"EFS's list as copied at {copied_at} (UTC): " + ", ".join(f"{n} {a}" for a, n in counts.most_common()))
+    print(f"Units left with no card ({len(no_card)}): {', '.join(no_card) or 'none'}")
+    print(f"Plan: {path}  ('{cleanup_rules.LEAVE}' rows first: for a person)")
+
+
+# Opens the eManager window and keeps its login alive until Ctrl+C, and while logged in copies EFS's cards into the
+# database every EFS_COPY_MINUTES (features/cards/card_list), as the card agent does: the dashboard's card list stays
+# current with the agent off. eManager still ends every login after about a day.
 def cmd_efs_login(args) -> None:
     window.start()
-    print("The eManager window is open. Log in there; this keeps the login alive. Ctrl+C stops it.", flush=True)
-    was = None
+    print("The eManager window is open. Log in there; this keeps the login alive and copies EFS's cards. Ctrl+C stops it.",
+          flush=True)
+    was, copied = None, None  # what was last said; when the cards were last copied (None: not yet)
     try:
         while True:
             alive, said = efs_login_status()
             if said != was:
                 print(f"{datetime.now():%H:%M} {said}", flush=True)
                 was = said
+            if alive and (copied is None or time.monotonic() - copied >= cards_settings.EFS_COPY_MINUTES * 60):
+                card_list.copy()  # says what it copied in this window (the log)
+                copied = time.monotonic()
             # ask often while waiting for the login, then well inside the 90-minute idle logout
             time.sleep(cards_settings.EMANAGER_HEARTBEAT_SECONDS if alive else 5)
     except KeyboardInterrupt:

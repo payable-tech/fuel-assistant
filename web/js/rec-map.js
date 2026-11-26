@@ -95,7 +95,7 @@ export function mapNote(text) {
 
 // ---------- the parts ----------
 
-// The map, made on first use (the view must be visible by then so it can measure itself), with dark street tiles.
+// The map, made on first use (the view must be visible by then so it can measure itself), with street tiles the page's styles make dark at night.
 function ensureMap() {
   if (map) return;
   map = L.map('rec-map', { preferCanvas: true }).setView([37, -96], 4);

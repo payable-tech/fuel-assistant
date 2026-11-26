@@ -376,9 +376,10 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     PRIMARY KEY (chat_id, message_id)
 );
 
--- Writer: the card agent, which holds the eManager window. One row per EFS card as Card Lookup lists it: its account,
--- its last four digits, its status, and the unit and the driver name on the card. The driver ID (what the driver types
--- at the pump) is never stored.
+-- Writer: the card list copy (features/cards/card_list), run by whichever program holds the eManager window: the card
+-- agent, or the EFS login window while the agent is off. One row per EFS card as Card Lookup lists it: its account,
+-- its last four digits, its status, and the unit, driver ID (what the driver types at the pump; kept since 2026-11-26
+-- on the user's word) and driver name on the card.
 CREATE TABLE IF NOT EXISTS efs_cards (
     account     TEXT NOT NULL,
     card_id     TEXT NOT NULL,
@@ -387,6 +388,45 @@ CREATE TABLE IF NOT EXISTS efs_cards (
     unit        TEXT,
     driver_name TEXT,
     synced_at   TEXT NOT NULL,
+    driver_id   TEXT,
+    PRIMARY KEY (account, card_id)
+);
+
+-- Writer: the card list copy. Which EFS card each Datatruck fuel card is: found by searching EFS's Card Lookup for
+-- Datatruck's full card number, since EFS's lists show only the last four digits, which repeat across cards. The
+-- number itself is never stored. Kept (not refilled on a schema change): finding them all takes about an hour.
+CREATE TABLE IF NOT EXISTS card_links (
+    dt_card_id  INTEGER PRIMARY KEY,
+    last4       TEXT NOT NULL,   -- the Datatruck card's last four digits when searched: searched again if they change
+    account     TEXT,            -- NULL with efs_card_id: EFS has no card with that number
+    efs_card_id TEXT,
+    synced_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS card_links_by_efs ON card_links (account, efs_card_id);
+
+-- Writer: the card checker (to come: an agent that reads each card's driver group, the user's plan 2026-11-26). One row
+-- per check of a card: what the card should be, why in a few words, how sure, and what it read. Kept: each card's
+-- history of whys (on a load Monday, home time Wednesday).
+CREATE TABLE IF NOT EXISTS card_checks (
+    account    TEXT NOT NULL,
+    card_id    TEXT NOT NULL,
+    checked_at TEXT NOT NULL,
+    should_be  TEXT NOT NULL,   -- "on", "off" or "unsure"
+    why        TEXT NOT NULL,   -- a few words: "On a load", "Home time since Nov 24"
+    sure       TEXT NOT NULL,   -- "high" (the group and the data agree), "medium" (one of them), "low" (nothing recent)
+    evidence   TEXT,            -- what it read: the driver's words, the load, the last fuel
+    PRIMARY KEY (account, card_id, checked_at)
+);
+
+-- Writer: the card list copy. What only a card's own page shows, for the cards in use (any status but INACTIVE): the
+-- day EFS last saw it used and whether it is in override mode. Its own table, because it is read less often than the
+-- list (a page takes about 2 s) and the list's copy replaces efs_cards whole.
+CREATE TABLE IF NOT EXISTS efs_card_pages (
+    account   TEXT NOT NULL,
+    card_id   TEXT NOT NULL,
+    last_used TEXT,              -- "YYYY-MM-DD" as EFS prints it; NULL when never used
+    override  INTEGER NOT NULL,
+    synced_at TEXT NOT NULL,     -- when the page was read
     PRIMARY KEY (account, card_id)
 );
 
@@ -524,4 +564,5 @@ FROM fleet WHERE pilot AND (fuel_at IS NULL OR fuel_at < datetime('now', '-{conf
 # Your pilot list (pilot_trucks), fill_lookups and job_runs are not in this list, so they are never dropped.
 SYNCED_TABLES = ["samsara_vehicles", "samsara_live", "dt_trucks", "dt_drivers", "tg_groups", "dt_orders", "dt_stops",
                  "stores", "price_history", "price_files", "fuel_lines", "fuel_cards", "trucks",
-                 "tank_estimates", "fuel_stops", "burn_factors", "efs_statements", "efs_lines", "efs_cards"]
+                 "tank_estimates", "fuel_stops", "burn_factors", "efs_statements", "efs_lines", "efs_cards",
+                 "efs_card_pages"]

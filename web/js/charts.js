@@ -33,7 +33,7 @@ function rowTooltip(rows, title, format, { total = false, totalLabel = 'Total', 
   return {
     trigger: 'axis',
     axisPointer: pointer === 'shadow'
-      ? { type: 'shadow', shadowStyle: { color: 'rgba(255,255,255,0.04)' } }
+      ? { type: 'shadow', shadowStyle: { color: fade(token('--text'), 0.04) } }
       : { type: 'line', lineStyle: { color: token('--faint'), type: 'dashed' } },
     formatter: (items) => {
       const row = rows[items[0].dataIndex];

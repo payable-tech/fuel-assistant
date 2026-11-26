@@ -1,9 +1,10 @@
 // Dashboard entry: switches between the sections (Fuel, Accounting, Cards) and their views (Fuel: Live, Trends,
-// Recommend, Drivers, Data; Accounting: the EFS statements as a tree; Cards: the card agent at work), loads their numbers
-// and hands them to each view to draw, and keeps them current: the card agent every 20 seconds, the live numbers and the
-// recommendations every minute, the weekly ones and the fleet status every 5 minutes, habits every 30. The bell in the
-// top bar tells when a message goes to a driver.
+// Recommend, Drivers, Data; Accounting: the EFS statements as a tree; Cards: the card agent at work, all EFS cards),
+// loads their numbers and hands them to each view to draw, and keeps them current: the card agent every 20 seconds, the
+// live numbers and the recommendations every minute, the weekly ones, the fleet status and all cards every 5 minutes,
+// habits every 30. The bell in the top bar tells when a message goes to a driver.
 import { accountingPath, initAccounting, renderAccounting, showAccountingError } from './accounting.js';
+import { initAllCards, renderAllCards, showAllCardsError } from './allcards.js';
 import { load } from './api.js';
 import { initCards, renderCards, showCardsError } from './cards.js';
 import { renderData } from './data.js';
@@ -13,14 +14,14 @@ import { ago, timeOf } from './format.js';
 import { initLive, renderLive } from './live.js';
 import { initNotes, renderNotes } from './notes.js';
 import { initRecommend, recommendShown, renderRecommend, showRecommendError } from './recommend.js';
-import { registerTheme } from './theme.js';
+import { initThemeSwitch, registerTheme } from './theme.js';
 import { initTrends, renderTrends } from './trends.js';
 
 // each section's views, in the order of its tabs; picking a section opens its first view
 const SECTIONS = {
   fuel: ['live', 'trends', 'recommend', 'drivers', 'data'],
   accounting: ['accounting'],
-  cards: ['cards'],
+  cards: ['cards', 'allcards'],
 };
 const VIEWS = Object.values(SECTIONS).flat();
 // how often each set of numbers is fetched again
@@ -29,7 +30,8 @@ const TRENDS_EVERY_MS = 5 * 60 * 1000;
 const DRIVERS_EVERY_MS = 30 * 60 * 1000;  // habits are worked out once a day
 const FLEET_EVERY_MS = 5 * 60 * 1000;  // Samsara's readings are refreshed every 5 minutes
 const ACCOUNTING_EVERY_MS = 30 * 60 * 1000;  // a new statement comes once a week; this picks it up the same half hour
-const CARDS_EVERY_MS = 20 * 1000;  // the agent answers within seconds: its section follows closely
+const CARDS_EVERY_MS = 20 * 1000;  // the agent answers within seconds: its view follows closely
+const ALL_CARDS_EVERY_MS = 5 * 60 * 1000;  // EFS's list is copied every 30 minutes
 const VERSION_EVERY_MS = 60 * 1000;
 // live, baseline: the numbers last loaded; checkedAt: when; failing: the last load failed; version: the page's files
 const state = { live: null, baseline: null, checkedAt: null, failing: false, version: null };
@@ -145,6 +147,16 @@ async function refreshCards() {
   }
 }
 
+// Loads every EFS card and redraws the All cards view.
+async function refreshAllCards() {
+  try {
+    renderAllCards(await load('/api/cards/all'));
+  } catch (error) {
+    showAllCardsError(error);
+    console.error(error);
+  }
+}
+
 // Reloads the page once its files changed on the server since it was opened (an update), so a dashboard left open
 // all day never runs old code against new numbers. The first look only notes the version.
 async function checkVersion() {
@@ -168,6 +180,7 @@ document.querySelectorAll('.sections button').forEach((b) => b.addEventListener(
 }));
 window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
 showView(location.hash.slice(1));
+initThemeSwitch();  // before anything loads, so the button answers at once
 
 await document.fonts.ready;  // charts measure text, so the font must be in before the first drawing
 registerTheme();
@@ -178,11 +191,13 @@ initFleet();
 initNotes();
 initAccounting(refreshAccounting);
 initCards();
+initAllCards();
 checkVersion();
 setInterval(checkVersion, VERSION_EVERY_MS);
 await Promise.all([refreshLive(), refreshTrends(), refreshRecommend(), refreshDrivers(), refreshFleet(), refreshAccounting(),
-  refreshCards()]);
+  refreshCards(), refreshAllCards()]);
 setInterval(refreshCards, CARDS_EVERY_MS);
+setInterval(refreshAllCards, ALL_CARDS_EVERY_MS);
 setInterval(refreshAccounting, ACCOUNTING_EVERY_MS);
 setInterval(refreshLive, LIVE_EVERY_MS);
 setInterval(refreshRecommend, LIVE_EVERY_MS);

@@ -139,7 +139,7 @@ Fuel Assistent project/
 │                             window.py (its Chrome window) · page.py (reading a page) · site.py (login, account switch,
 │                             allowed buttons) · fuel_cards.py (the card tools) · fake_cards.py (a pretend eManager for
 │                             the test group)
-├─ web/                       live dashboard (always dark): index.html · css/app.css · vendor/ (Apache ECharts 5.5.1, IBM Plex
+├─ web/                       live dashboard (night by default, day with the top bar's button): index.html · css/app.css · vendor/ (Apache ECharts 5.5.1, IBM Plex
 │                             Sans) served locally, no build step · js/: app.js (tabs, refresh) · api.js (talks to the server)
 │                             · one file per view: live.js · trends.js · drivers.js · data.js · recommend.js (+ rec-map.js
 │                             the map, rec-plays.js what each message became) · accounting.js (Accounting section: the
@@ -356,6 +356,40 @@ Built the way bob-agent's Telegram agent works (`D:/bob-agent/src/agent`, `src/w
 - **One window, two programs:** every eManager call of the agent and of the card cleanup holds `window.held()`, a lock
   on `data/efs-window.lock` that Windows lets go when its program ends; the other waits (one change, about 5 s).
 
+### 5.9 The card cleanup (`features/cards/cleanup.py`, `cleanup_rules.py`; the user's plan, approved 2026-11-24)
+- **Rule:** every Datatruck unit keeps its card: a card in use on it, the card Datatruck lists on it (unit + last 4),
+  or an inactive card in its driver's name. A card in use on a unit Datatruck doesn't have is left for a person. Every
+  other card is parked: INACTIVE (all of them are already), unit 99999, driver ID 99999, driver name ALIF UZ CORP, in
+  both accounts. Last 4 alone is no key: EFS numbers repeat their endings.
+- **`efs-cleanup`** writes the plan from the copies of EFS's and Datatruck's lists, read only, to
+  `data/efs-cleanup/plan-*.csv` (2026-11-24: 1,221 park, 242 keep, 16 leave). **`--park PLAN --most N`** parks up to N
+  of its cards: each is decided again on eManager's list now, read on its page (only INACTIVE, not in override, all
+  three prompts), its prompts written to `data/efs-cleanup/log.csv` before the first change, then the three prompts
+  set. Any eManager error stops the run; the next run carries on. **`--undo CARD_ID`** puts a card back from its first
+  log line; later runs leave it. About 15 s a card.
+
+### 5.10 The copy of EFS's cards and the All cards view (`features/cards/card_list.py`; the user's plan, 2026-11-26)
+- **The copy:** every `EFS_COPY_MINUTES` the program holding the eManager window, the card agent or `efs-login` (so
+  it runs with the agent off), replaces each account's `efs_cards` with Card Lookup's list (unit, driver ID, driver
+  name on each card; the driver ID kept on the user's word, 2026-11-26), then reads the own page of each card in use
+  (any status but INACTIVE) not read in `EFS_PAGE_HOURS`: the day EFS last saw it used and override mode, into
+  `efs_card_pages` (about 2 s a card). Each call holds the window lock.
+- **The same card in Datatruck (`card_links`):** EFS lists only the last four digits (each account's numbers share
+  their first six: ALIF 556748, 16 digits; DT 708305, 19), and a last four repeats on up to 9 cards. Datatruck has the
+  full number, so each Datatruck card is searched once in Card Lookup by its full number (3 to 7 s; all 842 in about
+  an hour the first time), and searched again only when its last four change. The number is never stored.
+- **The view** (Cards → All cards, `web/js/allcards.js`, `/api/cards/all`, every 5 minutes): a summary (each
+  account's cards by status, parked apart; the cards in use by last use), then one row per card: account, last 4,
+  driver, unit and driver ID on the card, status (override marked), last used, and whom Datatruck assigns the same card
+  to (an active driver, one no longer active, a truck, nobody, no such card) with that unit. Filtered from the column
+  headings by `web/js/table.js`, which the fleet status uses too.
+- **The why (`card_checks`, the user's design 2026-11-26):** each check of a card says what it should be (on, off,
+  unsure), why in a few words, and how sure: high (the group and the data agree), medium (one of them), low (nothing
+  recent); kept as a history. The view shows the latest against the status: agrees ✓, should be off ✗, should be on
+  ✗, unsure ?, not checked; the evidence on hover. The checker that writes them is the next step.
+- **Next (the user's order):** a "why" per card from an agent that reads every card's driver group about 3 times a
+  day (the user gives real cases first), then the agent turning cards off itself, starting as flags the user approves.
+
 ### 5.2 Commands (`.venv\Scripts\python.exe src\main.py <command>`)
 
 | Command | Does |
@@ -382,7 +416,7 @@ Built the way bob-agent's Telegram agent works (`D:/bob-agent/src/agent`, `src/w
 | `set-chat <unit> <chat_id\|none>` | Your Telegram group for a pilot truck (beats auto) |
 | `set-tank <unit> <gallons\|none>` | Your tank size for a pilot truck (beats the tank helper) |
 | `init-db` | Create the empty database |
-| `efs-login` | Open the eManager window and keep its login alive until Ctrl+C (§5.7) |
+| `efs-login` | Open the eManager window, keep its login alive and copy EFS's cards (§5.10) until Ctrl+C (§5.7) |
 | `efs-cards <ALIF\|DT> [--by unit\|driver\|driver-id\|card\|xref\|policy] [text]` | List cards, read only; one card found also shows its page |
 | `efs-card <ALIF\|DT> [--by unit] <text> --status S \| --override N [--hand-enter] \| --remove-override \| --set unit\|driver-id\|driver VALUE [--send]` | Change exactly one card; without `--send` it only shows the card and the change |
 | `agent-login` | Log the card agent's own Telegram login in, once (the assistant's account, a second login: `data/agent.session`) |

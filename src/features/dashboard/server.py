@@ -26,6 +26,7 @@ ROUTES = {
     "/api/accounting": lambda query: dashboard.accounting_payload(query.get("statement", [None])[0]),
     "/api/cards": lambda query: dashboard.cards_payload(),
     "/api/cards/run": lambda query: dashboard.cards_run(int(query["chat"][0]), int(query["message"][0])),
+    "/api/cards/all": lambda query: dashboard.all_cards_payload(),
     "/api/version": lambda query: {"version": web_version()},
 }
 

@@ -127,6 +127,9 @@ def set_prompt(account: str, row: EfsCardRow, prompt: str, value: str) -> EfsCar
     current = {name: old for name, _, old in before.prompts}.get(label)
     if current is None:
         raise EfsError(f"Card {row.number} has no {label} prompt.")
+    if label not in before.own_prompts:
+        raise EfsError(f"Card {row.number}'s {label} comes from its policy, not the card; it can't be edited "
+                       "on the card.")
     if current.casefold() == value.casefold():
         return before
     # each prompt row has its own edit form, told apart by its row number
@@ -212,6 +215,7 @@ def _card(page: Page) -> EfsCard:
     # prompt rows start with their source, Card or Policy: source, prompt, validation, value
     prompts = tuple(tuple(cells[1:4]) for rows in page.rows.values() for cells in rows
                     if len(cells) >= 4 and cells[0] in ("Card", "Policy"))
+    own = tuple(cells[1] for rows in page.rows.values() for cells in rows if len(cells) >= 4 and cells[0] == "Card")
     return EfsCard(card_id=fields.get("card.cardId", ""), status=fields.get("card.header.status", ""),
                    hand_enter=fields.get("card.header.handEnter", ""),
                    info_source=fields.get("card.header.infoSource", ""),
@@ -219,7 +223,7 @@ def _card(page: Page) -> EfsCard:
                    policy=fields.get("card.header.policyNumber", ""), xref=fields.get("card.header.companyXRef", ""),
                    expires=_labelled(page.html, "card.header.expireDate"),
                    last_used=_labelled(page.html, "card.header.lastUsedDate"),
-                   override="deleteCardOverride" in form.buttons, prompts=prompts)
+                   override="deleteCardOverride" in form.buttons, prompts=prompts, own_prompts=own)
 
 
 # The text printed right after a label on the card page: "Expire Date Oct 1, 2029".

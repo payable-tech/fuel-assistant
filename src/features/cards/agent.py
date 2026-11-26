@@ -12,8 +12,8 @@ from base import config
 from base.fuel import is_diesel
 from base.models import ChatLine, DatatruckDriver, Truck
 from base.store import db
-from features.cards import claude, rules, settings, telegram_agent, tools, wording
-from features.cards.emanager import fake_cards, fuel_cards, site, window
+from features.cards import card_list, claude, rules, settings, telegram_agent, tools, wording
+from features.cards.emanager import fake_cards, site, window
 from features.cards.tools import Request
 
 log = logging.getLogger(__name__)
@@ -37,29 +37,12 @@ async def _main() -> None:
                          *([] if settings.AGENT_TEST_ONLY else [_keep_login(), _keep_cards()]))
 
 
-# Forever: copies EFS's card list into the database every EFS_COPY_MINUTES, for the dashboard (this program holds the
-# eManager window, so the copying is its).
+# Forever: copies EFS's cards into the database every EFS_COPY_MINUTES, for the dashboard (features/cards/card_list;
+# this program holds the eManager window, so the copying is its). Each eManager call holds the window on its own.
 async def _keep_cards() -> None:
     while True:
-        await copy_cards()
+        await asyncio.to_thread(card_list.copy)
         await asyncio.sleep(settings.EFS_COPY_MINUTES * 60)
-
-
-# One round of the copying: each account's whole card list, as Card Lookup gives it. An account that can't be read
-# now (eManager logged out, a page that didn't load) or comes back empty keeps its old copy and is tried next round.
-async def copy_cards() -> None:
-    for account in tools.ACCOUNTS:
-        try:
-            cards = await tools.emanager(fuel_cards.cards, account, "all")
-        except Exception as failure:
-            log.warning("EFS cards of %s not copied: %r", account, failure)
-            continue
-        if not cards:
-            log.warning("EFS cards of %s not copied: the list came back empty", account)
-            continue
-        with db.connect() as conn:
-            db.replace_efs_cards(conn, account, cards)
-        log.info("EFS cards of %s copied: %d", account, len(cards))
 
 
 # Forever: notes every BEAT_SECONDS that the agent is running, so the dashboard can tell when it stopped.

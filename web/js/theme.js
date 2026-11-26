@@ -1,4 +1,20 @@
-// The charts' dark theme, built from the CSS color tokens so the page and its charts always match.
+// The page's look, day or night: the button that switches it, and the charts' theme, built from the CSS color tokens
+// so the page and its charts always match.
+
+const THEME_KEY = 'fuel.theme';  // where this browser remembers day or night; index.html's head reads the same key
+
+// Wires the day / night button: a click remembers the other look and reloads the page, because every chart and map
+// line took its colors when it was drawn. The look itself is put on before the first paint, in index.html's head.
+export function initThemeSwitch() {
+  const button = document.getElementById('theme-switch');
+  const day = document.documentElement.dataset.theme === 'light';
+  button.title = day ? 'Night mode' : 'Day mode';
+  button.setAttribute('aria-label', button.title);
+  button.addEventListener('click', () => {
+    try { localStorage.setItem(THEME_KEY, day ? 'dark' : 'light'); } catch { return; }  // can't be remembered: stays as it is
+    location.reload();
+  });
+}
 
 // Reads one CSS color or font token, e.g. token('--s1').
 export const token = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -28,7 +44,7 @@ export function registerTheme() {
     tooltip: {
       backgroundColor: token('--panel-2'), borderColor: line, borderWidth: 1, padding: [10, 12],
       textStyle: { color: token('--text'), fontFamily: font },
-      extraCssText: 'border-radius:10px; box-shadow:0 10px 28px rgba(0,0,0,.45); min-width:180px;',
+      extraCssText: `border-radius:10px; box-shadow:0 10px 28px ${token('--shadow')}; min-width:180px;`,
     },
   });
 }

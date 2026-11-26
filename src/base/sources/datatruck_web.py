@@ -40,6 +40,13 @@ def fuel_cards() -> list[FuelCard]:
     return [_fuel_card(r) for r in _all("/v1/fuel/cards/list/", {})]
 
 
+# Every fuel card's full number (digits only) by its Datatruck id: only to find the same card in EFS, whose lists show
+# just the last four digits. Never stored.
+def fuel_card_numbers() -> dict[int, str]:
+    return {r["id"]: "".join(c for c in str(r.get("number") or "") if c.isdigit())
+            for r in _all("/v1/fuel/cards/list/", {})}
+
+
 # Returns every truck that is not inactive, with its unit number, VIN and ownership.
 def trucks() -> list[DatatruckTruck]:
     active = [{"column": "status", "contains": "is_not", "value": "inactive"}]
