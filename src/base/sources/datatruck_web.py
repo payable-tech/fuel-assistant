@@ -40,12 +40,6 @@ def fuel_cards() -> list[FuelCard]:
     return [_fuel_card(r) for r in _all("/v1/fuel/cards/list/", {})]
 
 
-# Every fuel card's full number (digits only) by its Datatruck id: only to find the same card in EFS, whose lists show
-# just the last four digits. Never stored.
-def fuel_card_numbers() -> dict[int, str]:
-    return {r["id"]: "".join(c for c in str(r.get("number") or "") if c.isdigit())
-            for r in _all("/v1/fuel/cards/list/", {})}
-
 
 # Returns every truck that is not inactive, with its unit number, VIN and ownership.
 def trucks() -> list[DatatruckTruck]:
@@ -73,7 +67,7 @@ def _fuel_line(raw: dict) -> FuelLine:
     )
 
 
-# Converts one raw fuel card; of its number only the last four digits are kept.
+# Converts one raw fuel card, its number as digits only.
 def _fuel_card(raw: dict) -> FuelCard:
     driver = raw.get("assigned_driver") or {}
     digits = "".join(c for c in str(raw.get("number") or "") if c.isdigit())
@@ -82,7 +76,7 @@ def _fuel_card(raw: dict) -> FuelCard:
         assigned_to=raw.get("assigned_to"), driver_id=driver.get("id"),
         unit=(raw.get("unit_number") or "").strip() or None, billable=bool(raw.get("is_billable")),
         deduction_policy=raw.get("fuel_deduction_policy"), active=bool(raw.get("is_card_active")),
-        last4=digits[-4:] or None,
+        last4=digits[-4:] or None, number=digits or None,
     )
 
 

@@ -64,7 +64,8 @@ CREATE TABLE IF NOT EXISTS fuel_lines (
 );
 CREATE INDEX IF NOT EXISTS fuel_lines_by_time ON fuel_lines (fueled_at);
 
--- Writer: fuel (Datatruck fuel cards; of a card's number only the last four digits).
+-- Writer: fuel (Datatruck fuel cards, with the full number since 2026-11-26 on the user's word: the Cards page copies it,
+-- and the card list copy finds each card in EFS by it).
 CREATE TABLE IF NOT EXISTS fuel_cards (
     card_id          INTEGER PRIMARY KEY,
     company          TEXT NOT NULL,
@@ -75,7 +76,8 @@ CREATE TABLE IF NOT EXISTS fuel_cards (
     deduction_policy TEXT,
     active           INTEGER NOT NULL,
     synced_at        TEXT NOT NULL,
-    last4            TEXT
+    last4            TEXT,
+    number           TEXT
 );
 
 -- Writer: sync (Telegram, the groups Bob is in).
@@ -389,12 +391,13 @@ CREATE TABLE IF NOT EXISTS efs_cards (
     driver_name TEXT,
     synced_at   TEXT NOT NULL,
     driver_id   TEXT,
+    xref        TEXT,            -- the card's X-Ref note: why it was turned off and when ("HOMETIME 11/26")
     PRIMARY KEY (account, card_id)
 );
 
 -- Writer: the card list copy. Which EFS card each Datatruck fuel card is: found by searching EFS's Card Lookup for
--- Datatruck's full card number, since EFS's lists show only the last four digits, which repeat across cards. The
--- number itself is never stored. Kept (not refilled on a schema change): finding them all takes about an hour.
+-- Datatruck's full card number (fuel_cards.number), since EFS's lists show only the last four digits, which repeat
+-- across cards. Kept (not refilled on a schema change): finding them all takes about an hour.
 CREATE TABLE IF NOT EXISTS card_links (
     dt_card_id  INTEGER PRIMARY KEY,
     last4       TEXT NOT NULL,   -- the Datatruck card's last four digits when searched: searched again if they change

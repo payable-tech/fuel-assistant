@@ -53,6 +53,8 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         _add_column(conn, "agent_runs", "record", "TEXT")
         _add_column(conn, "fuel_cards", "last4", "TEXT")
         _add_column(conn, "efs_cards", "driver_id", "TEXT")
+        _add_column(conn, "fuel_cards", "number", "TEXT")
+        _add_column(conn, "efs_cards", "xref", "TEXT")
         _schema_ready.add(str(config.DB_PATH))
 
 
@@ -630,12 +632,13 @@ def status(conn: sqlite3.Connection) -> list[tuple[str, int, str | None]]:
 
 
 # Replaces one account's copy of EFS's cards with the list Card Lookup gave: of each card its id, last four digits,
-# status, and the unit, driver ID and driver name on it.
+# status, the unit, driver ID and driver name on it, and its X-Ref note.
 def replace_efs_cards(conn: sqlite3.Connection, account: str, cards: list[EfsCardRow]) -> None:
     conn.execute("DELETE FROM efs_cards WHERE account = ?", (account,))
     _insert(conn, "efs_cards", [{"account": account, "card_id": c.card_id, "last4": c.number[-4:], "status": c.status,
                                  "unit": c.unit.strip() or None, "driver_id": c.driver_id.strip() or None,
-                                 "driver_name": c.driver_name.strip() or None} for c in cards])
+                                 "driver_name": c.driver_name.strip() or None, "xref": c.xref.strip() or None}
+                                for c in cards])
 
 
 # The copy of EFS's cards, every account: account, card id, last four digits, status, unit and driver name on it.
@@ -666,15 +669,15 @@ def efs_pages_read_since(conn: sqlite3.Connection, account: str, since: datetime
 # holding one number twice: the active one counts, then the newest.
 def efs_card_list(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
-        "WITH linked AS (SELECT l.account, l.efs_card_id, f.card_id, f.assigned_to, f.driver_id, f.unit, "
+        "WITH linked AS (SELECT l.account, l.efs_card_id, f.card_id, f.assigned_to, f.driver_id, f.unit, f.number, "
         "                       ROW_NUMBER() OVER (PARTITION BY l.account, l.efs_card_id "
         "                                          ORDER BY f.active DESC, f.card_id DESC) AS n "
         "                FROM card_links l JOIN fuel_cards f ON f.card_id = l.dt_card_id "
         "                WHERE l.efs_card_id IS NOT NULL), "
         "     checked AS (SELECT *, ROW_NUMBER() OVER (PARTITION BY account, card_id ORDER BY checked_at DESC) AS n "
         "                 FROM card_checks) "
-        "SELECT c.account, c.card_id, c.last4, c.status, c.unit, c.driver_id, c.driver_name, p.last_used, p.override, "
-        "       p.synced_at AS page_at, k.card_id AS dt_card_id, k.assigned_to AS dt_assigned_to, "
+        "SELECT c.account, c.card_id, c.last4, c.status, c.unit, c.driver_id, c.driver_name, c.xref, p.last_used, p.override, "
+        "       p.synced_at AS page_at, k.card_id AS dt_card_id, k.assigned_to AS dt_assigned_to, k.number, "
         "       d.full_name AS dt_driver, d.employee_status AS dt_driver_status, "
         "       CASE WHEN k.assigned_to = 'truck' THEN k.unit ELSE COALESCE(d.unit, k.unit) END AS dt_unit, "
         "       h.should_be, h.why, h.sure, h.evidence, h.checked_at "
@@ -686,10 +689,11 @@ def efs_card_list(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         "ORDER BY c.account, c.card_id").fetchall()
 
 
-# Datatruck's fuel cards not yet found in EFS, or whose last four digits changed since: (Datatruck card id, last 4).
-def cards_to_link(conn: sqlite3.Connection) -> list[tuple[int, str]]:
+# Datatruck's fuel cards not yet found in EFS, or whose last four digits changed since: (Datatruck card id, last 4,
+# full number).
+def cards_to_link(conn: sqlite3.Connection) -> list[tuple[int, str, str | None]]:
     return [tuple(row) for row in conn.execute(
-        "SELECT f.card_id, f.last4 FROM fuel_cards f LEFT JOIN card_links l ON l.dt_card_id = f.card_id "
+        "SELECT f.card_id, f.last4, f.number FROM fuel_cards f LEFT JOIN card_links l ON l.dt_card_id = f.card_id "
         "WHERE f.last4 IS NOT NULL AND (l.dt_card_id IS NULL OR l.last4 <> f.last4) ORDER BY f.card_id")]
 
 
@@ -700,6 +704,13 @@ def save_card_link(conn: sqlite3.Connection, dt_card_id: int, last4: str, accoun
                  "ON CONFLICT (dt_card_id) DO UPDATE SET last4 = excluded.last4, account = excluded.account, "
                  "efs_card_id = excluded.efs_card_id, synced_at = excluded.synced_at",
                  (dt_card_id, last4, account, efs_card_id, now()))
+
+
+# Saves one check of a card (the card checker): what it should be ("on", "off", "unsure"), why, how sure, what it read.
+def save_card_check(conn: sqlite3.Connection, account: str, card_id: str, should_be: str, why: str, sure: str,
+                    evidence: str) -> None:
+    conn.execute("INSERT OR REPLACE INTO card_checks (account, card_id, checked_at, should_be, why, sure, evidence) "
+                 "VALUES (?, ?, ?, ?, ?, ?, ?)", (account, card_id, now(), should_be, why, sure, evidence))
 
 
 # How far the linking stands: Datatruck cards with a link, and Datatruck cards in all (those with a number).

@@ -65,10 +65,11 @@ function used(c) {
 // The table's columns: the heading, what a card is sorted by, and how it is filtered (see table.js).
 const COLUMNS = [
   { key: 'account', name: 'Account', by: (c) => c.account, of: (c) => c.account, choices: ACCOUNTS },
-  { key: 'card', name: 'Card', by: (c) => c.last4, text: (c) => `…${c.last4}` },
+  { key: 'card', name: 'Card', by: (c) => c.last4, text: (c) => `…${c.last4} ${c.number || ''}` },
   { key: 'driver', name: 'Driver on card', by: (c) => c.driver || '', text: (c) => c.driver || '' },
   { key: 'unit', name: 'Unit on card', by: (c) => c.unit || '', text: (c) => c.unit || '' },
   { key: 'id', name: 'Driver ID', by: (c) => c.driver_id || '', text: (c) => c.driver_id || '' },
+  { key: 'xref', name: 'X-Ref', by: (c) => c.xref || '', text: (c) => c.xref || '' },
   { key: 'state', name: 'Status', by: (c) => place(STATES, state(c)), of: state, choices: STATES },
   { key: 'use', name: 'Last used', by: (c) => (c.read ? c.days ?? 1e6 : 2e6), of: use, choices: USES },
   { key: 'datatruck', name: 'Driver in Datatruck', by: (c) => `${place(DATATRUCK, c.datatruck)} ${c.dt_driver || ''}`,
@@ -143,8 +144,8 @@ function row(c) {
   const none = () => el('span', { class: 'meta' }, '—');
   const assigned = part(DATATRUCK, c.datatruck) || { label: c.datatruck };
   const named = (name) => el('span', { title: name }, personName(name));  // the whole name on hover, when clipped
-  return el('tr', {}, cell(c.account), cell(el('b', {}, `…${c.last4}`)), cell(c.driver ? named(c.driver) : none(), 'clip'),
-    cell(c.unit || none()), cell(c.driver_id || none()), cell(tag(part(STATES, state(c)), c.override && el('small', {}, 'override'))),
+  return el('tr', {}, cell(c.account), cell(copyButton(c)), cell(c.driver ? named(c.driver) : none(), 'clip'),
+    cell(c.unit || none()), cell(c.driver_id || none()), cell(c.xref ? el('span', { title: c.xref }, c.xref) : none(), 'clip'), cell(tag(part(STATES, state(c)), c.override && el('small', {}, 'override'))),
     cell(el('span', { class: 'msg-kind', title: c.last_used ? `EFS: last used ${c.last_used}` : part(USES, use(c)).tip || null },
       mark(part(USES, use(c)), 'msg'), used(c))),
     cell(el('span', { class: 'msg-kind', title: [c.dt_driver, assigned.tip].filter(Boolean).join(' · ') || null }, mark(assigned, 'msg'),
@@ -152,6 +153,40 @@ function row(c) {
     cell(c.dt_unit || none()), cell(shouldBe(c)), cell(c.why ? el('span', { title: [c.why, checkTip(c)].filter(Boolean).join(' · ') }, c.why) : none(), 'clip why'),
     cell(c.sure ? el('span', { class: `badge ${part(SURE, c.sure)?.tone || ''}`, title: part(SURE, c.sure)?.tip || null },
       part(SURE, c.sure)?.label || c.sure) : none()));
+}
+
+// A card's last four digits as a button that copies its full number (from Datatruck; EFS shows only the last four),
+// saying "Copied" for a moment. A card Datatruck doesn't have has no full number to copy.
+function copyButton(c) {
+  const button = el('button', { type: 'button', class: 'copy-card',
+    title: c.number ? 'Copy the full card number' : "No full number: Datatruck doesn't have this card" }, `…${c.last4}`);
+  button.addEventListener('click', async () => {
+    const done = c.number && await copied(c.number);
+    button.textContent = done ? 'Copied' : c.number ? "Can't copy" : 'No number';
+    button.classList.toggle('done', Boolean(done));
+    setTimeout(() => { button.textContent = `…${c.last4}`; button.classList.remove('done'); }, 1500);
+  });
+  return button;
+}
+
+// Puts text on the clipboard; true when it worked. Browsers allow the clipboard only on this PC's own address, so
+// from another office PC the page's older copy command is used.
+async function copied(text) {
+  try {
+    if (window.isSecureContext && navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    const box = el('textarea', { readonly: '', style: 'position: fixed; opacity: 0' });
+    box.value = text;
+    document.body.append(box);
+    box.select();
+    const ok = document.execCommand('copy');
+    box.remove();
+    return ok;
+  } catch {
+    return false;
+  }
 }
 
 // What the card should be, against what it is: a green tick when they agree ("✓ Active"), a cross with the change

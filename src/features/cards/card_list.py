@@ -6,7 +6,6 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from base.models import EfsCardRow
-from base.sources import datatruck_web
 from base.store import db
 from features.cards import settings
 from features.cards.emanager import fuel_cards, window
@@ -62,26 +61,18 @@ def _read_pages(account: str, cards: list[EfsCardRow]) -> None:
 
 
 # Finds the EFS card of each Datatruck card not linked yet (or whose last four digits changed): EFS's lists show only
-# the last four digits, which repeat across cards, so Card Lookup is asked for Datatruck's full number, in the account
-# whose numbers start the same way (one search, 3 to 7 s). A number no account's start, or that EFS doesn't find, is
-# linked to no card. The full number is held only while searching. An eManager or Datatruck error ends this round's
-# linking; the next round carries on.
+# the last four digits, which repeat across cards, so Card Lookup is asked for Datatruck's full number (its copy,
+# fuel_cards), in the account whose numbers start the same way (one search, 3 to 7 s). A number no account's start, or
+# that EFS doesn't find, is linked to no card; a card whose number isn't copied yet waits. An eManager error ends
+# this round's linking; the next round carries on.
 def _link(prefixes: dict[str, str]) -> None:
     with db.connect() as conn:
-        due = db.cards_to_link(conn)
-    if not due:
-        return
-    try:
-        numbers = datatruck_web.fuel_card_numbers()
-    except Exception as failure:  # Datatruck down or refusing: the next round tries again
-        log.warning("Datatruck cards not linked to EFS this round: %r", failure)
-        return
+        due = [card for card in db.cards_to_link(conn) if card[2]]
     linked = 0
-    for dt_card_id, last4 in sorted(due, key=lambda card: prefixes.get(numbers.get(card[0], "")[:6], "")):
-        number = numbers.get(dt_card_id, "")
+    for dt_card_id, last4, number in sorted(due, key=lambda card: prefixes.get(card[2][:6], "")):
         account = prefixes.get(number[:6])
         try:
-            found = _search(account, number) if account and number[-4:] == last4 else []
+            found = _search(account, number) if account else []
         except Exception as failure:
             log.warning("Datatruck cards not linked to EFS this round (%d of %d done): %r", linked, len(due), failure)
             return
@@ -89,7 +80,8 @@ def _link(prefixes: dict[str, str]) -> None:
         with db.connect() as conn:
             db.save_card_link(conn, dt_card_id, last4, account if efs_card_id else None, efs_card_id)
         linked += 1
-    log.info("Datatruck cards linked to EFS: %d", linked)
+    if due:
+        log.info("Datatruck cards linked to EFS: %d", linked)
 
 
 # EFS's cards with exactly this full number in one account (Card Lookup by card number).

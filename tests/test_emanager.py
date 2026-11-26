@@ -85,7 +85,7 @@ STATUSES = ("ACTIVE", "INACTIVE", "HOLD")
 
 
 # A card's own page: its settings form, the buttons it offers, and its prompts.
-def card_page(user, card_id, status, hand_enter="DISALLOW", override=False, prompts=PROMPTS):
+def card_page(user, card_id, status, hand_enter="DISALLOW", override=False, prompts=PROMPTS, xref=""):
     return (f"{header(user)}"
             '<label for="card.header.expireDate">Expire Date</label> Oct 1, 2029 '
             '<label for="card.header.lastUsedDate">Last Used</label> Jan 24, 2026 &nbsp; <a>1</a>'
@@ -95,7 +95,7 @@ def card_page(user, card_id, status, hand_enter="DISALLOW", override=False, prom
             + ("<input type='submit' name='deleteCardOverride' value='Remove Override' />" if override else "")
             + "<select name='card.header.policyNumber' disabled><option value='1'>1</option>"
             "<option value='2' selected='selected'>2</option></select>"
-            "<input name='card.header.companyXRef' type='text' disabled />"
+            f"<input name='card.header.companyXRef' type='text' value='{xref}' disabled />"
             "<select name='policy.header.contractId' disabled><option value='794698' selected>794698</option></select>"
             + radios("card.header.status", status, STATUSES + (("FRAUD",) if status == "FRAUD" else ()))
             + radios("card.header.handEnter", hand_enter, ("ALLOW", "DISALLOW", "POLICY"))
@@ -142,7 +142,7 @@ class Site:
     # One card in a status, maybe in override mode; saves_hand_enter makes a save change hand enter too.
     def __init__(self, status="INACTIVE", override=False, saves_hand_enter=None, prompts=PROMPTS):
         self.user, self.status, self.override, self.saves_hand_enter = "Bobalif", status, override, saves_hand_enter
-        self.hand_enter = "DISALLOW"
+        self.hand_enter, self.xref = "DISALLOW", ""
         self.prompts = [list(prompt) for prompt in prompts]
         self.sent = []
 
@@ -164,6 +164,7 @@ class Site:
         if "saveCardInformation" in fields:
             self.status = fields["card.header.status"]
             self.hand_enter = self.saves_hand_enter or fields["card.header.handEnter"]
+            self.xref = fields.get("card.header.companyXRef", "")
         if "overrideCard" in fields or "overrideFraudCard" in fields:
             self.override = True
         if "deleteCardOverride" in fields:
@@ -177,7 +178,7 @@ class Site:
             # a name read back in another case than sent still counts (Card Lookup prints capitals anyway)
             prompt[3] = value.title() if prompt[0] == "NAME" else value
         return pages.parse(path, card_page(self.user, ROW.card_id, self.status, self.hand_enter, self.override,
-                                              [tuple(prompt) for prompt in self.prompts]))
+                                              [tuple(prompt) for prompt in self.prompts], self.xref))
 
     # The forms sent with a button pressed.
     def posted(self, button):
@@ -231,6 +232,22 @@ def test_a_status_change_sends_every_other_setting_unchanged_and_opens_the_card_
     assert fields["card.header.status"] == "ACTIVE" and fields["card.header.handEnter"] == "DISALLOW"
     assert fields["saveCardInformation"] == "Save" and "policy.header.contractId" not in fields
     assert not {"deleteThisCard", "resetPin"} & set(fields)
+
+
+# An X-Ref note is saved the way a status is, every other setting sent unchanged; the same note again sends nothing,
+# and "" clears it.
+def test_an_xref_note_is_saved_with_every_other_setting_unchanged(site):
+    assert fuel_cards.set_xref("ALIF", ROW, " HOMETIME 11-26 ").xref == "HOMETIME 11-26"
+    (fields,) = site.posted("saveCardInformation")
+    assert fields["card.header.companyXRef"] == "HOMETIME 11-26" and fields["card.header.status"] == "INACTIVE"
+    fuel_cards.set_xref("ALIF", ROW, "HOMETIME 11-26")
+    assert len(site.posted("saveCardInformation")) == 1
+    assert fuel_cards.set_xref("ALIF", ROW, "").xref == ""
+    # what eManager would not keep is refused before anything is sent: a "/" (dropped there), over 15 characters
+    for refused in ("HOMETIME 11/26", "HOMETIME 11-26-26"):
+        with pytest.raises(real_site.EfsError, match="at most 15"):
+            fuel_cards.set_xref("ALIF", ROW, refused)
+    assert len(site.posted("saveCardInformation")) == 2
 
 
 # A card already in the status asked for is left alone: nothing is sent.

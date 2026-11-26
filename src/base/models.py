@@ -157,6 +157,8 @@ class FuelCard:
     deduction_policy: str | None    # "retail_plus_fee", "retail_amount", "invoice_amount"
     active: bool
     last4: str | None = None        # the card number's last four digits, as people name a card ("…7539")
+    number: str | None = None       # the full number, digits only (kept since 2026-11-26, the user's word: the Cards
+                                    # page copies it; EFS's own lists show only the last four)
 
 
 # A fuel card as eManager's Card Lookup lists it (features/cards/emanager/fuel_cards). Last four digits are not unique: pick by card_id.

@@ -441,10 +441,10 @@ def test_card_page_day():
 def test_datatruck_cards_are_linked_to_efs(world, monkeypatch):
     from base.models import FuelCard
     with db.connect() as conn:
-        db.replace_fuel_cards(conn, [FuelCard(1, "TTL", "driver", 7, None, True, "retail_plus_fee", True, "0506"),
-                                     FuelCard(2, "TTL", "driver", 8, None, True, "retail_plus_fee", True, "0999"),
-                                     FuelCard(3, "TTL", "truck", None, "77", True, "retail_plus_fee", True, "1234")])
-    numbers = {1: "5567480000000506", 2: "5567481111110999", 3: "7777770000001234"}
+        db.replace_fuel_cards(conn, [FuelCard(1, "TTL", "driver", 7, None, True, "retail_plus_fee", True, "0506", "5567480000000506"),
+                                     FuelCard(2, "TTL", "driver", 8, None, True, "retail_plus_fee", True, "0999", "5567481111110999"),
+                                     FuelCard(3, "TTL", "truck", None, "77", True, "retail_plus_fee", True, "1234", "7777770000001234"),
+                                     FuelCard(4, "TTL", "truck", None, "78", True, "retail_plus_fee", True, "4321")])  # no number yet
     asked = []
 
     def search(account, by, text=""):
@@ -458,20 +458,18 @@ def test_datatruck_cards_are_linked_to_efs(world, monkeypatch):
 
     monkeypatch.setattr(card_list.fuel_cards, "cards", search)
     monkeypatch.setattr(card_list.fuel_cards, "card", lambda account, row: card(row.card_id, "3189", "JOHN DOE")[1])
-    monkeypatch.setattr(card_list.datatruck_web, "fuel_card_numbers", lambda: numbers)
     card_list.copy()
     with db.connect() as conn:
         links = [tuple(r) for r in conn.execute("SELECT dt_card_id, last4, account, efs_card_id FROM card_links ORDER BY dt_card_id")]
-        assert db.card_links_done(conn) == (3, 3)
+        assert db.card_links_done(conn) == (3, 4)  # the card with no number waits
     assert asked == [("ALIF", "card", "0506"), ("ALIF", "card", "0999")]
     assert links == [(1, "0506", "ALIF", "a10506"), (2, "0999", None, None), (3, "1234", None, None)]
     card_list.copy()  # all linked: nothing is searched again
     assert len(asked) == 2
-    numbers[2] = "5567481111110998"
     with db.connect() as conn:
-        conn.execute("UPDATE fuel_cards SET last4 = '0998' WHERE card_id = 2")
+        conn.execute("UPDATE fuel_cards SET last4 = '0998', number = '5567481111110998' WHERE card_id = 2")
     monkeypatch.setattr(card_list, "_search", fail)
     card_list.copy()  # the changed card is due again; the error leaves its old link as it was
     with db.connect() as conn:
         assert conn.execute("SELECT last4 FROM card_links WHERE dt_card_id = 2").fetchone()[0] == "0999"
-        assert db.card_links_done(conn) == (2, 3)
+        assert db.card_links_done(conn) == (2, 4)

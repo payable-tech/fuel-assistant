@@ -463,7 +463,7 @@ def _efs_card(card, day: date) -> dict:
     else:
         datatruck = "driver" if card["dt_driver_status"] == "active" else "left"
     return {"account": card["account"], "last4": card["last4"], "status": card["status"], "unit": card["unit"],
-            "driver_id": card["driver_id"], "driver": card["driver_name"],
+            "number": card["number"], "driver_id": card["driver_id"], "driver": card["driver_name"], "xref": card["xref"],
             "parked": card["unit"] == parked["unit"] and (card["driver_name"] or "").upper() == parked["driver"],
             "datatruck": datatruck, "dt_driver": card["dt_driver"], "dt_unit": card["dt_unit"],
             "verdict": _verdict(card["status"], card["should_be"]), "why": card["why"], "sure": card["sure"],

@@ -38,5 +38,6 @@ def test_fuel_card_mapping():
                                   "assigned_to": "driver", "assigned_driver": {"id": 7}, "unit_number": "717",
                                   "is_billable": True, "fuel_deduction_policy": "retail_plus_fee", "is_card_active": True})
     assert (c.card_id, c.driver_id, c.unit, c.billable, c.deduction_policy, c.active) == (4, 7, "717", True, "retail_plus_fee", True)
-    assert c.last4 == "7539" and "708305003" not in repr(c)
+    assert c.last4 == "7539" and c.number == "7083050030000007539"  # the full number is kept since 2026-11-26
     assert datatruck_web._fuel_card({"id": 5, "number": None}).last4 is None
+    assert datatruck_web._fuel_card({"id": 6, "number": "7083 0500 3000 0007 539"}).number == "7083050030000007539"

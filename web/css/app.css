@@ -437,6 +437,11 @@ button.msg:hover, button.msg:focus-visible { outline: 2px solid var(--text); out
 .card-bar.total span { font-weight: 600; }
 .fleet-table .msg-kind small { color: var(--warn-ink); font-size: 12px; }
 .fleet-table .badge { margin: 0; }  /* how sure a card's check was */
+/* a card's last four digits: a click copies its full number */
+.copy-card { font: inherit; font-weight: 700; padding: 0; border: 0; background: none; color: var(--text); cursor: copy; }
+.copy-card:hover { color: var(--brand-ink); text-decoration: underline dotted; }
+.copy-card.done { color: var(--good-ink); }
+.copy-card:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
 body[data-view="allcards"] .page { max-width: 1920px; }  /* a dozen columns side by side */
 /* long names and whys end in "…" (whole on hover), so every row stays one line */
 .card-table td.clip { max-width: 190px; overflow: hidden; text-overflow: ellipsis; }

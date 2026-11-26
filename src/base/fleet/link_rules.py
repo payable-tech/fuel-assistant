@@ -52,6 +52,12 @@ def _match_one(unit: str, unit_numbers: Counter, groups: list[TelegramGroup], ti
     return ChatMatch(None, f"no group title names unit {number} with {' or '.join(drivers)}")
 
 
+# True when a group's title names this unit number and two words of this driver's name (the card checker's test for
+# a card's own group; match_chats also asks that no other fleet unit is named).
+def names_unit_and_driver(title: str, unit: str, driver: str) -> bool:
+    return _number(unit) in _numbers_in(title) and _names(title, driver)
+
+
 # True when a title has at least two words of a driver's name, in any order ("Kendrick Williams (LP)" is named by
 # "TTL: Williams Kendrick | Unit 50779"). Tags after the name, such as "(LO) REEFER", don't count.
 def _names(title: str, driver: str) -> bool:

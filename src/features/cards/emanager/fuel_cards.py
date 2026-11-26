@@ -21,6 +21,9 @@ HEADER = ("card.header.policyNumber", "card.header.companyXRef", "card.header.st
 # Settings the website does not send with Remove Override (bob-agent's recording, 2026-10-08).
 NOT_SENT_ON_REMOVE = ("card.header.policyNumber", "policy.header.contractId", "card.header.mobileTransaction")
 MOST_TIMES = 9      # an override lasts this many transactions at most
+# What eManager keeps in an X-Ref (tried live on the test card, 2026-11-26): at most 15 letters, digits, spaces and
+# hyphens. A longer one is not saved at all, and a "/" is silently dropped ("11/26" became "1126").
+XREF = re.compile(r"[A-Za-z0-9 -]{0,15}")
 # The prompts that can be edited, by our name: eManager's id for the prompt, and the label its card page prints.
 # Card Lookup's unit, driver ID and driver name are these prompts; unit and driver ID (Exact Match) are also what the
 # driver must type at the pump.
@@ -56,18 +59,34 @@ def card(account: str, row: EfsCardRow) -> EfsCard:
 def set_status(account: str, row: EfsCardRow, status: str) -> EfsCard:
     if status not in STATUSES:
         raise EfsError(f"A card status is one of {', '.join(STATUSES)}, not {status!r}.")
+    return _save_settings(account, row, {"card.header.status": status})
+
+
+# Sets a card's X-Ref: the free-text note EFS keeps on every card, not used at the pump, that Card Lookup can search
+# by. Here it says why a card was turned off and when ("HOMETIME 11/26"; the user's choice, 2026-11-26), so the
+# unit, driver ID and driver name stay as they were; "" clears it. Every other setting is left as it is.
+def set_xref(account: str, row: EfsCardRow, xref: str) -> EfsCard:
+    if not XREF.fullmatch(xref.strip()):
+        raise EfsError(f"An X-Ref is at most 15 letters, digits, spaces and hyphens, not {xref.strip()!r} "
+                       "(e.g. \"HOMETIME 11-26\").")
+    return _save_settings(account, row, {"card.header.companyXRef": xref.strip()})
+
+
+# Saves a card's own settings with `changes` (eManager's names for them), every other setting sent back as its page
+# shows it; nothing is sent when they are so already. A card in override mode is locked until the override is off.
+def _save_settings(account: str, row: EfsCardRow, changes: dict[str, str]) -> EfsCard:
     site.act_as(account)
     page = _card_page(row)
     before = _card(page)
-    if before.status == status:
+    if all(_header(page).get(name) == value for name, value in changes.items()):
         return before
     if before.override:
-        raise EfsError(f"Card {row.number} is in override mode; remove the override before changing its status.")
+        raise EfsError(f"Card {row.number} is in override mode; remove the override before changing it.")
     form = page.form_with("saveCardInformation")
     # the contract choice stays locked, as it does on the website
     fields = {name: value for name, value in form.fields.items() if not name.startswith("policy.header.")}
-    answer = site.send(form, {**fields, "card.header.status": status}, "saveCardInformation")
-    return _confirm(row, answer, {**_header(page), "card.header.status": status}, override=False)
+    answer = site.send(form, {**fields, **changes}, "saveCardInformation")
+    return _confirm(row, answer, {**_header(page), **changes}, override=False)
 
 
 # Puts a card in override mode for 1-9 transactions, always for All Locations (the user, 2026-11-22), whatever its

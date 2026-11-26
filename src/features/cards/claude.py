@@ -41,12 +41,14 @@ class Answer:
     trace: tuple[tuple[str, str], ...] = ()
 
 
-# Lets Claude work on one task with the given tools, in `workspace` (where the SDK keeps the run's conversation).
-async def run(system: str, text: str, photos: list[bytes], tools: list[Tool], workspace: Path) -> Answer:
+# Lets Claude work on one task with the given tools, in `workspace` (where the SDK keeps the run's conversation); the
+# card agent's model and effort unless others are given (the card checker's).
+async def run(system: str, text: str, photos: list[bytes], tools: list[Tool], workspace: Path,
+              model: str = settings.AGENT_MODEL, effort: str = settings.AGENT_EFFORT) -> Answer:
     workspace.mkdir(parents=True, exist_ok=True)
     server = create_sdk_mcp_server(SERVER, tools=[SdkMcpTool(t.name, t.description, t.schema, t.run) for t in tools])
     options = ClaudeAgentOptions(
-        system_prompt=system, model=settings.AGENT_MODEL, effort=settings.AGENT_EFFORT,
+        system_prompt=system, model=model, effort=effort,
         thinking={"type": "adaptive", "display": "summarized"},  # its thinking comes back as text, for the trace
         tools=[], mcp_servers={SERVER: server}, strict_mcp_config=True,
         allowed_tools=[f"mcp__{SERVER}__{t.name}" for t in tools],

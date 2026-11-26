@@ -387,6 +387,16 @@ Built the way bob-agent's Telegram agent works (`D:/bob-agent/src/agent`, `src/w
   unsure), why in a few words, and how sure: high (the group and the data agree), medium (one of them), low (nothing
   recent); kept as a history. The view shows the latest against the status: agrees ✓, should be off ✗, should be on
   ✗, unsure ?, not checked; the evidence on hover. The checker that writes them is the next step.
+- **The checker (`features/cards/card_check.py`, `card_check_rules.py`; `card-check`, `checker-login`,
+  `run_checker.bat`):** for each ACTIVE card, the driver's own group (open, its title naming the card's unit and its
+  driver: the name on the card or Datatruck's), else the truck's linked group; the latest 40 messages from people
+  whatever their age, the data (Datatruck's driver, loads, EFS last use, Samsara position, the driver's INACTIVE
+  groups); Claude (Sonnet) records should be / why / sure / evidence. Its own Telegram login. Only reads. ~10 s a card.
+- **Turning a card off (the user's choice, 2026-11-26):** status INACTIVE, unit / driver ID / name left as they are,
+  and the reason with the date in the card's X-Ref (`fuel_cards.set_xref`, `efs-card ... --xref`), e.g.
+  `HOMETIME 11-26`; Card Lookup searches by it. eManager keeps at most 15 letters, digits, spaces and hyphens (a "/"
+  is dropped, a longer one not saved), so anything else is refused before sending. Tried on the test card …0672.
+- **Full card numbers** come from Datatruck (`fuel_cards.number`, kept since 2026-11-26): the page copies one on a click.
 - **Next (the user's order):** a "why" per card from an agent that reads every card's driver group about 3 times a
   day (the user gives real cases first), then the agent turning cards off itself, starting as flags the user approves.
 
